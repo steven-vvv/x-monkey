@@ -100,11 +100,11 @@
 }
 
 .xd-appbar-tabs::-webkit-scrollbar {
-  height: 3px;
+  height: 4px;
 }
 
 .xd-appbar-tabs::-webkit-scrollbar-track {
-  background: transparent;
+  background: var(--xd-bg-secondary);
 }
 
 .xd-appbar-tabs::-webkit-scrollbar-thumb {
@@ -206,6 +206,7 @@
   border-bottom: 2px solid transparent;
   cursor: pointer;
   user-select: none;
+  flex-shrink: 0;
 }
 
 .xd-tab:hover {
@@ -369,11 +370,16 @@
   color: var(--xd-text-secondary);
 }
 
+.xd-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 2px 12px;
+}
+
 .xd-detail-row {
   display: flex;
-  flex-wrap: wrap;
   align-items: baseline;
-  gap: 4px 8px;
+  gap: 8px;
   padding: 2px 0;
   font-size: 11px;
 }
@@ -387,6 +393,4 @@
 .xd-detail-value {
   color: var(--xd-text-primary);
   word-break: break-all;
-  flex: 1;
-  min-width: 80px;
 }

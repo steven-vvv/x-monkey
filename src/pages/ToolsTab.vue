@@ -39,14 +39,19 @@ const detailFeatures = computed<string | null>(() => {
   return null;
 });
 
-const detailResponseFormatted = computed<string>(() => {
+const PREVIEW_LIMIT = 4000;
+
+const detailResponsePreview = computed<string>(() => {
   const cap = detailCapture.value;
   if (!cap) return '';
-  try {
-    return JSON.stringify(JSON.parse(cap.responseBody), null, 2);
-  } catch {
-    return cap.responseBody;
-  }
+  const raw = cap.responseBody;
+  if (raw.length <= PREVIEW_LIMIT) return raw;
+  return raw.slice(0, PREVIEW_LIMIT);
+});
+
+const isResponseTruncated = computed(() => {
+  const cap = detailCapture.value;
+  return cap ? cap.responseBody.length > PREVIEW_LIMIT : false;
 });
 
 function openXhrCapture() {
@@ -246,31 +251,33 @@ useShadowStyle('tools-tab', STYLE_TEXT);
           <!-- General -->
           <section class="xd-detail-section">
             <div class="xd-detail-section-title">General</div>
-            <div class="xd-detail-row">
-              <span class="xd-detail-label">Method</span>
-              <span class="xd-detail-value">{{ detailCapture.method }}</span>
-            </div>
-            <div class="xd-detail-row">
-              <span class="xd-detail-label">Status</span>
-              <span class="xd-detail-value" :class="statusClass(detailCapture.status)">
-                {{ detailCapture.status }} {{ detailCapture.statusText }}
-              </span>
-            </div>
-            <div class="xd-detail-row">
-              <span class="xd-detail-label">Operation</span>
-              <span class="xd-detail-value">{{ detailCapture.operationName }}</span>
-            </div>
-            <div class="xd-detail-row">
-              <span class="xd-detail-label">GraphQL ID</span>
-              <span class="xd-detail-value">{{ detailCapture.graphqlId }}</span>
-            </div>
-            <div class="xd-detail-row">
-              <span class="xd-detail-label">Size</span>
-              <span class="xd-detail-value">{{ formatSize(detailCapture.responseSize) }}</span>
-            </div>
-            <div class="xd-detail-row">
-              <span class="xd-detail-label">Time</span>
-              <span class="xd-detail-value">{{ formatTime(detailCapture.timestamp) }}</span>
+            <div class="xd-detail-grid">
+              <div class="xd-detail-row">
+                <span class="xd-detail-label">Method</span>
+                <span class="xd-detail-value">{{ detailCapture.method }}</span>
+              </div>
+              <div class="xd-detail-row">
+                <span class="xd-detail-label">Status</span>
+                <span class="xd-detail-value" :class="statusClass(detailCapture.status)">
+                  {{ detailCapture.status }} {{ detailCapture.statusText }}
+                </span>
+              </div>
+              <div class="xd-detail-row">
+                <span class="xd-detail-label">Operation</span>
+                <span class="xd-detail-value">{{ detailCapture.operationName }}</span>
+              </div>
+              <div class="xd-detail-row">
+                <span class="xd-detail-label">GraphQL ID</span>
+                <span class="xd-detail-value">{{ detailCapture.graphqlId }}</span>
+              </div>
+              <div class="xd-detail-row">
+                <span class="xd-detail-label">Size</span>
+                <span class="xd-detail-value">{{ formatSize(detailCapture.responseSize) }}</span>
+              </div>
+              <div class="xd-detail-row">
+                <span class="xd-detail-label">Time</span>
+                <span class="xd-detail-value">{{ formatTime(detailCapture.timestamp) }}</span>
+              </div>
             </div>
           </section>
 
@@ -300,8 +307,13 @@ useShadowStyle('tools-tab', STYLE_TEXT);
 
           <!-- Response Body -->
           <section class="xd-detail-section">
-            <div class="xd-detail-section-title">Response Body</div>
-            <div class="xd-detail-pre">{{ detailResponseFormatted }}</div>
+            <div class="xd-detail-section-title">
+              Response Body
+              <span v-if="isResponseTruncated" style="font-weight: 400; text-transform: none; letter-spacing: 0;">
+                (truncated, download for full)
+              </span>
+            </div>
+            <div class="xd-detail-pre">{{ detailResponsePreview }}</div>
           </section>
         </template>
       </div>
