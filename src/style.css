@@ -349,8 +349,10 @@
 
 .xd-detail-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-  gap: 2px 12px;
+  grid-template-columns: auto auto 12px auto auto;
+  gap: 2px 4px;
+  align-items: baseline;
+  font-size: 11px;
 }
 
 .xd-detail-row {
@@ -365,6 +367,7 @@
   color: var(--xd-text-secondary);
   flex-shrink: 0;
   min-width: 60px;
+  white-space: nowrap;
 }
 
 .xd-detail-value {

@@ -241,32 +241,23 @@ useShadowStyle('tools-tab', STYLE_TEXT);
           <section class="xd-detail-section">
             <div class="xd-detail-section-title">General</div>
             <div class="xd-detail-grid">
-              <div class="xd-detail-row">
-                <span class="xd-detail-label">Method</span>
-                <span class="xd-detail-value">{{ detailCapture.method }}</span>
-              </div>
-              <div class="xd-detail-row">
-                <span class="xd-detail-label">Status</span>
-                <span class="xd-detail-value" :class="statusClass(detailCapture.status)">
-                  {{ detailCapture.status }} {{ detailCapture.statusText }}
-                </span>
-              </div>
-              <div class="xd-detail-row">
-                <span class="xd-detail-label">Operation</span>
-                <span class="xd-detail-value">{{ detailCapture.operationName }}</span>
-              </div>
-              <div class="xd-detail-row">
-                <span class="xd-detail-label">GraphQL ID</span>
-                <span class="xd-detail-value">{{ detailCapture.graphqlId }}</span>
-              </div>
-              <div class="xd-detail-row">
-                <span class="xd-detail-label">Size</span>
-                <span class="xd-detail-value">{{ formatSize(detailCapture.responseSize) }}</span>
-              </div>
-              <div class="xd-detail-row">
-                <span class="xd-detail-label">Time</span>
-                <span class="xd-detail-value">{{ formatTime(detailCapture.timestamp) }}</span>
-              </div>
+              <span class="xd-detail-label">Method</span>
+              <span class="xd-detail-value">{{ detailCapture.method }}</span>
+              <span></span>
+              <span class="xd-detail-label">Status</span>
+              <span class="xd-detail-value" :class="statusClass(detailCapture.status)">{{ detailCapture.status }} {{ detailCapture.statusText }}</span>
+
+              <span class="xd-detail-label">Operation</span>
+              <span class="xd-detail-value">{{ detailCapture.operationName }}</span>
+              <span></span>
+              <span class="xd-detail-label">GraphQL ID</span>
+              <span class="xd-detail-value">{{ detailCapture.graphqlId }}</span>
+
+              <span class="xd-detail-label">Size</span>
+              <span class="xd-detail-value">{{ formatSize(detailCapture.responseSize) }}</span>
+              <span></span>
+              <span class="xd-detail-label">Time</span>
+              <span class="xd-detail-value">{{ formatTime(detailCapture.timestamp) }}</span>
             </div>
           </section>
 
