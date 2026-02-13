@@ -1,0 +1,326 @@
+:host {
+  --xd-bg-primary: #1a1a1e;
+  --xd-bg-secondary: #242428;
+  --xd-bg-tertiary: #2e2e33;
+  --xd-border: #3a3a40;
+  --xd-text-primary: #e0e0e0;
+  --xd-text-secondary: #a0a0a0;
+  --xd-text-muted: #707070;
+  --xd-accent: #5b8af5;
+  --xd-accent-hover: #4a7ae5;
+  --xd-error: #e05555;
+  --xd-error-hover: #d04444;
+  --xd-success: #4caf60;
+  --xd-radius: 4px;
+  --xd-font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+
+  all: initial;
+  font-family: var(--xd-font);
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--xd-text-primary);
+  box-sizing: border-box;
+}
+
+:host(.xd-theme-light) {
+  --xd-bg-primary: #ffffff;
+  --xd-bg-secondary: #f5f5f7;
+  --xd-bg-tertiary: #eaeaec;
+  --xd-border: #d0d0d4;
+  --xd-text-primary: #1a1a1e;
+  --xd-text-secondary: #555560;
+  --xd-text-muted: #8e8e96;
+  --xd-accent: #4a7ae5;
+  --xd-accent-hover: #3a6ad5;
+  --xd-error: #d04444;
+  --xd-error-hover: #c03333;
+  --xd-success: #3a9e50;
+}
+
+:host *, :host *::before, :host *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+.xd-bubble {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--xd-bg-primary);
+  border: 1px solid var(--xd-border);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  user-select: none;
+  color: var(--xd-text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+  font-family: var(--xd-font);
+}
+
+.xd-bubble:hover {
+  border-color: var(--xd-accent);
+  color: var(--xd-text-primary);
+}
+
+.xd-panel {
+  background: var(--xd-bg-primary);
+  border: 1px solid var(--xd-border);
+  border-radius: var(--xd-radius);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-width: 280px;
+  min-height: 200px;
+}
+
+.xd-appbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 8px;
+  background: var(--xd-bg-secondary);
+  border-bottom: 1px solid var(--xd-border);
+  cursor: move;
+  user-select: none;
+  flex-shrink: 0;
+}
+
+.xd-appbar-tabs {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  flex: 1;
+  min-width: 0;
+}
+
+.xd-breadcrumb-bar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px 8px;
+  background: var(--xd-bg-primary);
+  border-bottom: 1px solid var(--xd-border);
+  flex-shrink: 0;
+  min-height: 22px;
+}
+
+.xd-breadcrumb {
+  font-size: 11px;
+  color: var(--xd-text-muted);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.xd-breadcrumb:hover {
+  color: var(--xd-text-secondary);
+}
+
+.xd-breadcrumb--active {
+  color: var(--xd-text-primary);
+  font-weight: 600;
+  cursor: default;
+}
+
+.xd-breadcrumb-sep {
+  font-size: 10px;
+  color: var(--xd-text-muted);
+  user-select: none;
+}
+
+.xd-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 3px 8px;
+  border: 1px solid var(--xd-border);
+  border-radius: var(--xd-radius);
+  background: var(--xd-bg-tertiary);
+  color: var(--xd-text-secondary);
+  font-size: 11px;
+  font-family: var(--xd-font);
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.xd-btn:hover {
+  background: var(--xd-border);
+  color: var(--xd-text-primary);
+}
+
+.xd-btn--accent {
+  background: var(--xd-accent);
+  border-color: var(--xd-accent);
+  color: #fff;
+}
+
+.xd-btn--accent:hover {
+  background: var(--xd-accent-hover);
+  border-color: var(--xd-accent-hover);
+  color: #fff;
+}
+
+.xd-btn--sm {
+  padding: 2px 6px;
+  font-size: 10px;
+}
+
+.xd-btn--error {
+  background: var(--xd-error);
+  border-color: var(--xd-error);
+  color: #fff;
+}
+
+.xd-btn--error:hover {
+  background: var(--xd-error-hover);
+  border-color: var(--xd-error-hover);
+  color: #fff;
+}
+
+.xd-tab {
+  padding: 5px 12px;
+  font-size: 11px;
+  font-family: var(--xd-font);
+  color: var(--xd-text-muted);
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  user-select: none;
+}
+
+.xd-tab:hover {
+  color: var(--xd-text-secondary);
+}
+
+.xd-tab--active {
+  color: var(--xd-accent);
+  border-bottom-color: var(--xd-accent);
+}
+
+.xd-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 8px;
+}
+
+.xd-body::-webkit-scrollbar {
+  width: 4px;
+}
+
+.xd-body::-webkit-scrollbar-track {
+  background: var(--xd-bg-primary);
+}
+
+.xd-body::-webkit-scrollbar-thumb {
+  background: var(--xd-border);
+  border-radius: 2px;
+}
+
+.xd-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--xd-text-muted);
+  font-size: 12px;
+}
+
+.xd-list-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 8px;
+  border: 1px solid var(--xd-border);
+  border-radius: var(--xd-radius);
+  background: var(--xd-bg-secondary);
+  margin-bottom: 4px;
+}
+
+.xd-list-item:last-child {
+  margin-bottom: 0;
+}
+
+.xd-list-item-info {
+  flex: 1;
+  min-width: 0;
+  margin-right: 8px;
+}
+
+.xd-list-item-title {
+  font-size: 11px;
+  color: var(--xd-text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.xd-list-item-meta {
+  font-size: 10px;
+  color: var(--xd-text-muted);
+}
+
+.xd-resize-handle {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 12px;
+  height: 12px;
+  cursor: nwse-resize;
+}
+
+.xd-resize-handle::after {
+  content: '';
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+  width: 6px;
+  height: 6px;
+  border-right: 2px solid var(--xd-text-muted);
+  border-bottom: 2px solid var(--xd-text-muted);
+}
+
+
+.xd-list-item--clickable {
+  cursor: pointer;
+}
+
+.xd-list-item--clickable:hover {
+  border-color: var(--xd-accent);
+}
+
+.xd-author-name {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--xd-text-primary);
+}
+
+.xd-author-handle {
+  font-size: 11px;
+  color: var(--xd-text-muted);
+  margin-left: 4px;
+}
+
+.xd-text-ellipsis {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.xd-content-scaler {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--xd-bg-primary);
+}
+
+.xd-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+  pointer-events: none;
+}
