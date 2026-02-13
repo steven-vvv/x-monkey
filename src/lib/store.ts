@@ -1,7 +1,7 @@
 import { reactive, computed, ref } from 'vue';
 import { unsafeWindow } from '$';
 
-export type TabId = 'feature' | 'database' | 'settings';
+export type TabId = 'feature' | 'database' | 'settings' | 'tools';
 
 export type FeatureRoute =
   | { page: 'status'; tweetId: string }
@@ -13,6 +13,11 @@ export type DbRoute =
   | { page: 'list' }
   | { page: 'tweet'; tweetId: string }
   | { page: 'user'; userId: string };
+
+export type ToolsRoute =
+  | { page: 'list' }
+  | { page: 'xhr-capture' }
+  | { page: 'xhr-detail'; captureId: string };
 
 export interface Breadcrumb {
   label: string;
@@ -26,6 +31,8 @@ interface NavState {
   featureIndex: number;
   dbStack: DbRoute[];
   dbIndex: number;
+  toolsStack: ToolsRoute[];
+  toolsIndex: number;
 }
 
 const nav = reactive<NavState>({
@@ -34,6 +41,8 @@ const nav = reactive<NavState>({
   featureIndex: 0,
   dbStack: [{ page: 'list' }],
   dbIndex: 0,
+  toolsStack: [{ page: 'list' }],
+  toolsIndex: 0,
 });
 
 export const currentUrl = ref(unsafeWindow.location.href);
@@ -138,11 +147,55 @@ export function dbNavigateToIndex(index: number): void {
   }
 }
 
+// --- Tools tab navigation ---
+export const toolsRoute = computed<ToolsRoute>(() => nav.toolsStack[nav.toolsIndex]);
+
+export const toolsBreadcrumbs = computed<Breadcrumb[]>(() => {
+  return nav.toolsStack.slice(0, nav.toolsIndex + 1).map((r, i) => {
+    let label = 'Tools';
+    if (r.page === 'xhr-capture') label = 'XHR Capture';
+    else if (r.page === 'xhr-detail') label = 'Detail';
+    return { label, index: i, active: i === nav.toolsIndex };
+  });
+});
+
+export function toolsNavigateTo(route: ToolsRoute): void {
+  if (route.page === 'xhr-capture') {
+    if (nav.toolsIndex === 0) {
+      nav.toolsStack.splice(1);
+      nav.toolsStack.push(route);
+      nav.toolsIndex = 1;
+    } else {
+      nav.toolsStack[1] = route;
+      nav.toolsStack.splice(2);
+      nav.toolsIndex = 1;
+    }
+  } else if (route.page === 'xhr-detail') {
+    if (nav.toolsIndex >= 2) {
+      nav.toolsStack[nav.toolsIndex] = route;
+    } else {
+      nav.toolsStack.splice(nav.toolsIndex + 1);
+      nav.toolsStack.push(route);
+      nav.toolsIndex = nav.toolsStack.length - 1;
+    }
+  } else {
+    nav.toolsStack = [{ page: 'list' }];
+    nav.toolsIndex = 0;
+  }
+}
+
+export function toolsNavigateToIndex(index: number): void {
+  if (index >= 0 && index <= nav.toolsIndex) {
+    nav.toolsIndex = index;
+  }
+}
+
 // --- Breadcrumbs for current tab ---
 export const currentBreadcrumbs = computed<Breadcrumb[]>(() => {
   switch (nav.activeTab) {
     case 'feature': return featureBreadcrumbs.value;
     case 'database': return dbBreadcrumbs.value;
+    case 'tools': return toolsBreadcrumbs.value;
     case 'settings': return [{ label: 'Settings', index: 0, active: true }];
     default: return [];
   }
@@ -152,5 +205,6 @@ export function navigateBreadcrumb(index: number): void {
   switch (nav.activeTab) {
     case 'feature': featureNavigateToIndex(index); break;
     case 'database': dbNavigateToIndex(index); break;
+    case 'tools': toolsNavigateToIndex(index); break;
   }
 }
