@@ -56,17 +56,26 @@ const detailUser = computed(() => {
 });
 
 const STYLE_TEXT = `
-.xd-db-toolbar {
+.xd-db-wrapper {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 4px 0;
-  margin-bottom: 4px;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
 }
 
 .xd-db-meta {
   font-size: 11px;
   color: var(--xd-text-secondary);
+}
+
+.xd-db-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 6px 8px;
+  border-top: 1px solid var(--xd-border);
+  flex-shrink: 0;
 }
 `;
 
@@ -74,42 +83,45 @@ useShadowStyle('database-tab', STYLE_TEXT);
 </script>
 
 <template>
-  <div class="xd-body">
-    <!-- List page -->
-    <template v-if="route.page === 'list'">
-      <div class="xd-db-toolbar">
-        <span class="xd-db-meta">{{ tweetList.length }} tweets</span>
-        <button class="xd-btn xd-btn--sm xd-btn--error" @click="clearDb">Clear</button>
-      </div>
-      <div v-if="tweetList.length === 0" class="xd-empty">Database is empty</div>
-      <TweetSummaryItem
-        v-for="item in tweetList"
-        :key="item.id"
-        :tweet="item"
-        show-focal-dot
-        @select="openTweet"
-      />
-    </template>
-
-    <!-- Tweet detail -->
-    <template v-else-if="route.page === 'tweet'">
-      <div v-if="!detailTweet" class="xd-empty">Tweet not found</div>
-      <template v-else>
-        <TweetDetailCard
-          :tweet="detailTweet"
-          @open-user="openUser"
-          @open-original="openOriginal"
-          @open-media="openMediaUrl"
+  <div class="xd-db-wrapper">
+    <div class="xd-body">
+      <!-- List page -->
+      <template v-if="route.page === 'list'">
+        <div v-if="tweetList.length === 0" class="xd-empty">Database is empty</div>
+        <TweetSummaryItem
+          v-for="item in tweetList"
+          :key="item.id"
+          :tweet="item"
+          show-focal-dot
+          @select="openTweet"
         />
       </template>
-    </template>
 
-    <!-- User detail -->
-    <template v-else-if="route.page === 'user'">
-      <div v-if="!detailUser" class="xd-empty">User not found</div>
-      <template v-else>
-        <UserDetailCard :user="detailUser" @open-profile="openProfile" />
+      <!-- Tweet detail -->
+      <template v-else-if="route.page === 'tweet'">
+        <div v-if="!detailTweet" class="xd-empty">Tweet not found</div>
+        <template v-else>
+          <TweetDetailCard
+            :tweet="detailTweet"
+            @open-user="openUser"
+            @open-original="openOriginal"
+            @open-media="openMediaUrl"
+          />
+        </template>
       </template>
-    </template>
+
+      <!-- User detail -->
+      <template v-else-if="route.page === 'user'">
+        <div v-if="!detailUser" class="xd-empty">User not found</div>
+        <template v-else>
+          <UserDetailCard :user="detailUser" @open-profile="openProfile" />
+        </template>
+      </template>
+    </div>
+
+    <div class="xd-db-actions">
+      <span class="xd-db-meta">{{ tweetList.length }} tweets</span>
+      <button class="xd-btn xd-btn--sm xd-btn--error" @click="clearDb">Clear</button>
+    </div>
   </div>
 </template>
