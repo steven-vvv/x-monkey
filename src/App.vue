@@ -3,6 +3,7 @@ import { ref, computed, onMounted, onUnmounted } from 'vue';
 import FeatureTab from './pages/FeatureTab.vue';
 import DatabaseTab from './pages/DatabaseTab.vue';
 import SettingsTab from './pages/SettingsTab.vue';
+import ToolsTab from './pages/ToolsTab.vue';
 import {
   activeTab, setActiveTab, currentBreadcrumbs, navigateBreadcrumb,
   type TabId,
@@ -26,6 +27,7 @@ const cfg = getConfig();
 const tabs: { id: TabId; label: string }[] = [
   { id: 'feature', label: 'Feature' },
   { id: 'database', label: 'Database' },
+  { id: 'tools', label: 'Tools' },
   { id: 'settings', label: 'Settings' },
 ];
 
@@ -205,6 +207,7 @@ function onResizePointerDown(e: PointerEvent) {
     <div class="xd-content-scaler" :style="contentScaleStyle">
       <FeatureTab v-if="activeTab === 'feature'" />
       <DatabaseTab v-else-if="activeTab === 'database'" />
+      <ToolsTab v-else-if="activeTab === 'tools'" />
       <SettingsTab v-else-if="activeTab === 'settings'" />
     </div>
     <div class="xd-resize-handle" @pointerdown="onResizePointerDown"></div>

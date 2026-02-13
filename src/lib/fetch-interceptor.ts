@@ -2,6 +2,7 @@ import { GM_log, unsafeWindow } from '$';
 import { parseTweetDetailResponse } from './parser';
 import { upsertTweet, upsertUser, upsertMedia } from './db-service';
 
+// --- Simple notification listeners (for badge count etc.) ---
 type CaptureListener = () => void;
 
 const listeners: Set<CaptureListener> = new Set();
@@ -15,7 +16,38 @@ function notifyListeners() {
   listeners.forEach((fn) => fn());
 }
 
+// --- XHR capture broadcast (fan-out to multiple subscribers) ---
+export interface CapturedXhr {
+  id: string;
+  timestamp: number;
+  method: string;
+  url: string;
+  graphqlId: string;
+  operationName: string;
+  status: number;
+  statusText: string;
+  responseHeaders: string;
+  responseBody: string;
+  responseSize: number;
+}
+
+type XhrCaptureListener = (data: CapturedXhr) => void;
+const xhrCaptureListeners: Set<XhrCaptureListener> = new Set();
+
+export function onXhrCapture(fn: XhrCaptureListener): () => void {
+  xhrCaptureListeners.add(fn);
+  return () => xhrCaptureListeners.delete(fn);
+}
+
+function broadcastXhrCapture(data: CapturedXhr) {
+  xhrCaptureListeners.forEach((fn) => fn(data));
+}
+
+// --- URL patterns ---
+const GRAPHQL_RE = /^https:\/\/x\.com\/i\/api\/graphql\/([^/?]+)\/([^/?]+)/;
 const TWEET_DETAIL_RE = /^https:\/\/x\.com\/i\/api\/graphql\/([^/]+)\/TweetDetail/;
+
+let captureIdCounter = 0;
 
 function extractFocalTweetId(url: string): string | null {
   try {
@@ -29,7 +61,7 @@ function extractFocalTweetId(url: string): string | null {
   return null;
 }
 
-function ingestResponse(url: string, json: unknown): void {
+function ingestTweetDetailResponse(url: string, json: unknown): void {
   const focalId = extractFocalTweetId(url);
   if (focalId) {
     GM_log(`[TweetDetail] focalTweetId: ${focalId}`);
@@ -59,12 +91,13 @@ export function installXhrInterceptor(): void {
   const nativeOpen = XHR.open;
   const nativeSend = XHR.send;
 
-  const trackedUrls = new WeakMap<XMLHttpRequest, string>();
+  const trackedUrls = new WeakMap<XMLHttpRequest, { url: string; method: string }>();
 
   XHR.open = function (this: XMLHttpRequest, ...args: any[]) {
+    const method = String(args[0]).toUpperCase();
     const url = String(args[1]);
-    if (TWEET_DETAIL_RE.test(url)) {
-      trackedUrls.set(this, url);
+    if (GRAPHQL_RE.test(url)) {
+      trackedUrls.set(this, { url, method });
     }
     return nativeOpen.apply(this, args as any);
   };
@@ -73,11 +106,36 @@ export function installXhrInterceptor(): void {
     const tracked = trackedUrls.get(this);
     if (tracked) {
       this.addEventListener('load', function () {
-        if (this.readyState === 4 && this.status === 200) {
-          try {
-            const json = JSON.parse(this.responseText);
-            ingestResponse(tracked, json);
-          } catch { /* ignore */ }
+        if (this.readyState === 4) {
+          const { url, method } = tracked;
+          const match = GRAPHQL_RE.exec(url);
+          if (!match) return;
+
+          const responseBody = this.responseText;
+          const responseHeaders = this.getAllResponseHeaders();
+
+          // Broadcast to all XHR capture listeners
+          broadcastXhrCapture({
+            id: String(++captureIdCounter),
+            timestamp: Date.now(),
+            method,
+            url,
+            graphqlId: match[1],
+            operationName: match[2],
+            status: this.status,
+            statusText: this.statusText,
+            responseHeaders,
+            responseBody,
+            responseSize: responseBody.length,
+          });
+
+          // TweetDetail-specific ingestion
+          if (TWEET_DETAIL_RE.test(url) && this.status === 200) {
+            try {
+              const json = JSON.parse(responseBody);
+              ingestTweetDetailResponse(url, json);
+            } catch { /* ignore */ }
+          }
         }
       });
     }
