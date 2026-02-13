@@ -97,19 +97,7 @@
   overflow-x: auto;
   overflow-y: hidden;
   scrollbar-width: thin;
-}
-
-.xd-appbar-tabs::-webkit-scrollbar {
-  height: 4px;
-}
-
-.xd-appbar-tabs::-webkit-scrollbar-track {
-  background: var(--xd-bg-secondary);
-}
-
-.xd-appbar-tabs::-webkit-scrollbar-thumb {
-  background: var(--xd-border);
-  border-radius: 2px;
+  scrollbar-color: var(--xd-border) var(--xd-bg-secondary);
 }
 
 .xd-breadcrumb-bar {
@@ -223,19 +211,8 @@
   min-height: 0;
   overflow-y: auto;
   padding: 8px;
-}
-
-.xd-body::-webkit-scrollbar {
-  width: 4px;
-}
-
-.xd-body::-webkit-scrollbar-track {
-  background: var(--xd-bg-primary);
-}
-
-.xd-body::-webkit-scrollbar-thumb {
-  background: var(--xd-border);
-  border-radius: 2px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--xd-border) var(--xd-bg-primary);
 }
 
 .xd-empty {

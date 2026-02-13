@@ -172,19 +172,8 @@ const STYLE_TEXT = `
   max-height: 200px;
   overflow-y: auto;
   line-height: 1.4;
-}
-
-.xd-detail-pre::-webkit-scrollbar {
-  width: 4px;
-}
-
-.xd-detail-pre::-webkit-scrollbar-track {
-  background: var(--xd-bg-tertiary);
-}
-
-.xd-detail-pre::-webkit-scrollbar-thumb {
-  background: var(--xd-border);
-  border-radius: 2px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--xd-border) var(--xd-bg-tertiary);
 }
 `;
 
