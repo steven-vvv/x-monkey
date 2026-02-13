@@ -83,13 +83,6 @@ function onNumberInput(key: keyof AppConfig, e: Event) {
 }
 
 const STYLE_TEXT = `
-.xd-settings-wrapper {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  min-height: 0;
-}
-
 .xd-settings-row {
   display: flex;
   align-items: center;
@@ -125,28 +118,13 @@ const STYLE_TEXT = `
   border-color: var(--xd-accent);
 }
 
-.xd-settings-actions {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 6px;
-  padding: 6px 8px;
-  border-top: 1px solid var(--xd-border);
-  flex-shrink: 0;
-}
-
-.xd-settings-actions-left,
-.xd-settings-actions-right {
-  display: flex;
-  gap: 6px;
-}
 `;
 
 useShadowStyle('settings-tab', STYLE_TEXT);
 </script>
 
 <template>
-  <div class="xd-settings-wrapper">
+  <div class="xd-tab-wrapper">
     <div class="xd-body">
       <SettingsSection title="Anchor Position">
         <SettingsNumberPairRow
@@ -194,14 +172,14 @@ useShadowStyle('settings-tab', STYLE_TEXT);
       </SettingsSection>
     </div>
 
-    <div class="xd-settings-actions">
-      <div class="xd-settings-actions-left">
+    <div class="xd-tab-actions">
+      <div class="xd-tab-actions-left">
         <button class="xd-btn xd-btn--sm" @click="resetLayout">Reset Layout</button>
         <button class="xd-btn xd-btn--sm xd-btn--error" @click="resetAllSettings">Reset Settings</button>
       </div>
-      <div class="xd-settings-actions-right">
-        <button class="xd-btn xd-btn--accent" :disabled="!isDirty" @click="save">Save</button>
-        <button class="xd-btn" :disabled="!isDirty" @click="revert">Revert</button>
+      <div class="xd-tab-actions-right">
+        <button class="xd-btn xd-btn--sm xd-btn--accent" :disabled="!isDirty" @click="save">Save</button>
+        <button class="xd-btn xd-btn--sm" :disabled="!isDirty" @click="revert">Revert</button>
       </div>
     </div>
   </div>

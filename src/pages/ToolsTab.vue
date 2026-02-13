@@ -92,33 +92,6 @@ function statusClass(status: number): string {
 }
 
 const STYLE_TEXT = `
-.xd-tools-wrapper {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  min-height: 0;
-}
-
-.xd-tools-actions {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 6px;
-  padding: 6px 8px;
-  border-top: 1px solid var(--xd-border);
-  flex-shrink: 0;
-}
-
-.xd-tools-actions-left {
-  display: flex;
-  gap: 6px;
-}
-
-.xd-tools-meta {
-  font-size: 11px;
-  color: var(--xd-text-secondary);
-}
-
 .xd-tool-card {
   display: flex;
   align-items: center;
@@ -181,25 +154,6 @@ const STYLE_TEXT = `
   margin-bottom: 4px;
 }
 
-.xd-detail-row {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  padding: 2px 0;
-  font-size: 11px;
-}
-
-.xd-detail-label {
-  color: var(--xd-text-secondary);
-  flex-shrink: 0;
-  min-width: 60px;
-}
-
-.xd-detail-value {
-  color: var(--xd-text-primary);
-  word-break: break-all;
-}
-
 .xd-detail-pre {
   font-family: "Cascadia Code", "Fira Code", "Consolas", monospace;
   font-size: 10px;
@@ -233,7 +187,7 @@ useShadowStyle('tools-tab', STYLE_TEXT);
 </script>
 
 <template>
-  <div class="xd-tools-wrapper">
+  <div class="xd-tab-wrapper">
     <!-- Tools list -->
     <template v-if="route.page === 'list'">
       <div class="xd-body">
@@ -269,8 +223,8 @@ useShadowStyle('tools-tab', STYLE_TEXT);
           </div>
         </div>
       </div>
-      <div class="xd-tools-actions">
-        <div class="xd-tools-actions-left">
+      <div class="xd-tab-actions">
+        <div class="xd-tab-actions-left">
           <button
             class="xd-btn xd-btn--sm"
             :class="isCapturing ? 'xd-btn--error' : 'xd-btn--accent'"
@@ -280,7 +234,7 @@ useShadowStyle('tools-tab', STYLE_TEXT);
           </button>
           <button class="xd-btn xd-btn--sm" @click="onClear">Clear</button>
         </div>
-        <span class="xd-tools-meta">{{ captureList.length }} requests</span>
+        <span class="xd-tab-meta">{{ captureList.length }} requests</span>
       </div>
     </template>
 
@@ -351,8 +305,8 @@ useShadowStyle('tools-tab', STYLE_TEXT);
           </section>
         </template>
       </div>
-      <div v-if="detailCapture" class="xd-tools-actions">
-        <span class="xd-tools-meta">{{ detailCapture.operationName }}</span>
+      <div v-if="detailCapture" class="xd-tab-actions">
+        <span class="xd-tab-meta">{{ detailCapture.operationName }}</span>
         <button class="xd-btn xd-btn--sm xd-btn--accent" @click="downloadResponse">Download Response</button>
       </div>
     </template>

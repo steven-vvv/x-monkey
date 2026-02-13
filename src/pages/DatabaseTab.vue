@@ -55,35 +55,13 @@ const detailUser = computed(() => {
   return null;
 });
 
-const STYLE_TEXT = `
-.xd-db-wrapper {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  min-height: 0;
-}
-
-.xd-db-meta {
-  font-size: 11px;
-  color: var(--xd-text-secondary);
-}
-
-.xd-db-actions {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 6px;
-  padding: 6px 8px;
-  border-top: 1px solid var(--xd-border);
-  flex-shrink: 0;
-}
-`;
+const STYLE_TEXT = ``;
 
 useShadowStyle('database-tab', STYLE_TEXT);
 </script>
 
 <template>
-  <div class="xd-db-wrapper">
+  <div class="xd-tab-wrapper">
     <div class="xd-body">
       <!-- List page -->
       <template v-if="route.page === 'list'">
@@ -119,8 +97,8 @@ useShadowStyle('database-tab', STYLE_TEXT);
       </template>
     </div>
 
-    <div class="xd-db-actions">
-      <span class="xd-db-meta">{{ tweetList.length }} tweets</span>
+    <div class="xd-tab-actions">
+      <span class="xd-tab-meta">{{ tweetList.length }} tweets</span>
       <button class="xd-btn xd-btn--sm xd-btn--error" @click="clearDb">Clear</button>
     </div>
   </div>

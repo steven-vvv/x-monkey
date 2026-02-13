@@ -94,6 +94,22 @@
   gap: 0;
   flex: 1;
   min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+}
+
+.xd-appbar-tabs::-webkit-scrollbar {
+  height: 3px;
+}
+
+.xd-appbar-tabs::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.xd-appbar-tabs::-webkit-scrollbar-thumb {
+  background: var(--xd-border);
+  border-radius: 2px;
 }
 
 .xd-breadcrumb-bar {
@@ -323,4 +339,54 @@
   opacity: 0.4;
   cursor: default;
   pointer-events: none;
+}
+
+.xd-tab-wrapper {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.xd-tab-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 6px 8px;
+  border-top: 1px solid var(--xd-border);
+  flex-shrink: 0;
+}
+
+.xd-tab-actions-left,
+.xd-tab-actions-right {
+  display: flex;
+  gap: 6px;
+}
+
+.xd-tab-meta {
+  font-size: 11px;
+  color: var(--xd-text-secondary);
+}
+
+.xd-detail-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+  padding: 2px 0;
+  font-size: 11px;
+}
+
+.xd-detail-label {
+  color: var(--xd-text-secondary);
+  flex-shrink: 0;
+  min-width: 60px;
+}
+
+.xd-detail-value {
+  color: var(--xd-text-primary);
+  word-break: break-all;
+  flex: 1;
+  min-width: 80px;
 }
