@@ -65,11 +65,13 @@ const panelStyle = computed(() => ({
 const contentScaleStyle = computed(() => {
   const scale = cfg.uiScale / 100;
   return {
+    position: 'absolute' as const,
+    left: '0',
+    top: '0',
     transform: `scale(${scale})`,
     transformOrigin: 'top left',
     width: `${100 / scale}%`,
     height: `${100 / scale}%`,
-    overflow: 'hidden',
   };
 });
 
@@ -179,11 +181,13 @@ function onResizePointerDown(e: PointerEvent) {
       </template>
     </div>
     <!-- Content -->
-    <div class="xd-content-scaler" :style="contentScaleStyle">
-      <FeatureTab v-if="activeTab === 'feature'" />
-      <DatabaseTab v-else-if="activeTab === 'database'" />
-      <ToolsTab v-else-if="activeTab === 'tools'" />
-      <SettingsTab v-else-if="activeTab === 'settings'" />
+    <div class="xd-content-scaler">
+      <div class="xd-content-scale-inner" :style="contentScaleStyle">
+        <FeatureTab v-if="activeTab === 'feature'" />
+        <DatabaseTab v-else-if="activeTab === 'database'" />
+        <ToolsTab v-else-if="activeTab === 'tools'" />
+        <SettingsTab v-else-if="activeTab === 'settings'" />
+      </div>
     </div>
     <div class="xd-resize-handle" @pointerdown="onResizePointerDown"></div>
   </div>

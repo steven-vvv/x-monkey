@@ -314,9 +314,15 @@
 .xd-content-scaler {
   flex: 1;
   min-height: 0;
+  position: relative;
+  overflow: hidden;
+  background: var(--xd-bg-primary);
+}
+
+.xd-content-scale-inner {
+  min-height: 0;
   display: flex;
   flex-direction: column;
-  background: var(--xd-bg-primary);
 }
 
 .xd-btn:disabled {
