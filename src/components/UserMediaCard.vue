@@ -15,16 +15,23 @@ const emit = defineEmits<{
 }>();
 
 const text = computed(() => tweetText(props.tweet));
-const gridMedia = computed(() => props.media.slice(0, 4));
+const visibleCount = computed(() => Math.min(props.media.length, 4));
+const gridMedia = computed(() => props.media.slice(0, visibleCount.value));
 const extraCount = computed(() => Math.max(0, props.media.length - 4));
 
-const CARD_H = 88; // px, fixed card inner height
-const GRID_SIZE = CARD_H; // right-side square = card height
+const gridClass = computed(() => {
+  const n = visibleCount.value;
+  if (n <= 1) return 'xd-grid-1';
+  if (n === 2) return 'xd-grid-2';
+  if (n === 3) return 'xd-grid-3';
+  return 'xd-grid-4';
+});
 
 const STYLE_TEXT = `
 .xd-media-card {
   display: flex;
-  height: ${CARD_H}px;
+  height: 96px;
+  box-sizing: border-box;
   padding: 6px;
   border: 1px solid var(--xd-border);
   border-radius: var(--xd-radius);
@@ -63,16 +70,42 @@ const STYLE_TEXT = `
   min-height: 0;
 }
 
-.xd-media-card-right {
-  width: ${GRID_SIZE}px;
-  height: ${GRID_SIZE}px;
+/* --- Grid container: square, height-driven --- */
+.xd-media-card-grid {
   flex-shrink: 0;
+  height: 100%;
+  aspect-ratio: 1;
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  grid-template-rows: 1fr 1fr;
   gap: 2px;
   border-radius: var(--xd-radius);
   overflow: hidden;
+}
+
+/* 1 image: single cell */
+.xd-grid-1 {
+  grid-template-columns: 1fr;
+  grid-template-rows: 1fr;
+}
+
+/* 2 images: side by side tall rectangles */
+.xd-grid-2 {
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr;
+}
+
+/* 3 images: left tall spanning 2 rows, right 2 stacked squares */
+.xd-grid-3 {
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+}
+.xd-grid-3 .xd-media-card-cell:first-child {
+  grid-row: 1 / 3;
+}
+
+/* 4 images: standard 2x2 */
+.xd-grid-4 {
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
 }
 
 .xd-media-card-cell {
@@ -114,9 +147,9 @@ const STYLE_TEXT = `
 }
 
 .xd-media-card-empty {
-  width: ${GRID_SIZE}px;
-  height: ${GRID_SIZE}px;
   flex-shrink: 0;
+  height: 100%;
+  aspect-ratio: 1;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -141,7 +174,7 @@ useShadowStyle('user-media-card', STYLE_TEXT);
       <div v-if="text" class="xd-media-card-text">{{ text }}</div>
     </div>
 
-    <div v-if="gridMedia.length > 0" class="xd-media-card-right">
+    <div v-if="gridMedia.length > 0" class="xd-media-card-grid" :class="gridClass">
       <div
         v-for="(m, i) in gridMedia"
         :key="m.id"
@@ -149,7 +182,7 @@ useShadowStyle('user-media-card', STYLE_TEXT);
       >
         <img :src="m.thumbUrl" loading="lazy" />
         <span v-if="m.type !== 'photo'" class="xd-media-card-cell-badge">{{ m.type === 'video' ? 'VID' : 'GIF' }}</span>
-        <span v-if="i === 3 && extraCount > 0" class="xd-media-card-cell-extra">+{{ extraCount }}</span>
+        <span v-if="i === visibleCount - 1 && extraCount > 0" class="xd-media-card-cell-extra">+{{ extraCount }}</span>
       </div>
     </div>
     <div v-else class="xd-media-card-empty">No media</div>
