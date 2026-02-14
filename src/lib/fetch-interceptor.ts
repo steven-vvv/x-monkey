@@ -2,7 +2,6 @@ import { GM_log, unsafeWindow } from '$';
 import { reactive } from 'vue';
 import { parseTweetDetailResponse, parseUserMediaResponse } from './parser';
 import { upsertTweet, upsertUser, upsertMedia } from './db-service';
-import type { XTweet, XUser, XMedia } from './types';
 
 // --- Simple notification listeners (for badge count etc.) ---
 type CaptureListener = () => void;
@@ -45,19 +44,13 @@ function broadcastXhrCapture(data: CapturedXhr) {
   xhrCaptureListeners.forEach((fn) => fn(data));
 }
 
-// --- UserMedia reactive store ---
+// --- UserMedia reactive store (ordered tweet IDs only; data lives in global db) ---
 interface UserMediaStore {
   tweetIds: string[];
-  tweets: Map<string, XTweet>;
-  users: Map<string, XUser>;
-  media: Map<string, XMedia>;
 }
 
 const userMediaStore = reactive<UserMediaStore>({
   tweetIds: [],
-  tweets: new Map(),
-  users: new Map(),
-  media: new Map(),
 });
 
 let userMediaVersion = reactive({ value: 0 });
@@ -66,29 +59,12 @@ export function getUserMediaTweetIds(): string[] {
   return userMediaStore.tweetIds;
 }
 
-export function getUserMediaTweet(id: string): XTweet | undefined {
-  return userMediaStore.tweets.get(id);
-}
-
-export function getUserMediaUser(id: string): XUser | undefined {
-  return userMediaStore.users.get(id);
-}
-
-export function getUserMediaMedia(tweetId: string): XMedia[] {
-  const tweet = userMediaStore.tweets.get(tweetId);
-  if (!tweet) return [];
-  return tweet.mediaIds.map((id) => userMediaStore.media.get(id)).filter(Boolean) as XMedia[];
-}
-
 export function getUserMediaVersion(): number {
   return userMediaVersion.value;
 }
 
 export function clearUserMediaStore(): void {
   userMediaStore.tweetIds = [];
-  userMediaStore.tweets.clear();
-  userMediaStore.users.clear();
-  userMediaStore.media.clear();
   userMediaVersion.value++;
 }
 
@@ -115,15 +91,17 @@ function ingestUserMediaResponse(json: unknown): void {
   const parsed = parseUserMediaResponse(json);
   if (parsed.tweetIds.length === 0) return;
 
+  // Write to global db first (shared data layer)
   for (const user of parsed.users.values()) {
-    userMediaStore.users.set(user.id, user);
+    upsertUser(user);
   }
   for (const tweet of parsed.tweets.values()) {
-    userMediaStore.tweets.set(tweet.id, tweet);
+    upsertTweet(tweet, false);
   }
   for (const media of parsed.media.values()) {
-    userMediaStore.media.set(media.id, media);
+    upsertMedia(media, false);
   }
+
   // Append new tweet IDs (deduplicated, preserve order)
   const existing = new Set(userMediaStore.tweetIds);
   for (const id of parsed.tweetIds) {

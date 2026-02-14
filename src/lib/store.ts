@@ -92,7 +92,7 @@ export const featureBreadcrumbs = computed<Breadcrumb[]>(() => {
     else if (r.page === 'tweet') label = 'Tweet';
     else if (r.page === 'user') label = 'User';
     else if (r.page === 'user-media') label = 'Media';
-    else if (r.page === 'user-media-tweet') label = 'Post';
+    else if (r.page === 'user-media-tweet') label = 'Tweet';
     else if (r.page === 'user-media-user') label = 'User';
     else label = 'Feature';
     return { label, index: i, active: i === nav.featureIndex };
