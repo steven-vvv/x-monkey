@@ -156,40 +156,42 @@ function onResizePointerDown(e: PointerEvent) {
     class="xd-panel"
     :style="panelStyle"
   >
-    <!-- Row 1: AppBar with tabs + collapse -->
-    <div class="xd-appbar" @pointerdown="startDrag">
-      <div class="xd-appbar-tabs">
-        <button
-          v-for="tab in tabs"
-          :key="tab.id"
-          class="xd-tab"
-          :class="{ 'xd-tab--active': activeTab === tab.id }"
-          @click.stop="setActiveTab(tab.id)"
-        >{{ tab.label }}</button>
+    <div class="xd-panel-scale-viewport">
+      <div class="xd-panel-scale-inner" :style="contentScaleStyle">
+        <!-- Row 1: AppBar with tabs + collapse -->
+        <div class="xd-appbar" @pointerdown="startDrag">
+          <div class="xd-appbar-tabs">
+            <button
+              v-for="tab in tabs"
+              :key="tab.id"
+              class="xd-tab"
+              :class="{ 'xd-tab--active': activeTab === tab.id }"
+              @click.stop="setActiveTab(tab.id)"
+            >{{ tab.label }}</button>
+          </div>
+          <button class="xd-btn xd-btn--sm" @click.stop="expanded = false">Collapse</button>
+        </div>
+        <!-- Row 2: Breadcrumb -->
+        <div class="xd-breadcrumb-bar">
+          <template v-for="(crumb, i) in currentBreadcrumbs" :key="crumb.index">
+            <span v-if="i > 0" class="xd-breadcrumb-sep">/</span>
+            <span
+              class="xd-breadcrumb"
+              :class="{ 'xd-breadcrumb--active': crumb.active }"
+              @click="navigateBreadcrumb(crumb.index)"
+            >{{ crumb.label }}</span>
+          </template>
+        </div>
+        <!-- Content -->
+        <div class="xd-content-scaler">
+          <FeatureTab v-if="activeTab === 'feature'" />
+          <DatabaseTab v-else-if="activeTab === 'database'" />
+          <ToolsTab v-else-if="activeTab === 'tools'" />
+          <SettingsTab v-else-if="activeTab === 'settings'" />
+        </div>
+        <div class="xd-resize-handle" @pointerdown="onResizePointerDown"></div>
       </div>
-      <button class="xd-btn xd-btn--sm" @click.stop="expanded = false">Collapse</button>
     </div>
-    <!-- Row 2: Breadcrumb -->
-    <div class="xd-breadcrumb-bar">
-      <template v-for="(crumb, i) in currentBreadcrumbs" :key="crumb.index">
-        <span v-if="i > 0" class="xd-breadcrumb-sep">/</span>
-        <span
-          class="xd-breadcrumb"
-          :class="{ 'xd-breadcrumb--active': crumb.active }"
-          @click="navigateBreadcrumb(crumb.index)"
-        >{{ crumb.label }}</span>
-      </template>
-    </div>
-    <!-- Content -->
-    <div class="xd-content-scaler">
-      <div class="xd-content-scale-inner" :style="contentScaleStyle">
-        <FeatureTab v-if="activeTab === 'feature'" />
-        <DatabaseTab v-else-if="activeTab === 'database'" />
-        <ToolsTab v-else-if="activeTab === 'tools'" />
-        <SettingsTab v-else-if="activeTab === 'settings'" />
-      </div>
-    </div>
-    <div class="xd-resize-handle" @pointerdown="onResizePointerDown"></div>
   </div>
 </template>
 
