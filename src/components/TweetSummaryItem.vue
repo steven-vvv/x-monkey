@@ -2,7 +2,7 @@
 import { computed } from 'vue';
 import type { DbTweet } from '../lib/db-service';
 import { getDbUser } from '../lib/db-service';
-import { tweetText } from '../lib/view-format';
+import { tweetText, formatTweetDate } from '../lib/view-format';
 
 const props = withDefaults(defineProps<{
   tweet: DbTweet;
@@ -19,6 +19,7 @@ const emit = defineEmits<{
 
 const author = computed(() => getDbUser(props.tweet.authorId));
 const text = computed(() => tweetText(props.tweet) || '(no text)');
+const dateText = computed(() => formatTweetDate(props.tweet.createdAt));
 </script>
 
 <template>
@@ -32,6 +33,7 @@ const text = computed(() => tweetText(props.tweet) || '(no text)');
         <span v-if="showFocalDot && tweet._focal" class="xd-focal-dot"></span>
         <span class="xd-author-name">{{ author?.name ?? '?' }}</span>
         <span class="xd-author-handle">@{{ author?.screenName ?? '?' }}</span>
+        <span class="xd-post-date">{{ dateText }}</span>
       </div>
       <div class="xd-list-item-meta xd-text-ellipsis">{{ text }}</div>
     </div>

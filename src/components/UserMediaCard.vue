@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import type { XTweet, XMedia, XUser } from '../lib/types';
-import { tweetText } from '../lib/view-format';
+import { tweetText, formatTweetDate } from '../lib/view-format';
 
 const props = defineProps<{
   tweet: XTweet;
@@ -17,6 +17,7 @@ const text = computed(() => tweetText(props.tweet));
 const visibleCount = computed(() => Math.min(props.media.length, 4));
 const gridMedia = computed(() => props.media.slice(0, visibleCount.value));
 const extraCount = computed(() => Math.max(0, props.media.length - 4));
+const dateText = computed(() => formatTweetDate(props.tweet.createdAt));
 
 const gridClass = computed(() => {
   const n = visibleCount.value;
@@ -33,6 +34,7 @@ const gridClass = computed(() => {
       <div class="xd-list-item-title">
         <span class="xd-author-name">{{ author?.name ?? '?' }}</span>
         <span class="xd-author-handle">@{{ author?.screenName ?? '?' }}</span>
+        <span class="xd-post-date">{{ dateText }}</span>
       </div>
       <div v-if="text" class="xd-media-card-text">{{ text }}</div>
     </div>

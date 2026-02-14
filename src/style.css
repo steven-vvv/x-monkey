@@ -319,6 +319,12 @@
   margin-left: 4px;
 }
 
+.xd-post-date {
+  font-size: 10px;
+  color: var(--xd-text-muted);
+  margin-left: 6px;
+}
+
 .xd-text-ellipsis {
   white-space: nowrap;
   overflow: hidden;

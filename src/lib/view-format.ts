@@ -9,6 +9,15 @@ export function tweetText(tweet: Pick<XTweet, 'fullText'>): string {
   return tweet.fullText.replace(/https:\/\/t\.co\/\S+/g, '').trim();
 }
 
+export function formatTweetDate(createdAt: string): string {
+  const d = new Date(createdAt);
+  if (Number.isNaN(d.getTime())) return createdAt;
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 export function formatCount(n: number): string {
   if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
   if (n >= 1_000) return (n / 1_000).toFixed(1) + 'K';
