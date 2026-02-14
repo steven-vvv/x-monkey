@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue';
-import type { XTweet, XMedia } from '../lib/types';
-import type { XUser } from '../lib/types';
+import type { XTweet, XMedia, XUser } from '../lib/types';
 import { tweetText } from '../lib/view-format';
 import { useShadowStyle } from '../lib/use-shadow-style';
 
@@ -16,15 +15,24 @@ const emit = defineEmits<{
 }>();
 
 const text = computed(() => tweetText(props.tweet));
+const gridMedia = computed(() => props.media.slice(0, 4));
+const extraCount = computed(() => Math.max(0, props.media.length - 4));
+
+const CARD_H = 88; // px, fixed card inner height
+const GRID_SIZE = CARD_H; // right-side square = card height
 
 const STYLE_TEXT = `
 .xd-media-card {
-  padding: 8px;
+  display: flex;
+  height: ${CARD_H}px;
+  padding: 6px;
   border: 1px solid var(--xd-border);
   border-radius: var(--xd-radius);
   background: var(--xd-bg-secondary);
-  margin-bottom: 6px;
+  margin-bottom: 4px;
   cursor: pointer;
+  gap: 6px;
+  overflow: hidden;
 }
 
 .xd-media-card:hover {
@@ -35,57 +43,88 @@ const STYLE_TEXT = `
   margin-bottom: 0;
 }
 
+.xd-media-card-left {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
 .xd-media-card-text {
   font-size: 11px;
   color: var(--xd-text-secondary);
-  line-height: 1.4;
+  line-height: 1.35;
   white-space: pre-wrap;
   word-break: break-word;
-  margin: 4px 0 6px;
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
+  margin-top: 3px;
   overflow: hidden;
+  flex: 1;
+  min-height: 0;
 }
 
-.xd-media-card-thumbs {
-  display: flex;
-  gap: 4px;
-}
-
-.xd-media-card-thumb {
-  position: relative;
-  width: 64px;
-  height: 64px;
+.xd-media-card-right {
+  width: ${GRID_SIZE}px;
+  height: ${GRID_SIZE}px;
+  flex-shrink: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+  gap: 2px;
   border-radius: var(--xd-radius);
   overflow: hidden;
-  border: 1px solid var(--xd-border);
-  flex-shrink: 0;
 }
 
-.xd-media-card-thumb img {
+.xd-media-card-cell {
+  position: relative;
+  overflow: hidden;
+  background: var(--xd-bg-primary);
+}
+
+.xd-media-card-cell img {
   width: 100%;
   height: 100%;
   object-fit: cover;
   display: block;
 }
 
-.xd-media-card-thumb-badge {
+.xd-media-card-cell-badge {
   position: absolute;
-  bottom: 2px;
-  right: 2px;
-  padding: 1px 3px;
+  bottom: 1px;
+  right: 1px;
+  padding: 0 2px;
   border-radius: 2px;
   background: rgba(0, 0, 0, 0.7);
   color: #fff;
-  font-size: 8px;
+  font-size: 7px;
   font-weight: 600;
+  line-height: 1.4;
+}
+
+.xd-media-card-cell-extra {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.45);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
 }
 
 .xd-media-card-empty {
+  width: ${GRID_SIZE}px;
+  height: ${GRID_SIZE}px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   font-size: 10px;
   color: var(--xd-text-muted);
   font-style: italic;
+  border: 1px dashed var(--xd-border);
+  border-radius: var(--xd-radius);
 }
 `;
 
@@ -94,21 +133,23 @@ useShadowStyle('user-media-card', STYLE_TEXT);
 
 <template>
   <div class="xd-media-card" @click="emit('select', tweet.id)">
-    <div class="xd-list-item-title">
-      <span class="xd-author-name">{{ author?.name ?? '?' }}</span>
-      <span class="xd-author-handle">@{{ author?.screenName ?? '?' }}</span>
+    <div class="xd-media-card-left">
+      <div class="xd-list-item-title">
+        <span class="xd-author-name">{{ author?.name ?? '?' }}</span>
+        <span class="xd-author-handle">@{{ author?.screenName ?? '?' }}</span>
+      </div>
+      <div v-if="text" class="xd-media-card-text">{{ text }}</div>
     </div>
 
-    <div v-if="text" class="xd-media-card-text">{{ text }}</div>
-
-    <div v-if="media.length > 0" class="xd-media-card-thumbs">
+    <div v-if="gridMedia.length > 0" class="xd-media-card-right">
       <div
-        v-for="m in media"
+        v-for="(m, i) in gridMedia"
         :key="m.id"
-        class="xd-media-card-thumb"
+        class="xd-media-card-cell"
       >
         <img :src="m.thumbUrl" loading="lazy" />
-        <span v-if="m.type !== 'photo'" class="xd-media-card-thumb-badge">{{ m.type === 'video' ? 'VID' : 'GIF' }}</span>
+        <span v-if="m.type !== 'photo'" class="xd-media-card-cell-badge">{{ m.type === 'video' ? 'VID' : 'GIF' }}</span>
+        <span v-if="i === 3 && extraCount > 0" class="xd-media-card-cell-extra">+{{ extraCount }}</span>
       </div>
     </div>
     <div v-else class="xd-media-card-empty">No media</div>
