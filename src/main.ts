@@ -1,4 +1,4 @@
-import { installXhrInterceptor } from './lib/fetch-interceptor';
+import { installXhrInterceptor, clearUserMediaStore } from './lib/fetch-interceptor';
 import { initConfig, getConfig, resetLayout } from './lib/config-service';
 import { initTheme } from './lib/theme-service';
 import { currentUrl, syncFeatureRoute } from './lib/store';
@@ -86,6 +86,14 @@ async function mount() {
           GM_log('[Auto Clear] Detected tweet change, clearing database');
           clearDb();
         }
+      }
+
+      // Clear UserMedia store when navigating away from media page or to a different user
+      const prevMedia = /\/([^/]+)\/media/.exec(prevUrl)?.[1];
+      const newMedia = /\/([^/]+)\/media/.exec(info.url)?.[1];
+      if (prevMedia && prevMedia !== newMedia) {
+        GM_log('[Auto Clear] Detected media page change, clearing UserMedia store');
+        clearUserMediaStore();
       }
     });
     GM_log('[URL Change Listener] Installed successfully');

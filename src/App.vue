@@ -8,7 +8,7 @@ import {
   activeTab, setActiveTab, currentBreadcrumbs, navigateBreadcrumb,
   type TabId,
 } from './lib/store';
-import { getConfig, clampAnchor, updateConfig } from './lib/config-service';
+import { getConfig, clampAnchor, updateConfig, pausePersistence, resumePersistence } from './lib/config-service';
 import { getTweetCount } from './lib/db-service';
 import { onCapture } from './lib/fetch-interceptor';
 import { unsafeWindow } from '$';
@@ -88,6 +88,7 @@ function startDrag(e: PointerEvent) {
   dragStartY = e.clientY;
   dragAnchorStartX = cfg.anchorX;
   dragAnchorStartY = cfg.anchorY;
+  pausePersistence();
   const onMove = (ev: PointerEvent) => {
     updateConfig({
       anchorX: dragAnchorStartX + ev.clientX - dragStartX,
@@ -98,6 +99,7 @@ function startDrag(e: PointerEvent) {
   const onUp = () => {
     document.removeEventListener('pointermove', onMove, true);
     document.removeEventListener('pointerup', onUp, true);
+    resumePersistence();
   };
   document.addEventListener('pointermove', onMove, true);
   document.addEventListener('pointerup', onUp, true);
@@ -125,6 +127,7 @@ function onResizePointerDown(e: PointerEvent) {
   const startY = e.clientY;
   const startW = cfg.panelWidth;
   const startH = cfg.panelHeight;
+  pausePersistence();
   const onMove = (ev: PointerEvent) => {
     updateConfig({
       panelWidth: Math.max(MIN_W, startW + ev.clientX - startX),
@@ -134,6 +137,7 @@ function onResizePointerDown(e: PointerEvent) {
   const onUp = () => {
     document.removeEventListener('pointermove', onMove, true);
     document.removeEventListener('pointerup', onUp, true);
+    resumePersistence();
   };
   document.addEventListener('pointermove', onMove, true);
   document.addEventListener('pointerup', onUp, true);

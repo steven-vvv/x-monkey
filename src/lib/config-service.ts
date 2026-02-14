@@ -30,6 +30,7 @@ const config = reactive<AppConfig>({ ...DEFAULT_CONFIG });
 
 let initialized = false;
 let listenerId: GmValueListenerId | undefined;
+let persistencePaused = false;
 
 export async function initConfig(): Promise<void> {
   if (initialized) return;
@@ -41,7 +42,9 @@ export async function initConfig(): Promise<void> {
   watch(
     () => ({ ...config }),
     (val) => {
-      GM_setValue(CONFIG_KEY, val);
+      if (!persistencePaused) {
+        GM_setValue(CONFIG_KEY, val);
+      }
     },
     { deep: true },
   );
@@ -50,6 +53,7 @@ export async function initConfig(): Promise<void> {
     CONFIG_KEY,
     (_name: string, _oldVal: unknown, newVal: unknown, remote?: boolean) => {
       if (!remote) return;
+      if (persistencePaused) return;
       if (newVal && typeof newVal === 'object') {
         Object.assign(config, DEFAULT_CONFIG, newVal);
       }
@@ -80,6 +84,15 @@ export function clampAnchor(vw: number, vh: number): void {
 export function clampDimensions(): void {
   config.panelWidth = Math.max(280, Math.round(config.panelWidth));
   config.panelHeight = Math.max(200, Math.round(config.panelHeight));
+}
+
+export function pausePersistence(): void {
+  persistencePaused = true;
+}
+
+export function resumePersistence(): void {
+  persistencePaused = false;
+  GM_setValue(CONFIG_KEY, { ...config });
 }
 
 export function resetLayout(): void {

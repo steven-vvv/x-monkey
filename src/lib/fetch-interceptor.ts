@@ -1,5 +1,6 @@
 import { GM_log, unsafeWindow } from '$';
-import { parseTweetDetailResponse } from './parser';
+import { reactive } from 'vue';
+import { parseTweetDetailResponse, parseUserMediaResponse } from './parser';
 import { upsertTweet, upsertUser, upsertMedia } from './db-service';
 
 // --- Simple notification listeners (for badge count etc.) ---
@@ -43,9 +44,34 @@ function broadcastXhrCapture(data: CapturedXhr) {
   xhrCaptureListeners.forEach((fn) => fn(data));
 }
 
+// --- UserMedia reactive store (ordered tweet IDs only; data lives in global db) ---
+interface UserMediaStore {
+  tweetIds: string[];
+}
+
+const userMediaStore = reactive<UserMediaStore>({
+  tweetIds: [],
+});
+
+let userMediaVersion = reactive({ value: 0 });
+
+export function getUserMediaTweetIds(): string[] {
+  return userMediaStore.tweetIds;
+}
+
+export function getUserMediaVersion(): number {
+  return userMediaVersion.value;
+}
+
+export function clearUserMediaStore(): void {
+  userMediaStore.tweetIds = [];
+  userMediaVersion.value++;
+}
+
 // --- URL patterns ---
 const GRAPHQL_RE = /^https:\/\/x\.com\/i\/api\/graphql\/([^/?]+)\/([^/?]+)/;
 const TWEET_DETAIL_RE = /^https:\/\/x\.com\/i\/api\/graphql\/([^/]+)\/TweetDetail/;
+const USER_MEDIA_RE = /^https:\/\/x\.com\/i\/api\/graphql\/([^/]+)\/UserMedia/;
 
 let captureIdCounter = 0;
 
@@ -59,6 +85,34 @@ function extractFocalTweetId(url: string): string | null {
     }
   } catch { /* ignore */ }
   return null;
+}
+
+function ingestUserMediaResponse(json: unknown): void {
+  const parsed = parseUserMediaResponse(json);
+  if (parsed.tweetIds.length === 0) return;
+
+  // Write to global db first (shared data layer)
+  for (const user of parsed.users.values()) {
+    upsertUser(user);
+  }
+  for (const tweet of parsed.tweets.values()) {
+    upsertTweet(tweet, false);
+  }
+  for (const media of parsed.media.values()) {
+    upsertMedia(media, false);
+  }
+
+  // Append new tweet IDs (deduplicated, preserve order)
+  const existing = new Set(userMediaStore.tweetIds);
+  for (const id of parsed.tweetIds) {
+    if (!existing.has(id)) {
+      userMediaStore.tweetIds.push(id);
+      existing.add(id);
+    }
+  }
+
+  userMediaVersion.value++;
+  GM_log(`[UserMedia] Ingested ${parsed.tweetIds.length} tweets (total: ${userMediaStore.tweetIds.length})`);
 }
 
 function ingestTweetDetailResponse(url: string, json: unknown): void {
@@ -129,12 +183,22 @@ export function installXhrInterceptor(): void {
             responseSize: responseBody.length,
           });
 
-          // TweetDetail-specific ingestion
-          if (TWEET_DETAIL_RE.test(url) && this.status === 200) {
-            try {
-              const json = JSON.parse(responseBody);
-              ingestTweetDetailResponse(url, json);
-            } catch { /* ignore */ }
+          if (this.status === 200) {
+            // TweetDetail-specific ingestion
+            if (TWEET_DETAIL_RE.test(url)) {
+              try {
+                const json = JSON.parse(responseBody);
+                ingestTweetDetailResponse(url, json);
+              } catch { /* ignore */ }
+            }
+
+            // UserMedia-specific ingestion
+            if (USER_MEDIA_RE.test(url)) {
+              try {
+                const json = JSON.parse(responseBody);
+                ingestUserMediaResponse(json);
+              } catch { /* ignore */ }
+            }
           }
         }
       });
