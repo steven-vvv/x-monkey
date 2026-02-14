@@ -7,6 +7,9 @@ export type FeatureRoute =
   | { page: 'status'; tweetId: string }
   | { page: 'tweet'; tweetId: string }
   | { page: 'user'; userId: string }
+  | { page: 'user-media'; username: string }
+  | { page: 'user-media-tweet'; tweetId: string }
+  | { page: 'user-media-user'; userId: string }
   | { page: 'none' };
 
 export type DbRoute =
@@ -48,16 +51,25 @@ const nav = reactive<NavState>({
 export const currentUrl = ref(unsafeWindow.location.href);
 
 const STATUS_RE = /^https:\/\/x\.com\/([^/]+)\/status\/(\d+)/;
+const USER_MEDIA_RE = /^https:\/\/x\.com\/([^/]+)\/media(?:[?#]|$)/;
 
 export function getStatusTweetId(): string | null {
   const m = STATUS_RE.exec(currentUrl.value);
   return m ? m[2] : null;
 }
 
+export function getUserMediaUsername(): string | null {
+  const m = USER_MEDIA_RE.exec(currentUrl.value);
+  return m ? m[1] : null;
+}
+
 export function syncFeatureRoute(): void {
   const tweetId = getStatusTweetId();
+  const mediaUser = getUserMediaUsername();
   if (tweetId) {
     nav.featureStack = [{ page: 'status', tweetId }];
+  } else if (mediaUser) {
+    nav.featureStack = [{ page: 'user-media', username: mediaUser }];
   } else {
     nav.featureStack = [{ page: 'none' }];
   }
@@ -79,6 +91,9 @@ export const featureBreadcrumbs = computed<Breadcrumb[]>(() => {
     if (r.page === 'status') label = 'Status';
     else if (r.page === 'tweet') label = 'Tweet';
     else if (r.page === 'user') label = 'User';
+    else if (r.page === 'user-media') label = 'Media';
+    else if (r.page === 'user-media-tweet') label = 'Post';
+    else if (r.page === 'user-media-user') label = 'User';
     else label = 'Feature';
     return { label, index: i, active: i === nav.featureIndex };
   });

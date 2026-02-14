@@ -3,11 +3,16 @@ import { computed } from 'vue';
 import { featureRoute, featureNavigateTo } from '../lib/store';
 import { getDbTweet, getDbUser, getParentChain, getReplies, dbVersion } from '../lib/db-service';
 import type { DbTweet } from '../lib/db-service';
+import {
+  getUserMediaTweetIds, getUserMediaTweet, getUserMediaUser,
+  getUserMediaMedia, getUserMediaVersion,
+} from '../lib/fetch-interceptor';
 import { useShadowStyle } from '../lib/use-shadow-style';
 import { GM_openInTab } from '$';
 import TweetSummaryItem from '../components/TweetSummaryItem.vue';
 import TweetDetailCard from '../components/TweetDetailCard.vue';
 import UserDetailCard from '../components/UserDetailCard.vue';
+import UserMediaCard from '../components/UserMediaCard.vue';
 
 const route = featureRoute;
 
@@ -48,6 +53,71 @@ function openMediaUrl(url: string) {
 
 function openProfile(userId: string) {
   const u = getDbUser(userId);
+  if (u) GM_openInTab(`https://x.com/${u.screenName}`, { active: true });
+}
+
+// --- UserMedia helpers ---
+const umVersion = computed(() => getUserMediaVersion());
+
+const umTweetList = computed(() => {
+  void umVersion.value;
+  return getUserMediaTweetIds().map((id) => {
+    const tweet = getUserMediaTweet(id);
+    if (!tweet) return null;
+    const author = getUserMediaUser(tweet.authorId);
+    const media = getUserMediaMedia(id);
+    return { tweet, author, media };
+  }).filter(Boolean) as { tweet: import('../lib/types').XTweet; author: import('../lib/types').XUser | undefined; media: import('../lib/types').XMedia[] }[];
+});
+
+function openUserMediaTweet(id: string) {
+  featureNavigateTo({ page: 'user-media-tweet', tweetId: id });
+}
+
+function openUserMediaUser(id: string) {
+  featureNavigateTo({ page: 'user-media-user', userId: id });
+}
+
+// UserMedia tweet detail computeds
+const umDetailTweet = computed(() => {
+  void umVersion.value;
+  if (route.value.page === 'user-media-tweet') {
+    const id = route.value.tweetId;
+    const tweet = getUserMediaTweet(id);
+    if (!tweet) return null;
+    return tweet;
+  }
+  return null;
+});
+
+const umDetailAuthor = computed(() => {
+  void umVersion.value;
+  if (!umDetailTweet.value) return null;
+  return getUserMediaUser(umDetailTweet.value.authorId) ?? null;
+});
+
+const umDetailMedia = computed(() => {
+  void umVersion.value;
+  if (!umDetailTweet.value) return [];
+  return getUserMediaMedia(umDetailTweet.value.id);
+});
+
+// UserMedia user detail
+const umDetailUser = computed(() => {
+  void umVersion.value;
+  if (route.value.page === 'user-media-user') {
+    return getUserMediaUser(route.value.userId) ?? null;
+  }
+  return null;
+});
+
+function openUmOriginal(tweet: import('../lib/types').XTweet) {
+  const u = getUserMediaUser(tweet.authorId);
+  if (u) GM_openInTab(`https://x.com/${u.screenName}/status/${tweet.id}`, { active: true });
+}
+
+function openUmProfile(userId: string) {
+  const u = getUserMediaUser(userId);
   if (u) GM_openInTab(`https://x.com/${u.screenName}`, { active: true });
 }
 
@@ -145,6 +215,56 @@ useShadowStyle('feature-tab', STYLE_TEXT);
       <div v-if="!detailUser" class="xd-empty">User not found</div>
       <template v-else>
         <UserDetailCard :user="detailUser" @open-profile="openProfile" />
+      </template>
+    </template>
+
+    <!-- UserMedia: media tweet list (level 1) -->
+    <template v-else-if="route.page === 'user-media'">
+      <div v-if="umTweetList.length === 0" class="xd-empty">Waiting for media data...</div>
+      <UserMediaCard
+        v-for="item in umTweetList"
+        :key="item.tweet.id"
+        :tweet="item.tweet"
+        :author="item.author"
+        :media="item.media"
+        @select="openUserMediaTweet"
+      />
+    </template>
+
+    <!-- UserMedia: tweet detail (level 2) -->
+    <template v-else-if="route.page === 'user-media-tweet'">
+      <div v-if="!umDetailTweet" class="xd-empty">Tweet not found</div>
+      <template v-else>
+        <div class="xd-detail-author xd-list-item--clickable" @click="openUserMediaUser(umDetailTweet.authorId)">
+          <span class="xd-author-name">{{ umDetailAuthor?.name ?? '?' }}</span>
+          <span class="xd-author-handle">@{{ umDetailAuthor?.screenName ?? '?' }}</span>
+        </div>
+
+        <div v-if="umDetailTweet.fullText" class="xd-detail-text">{{ umDetailTweet.fullText }}</div>
+
+        <div v-if="umDetailMedia.length > 0" class="xd-detail-media">
+          <div
+            v-for="m in umDetailMedia"
+            :key="m.id"
+            class="xd-thumb"
+            @click="openMediaUrl(m.sourceUrl)"
+          >
+            <img :src="m.thumbUrl" loading="lazy" />
+            <span v-if="m.type !== 'photo'" class="xd-thumb-badge">{{ m.type === 'video' ? 'VID' : 'GIF' }}</span>
+          </div>
+        </div>
+
+        <div class="xd-detail-actions">
+          <button class="xd-btn xd-btn--accent" @click="openUmOriginal(umDetailTweet)">Open Original</button>
+        </div>
+      </template>
+    </template>
+
+    <!-- UserMedia: user detail (level 3) -->
+    <template v-else-if="route.page === 'user-media-user'">
+      <div v-if="!umDetailUser" class="xd-empty">User not found</div>
+      <template v-else>
+        <UserDetailCard :user="umDetailUser" @open-profile="openUmProfile" />
       </template>
     </template>
   </div>

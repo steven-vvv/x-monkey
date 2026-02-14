@@ -240,6 +240,55 @@ function walkEntry(entry: any, ctx: ParsedResponse) {
   }
 }
 
+export interface UserMediaParsedResponse extends ParsedResponse {
+  /** Tweet IDs in timeline display order (preserves server ordering). */
+  tweetIds: string[];
+}
+
+function walkModuleItem(item: any, ctx: ParsedResponse, orderedIds: string[]) {
+  const tweetResult = item?.item?.itemContent?.tweet_results?.result;
+  if (tweetResult) {
+    const tweet = parseTweet(tweetResult, ctx);
+    if (tweet) orderedIds.push(tweet.id);
+  }
+}
+
+export function parseUserMediaResponse(json: unknown): UserMediaParsedResponse {
+  const ctx: UserMediaParsedResponse = {
+    users: new Map(),
+    tweets: new Map(),
+    media: new Map(),
+    tweetIds: [],
+  };
+
+  if (!json || typeof json !== 'object') return ctx;
+
+  const instructions = (json as any)?.data?.user?.result?.timeline?.timeline?.instructions;
+  if (!Array.isArray(instructions)) return ctx;
+
+  for (const instruction of instructions) {
+    // Subsequent page loads: tweets arrive via TimelineAddToModule
+    if (instruction.type === 'TimelineAddToModule' && Array.isArray(instruction.moduleItems)) {
+      for (const item of instruction.moduleItems) {
+        walkModuleItem(item, ctx, ctx.tweetIds);
+      }
+    }
+
+    // Initial page load: tweets inside TimelineAddEntries → TimelineTimelineModule
+    if (instruction.type === 'TimelineAddEntries' && Array.isArray(instruction.entries)) {
+      for (const entry of instruction.entries) {
+        if (entry.content?.entryType === 'TimelineTimelineModule' && Array.isArray(entry.content.items)) {
+          for (const item of entry.content.items) {
+            walkModuleItem(item, ctx, ctx.tweetIds);
+          }
+        }
+      }
+    }
+  }
+
+  return ctx;
+}
+
 export function parseTweetDetailResponse(json: unknown): ParsedResponse {
   const ctx: ParsedResponse = {
     users: new Map(),

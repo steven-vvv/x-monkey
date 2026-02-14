@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { computed } from 'vue';
-import type { DbUser } from '../lib/db-service';
+import type { XUser } from '../lib/types';
 import { avatarFull, toUserStats } from '../lib/view-format';
 import { useShadowStyle } from '../lib/use-shadow-style';
 import StatGrid from './StatGrid.vue';
 
-const props = defineProps<{ user: DbUser }>();
+const props = defineProps<{ user: XUser }>();
 
 const emit = defineEmits<{
   (e: 'open-profile', userId: string): void;
