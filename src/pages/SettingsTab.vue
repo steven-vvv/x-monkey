@@ -4,7 +4,6 @@ import {
   getConfig, updateConfig, clampAnchor, clampDimensions,
   DEFAULT_CONFIG, type AppConfig, type ThemeMode,
 } from '../lib/config-service';
-import { useShadowStyle } from '../lib/use-shadow-style';
 import { unsafeWindow } from '$';
 import SettingsSection from '../components/SettingsSection.vue';
 import SettingsNumberPairRow from '../components/SettingsNumberPairRow.vue';
@@ -81,46 +80,6 @@ function onNumberInput(key: keyof AppConfig, e: Event) {
     setDraft(key, n as any);
   }
 }
-
-const STYLE_TEXT = `
-.xd-settings-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.xd-settings-check-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 11px;
-  color: var(--xd-text-primary);
-  cursor: pointer;
-}
-
-.xd-settings-check-row input[type="checkbox"] {
-  accent-color: var(--xd-accent);
-}
-
-.xd-settings-select {
-  padding: 3px 6px;
-  border: 1px solid var(--xd-border);
-  border-radius: var(--xd-radius);
-  background: var(--xd-bg-tertiary);
-  color: var(--xd-text-primary);
-  font-size: 11px;
-  font-family: var(--xd-font);
-  outline: none;
-  cursor: pointer;
-}
-
-.xd-settings-select:focus {
-  border-color: var(--xd-accent);
-}
-
-`;
-
-useShadowStyle('settings-tab', STYLE_TEXT);
 </script>
 
 <template>
@@ -184,3 +143,34 @@ useShadowStyle('settings-tab', STYLE_TEXT);
     </div>
   </div>
 </template>
+
+<style scoped>
+.xd-settings-check-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--xd-text-primary);
+  cursor: pointer;
+}
+
+.xd-settings-check-row input[type="checkbox"] {
+  accent-color: var(--xd-accent);
+}
+
+.xd-settings-select {
+  padding: 3px 6px;
+  border: 1px solid var(--xd-border);
+  border-radius: var(--xd-radius);
+  background: var(--xd-bg-tertiary);
+  color: var(--xd-text-primary);
+  font-size: 11px;
+  font-family: var(--xd-font);
+  outline: none;
+  cursor: pointer;
+}
+
+.xd-settings-select:focus {
+  border-color: var(--xd-accent);
+}
+</style>

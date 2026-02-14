@@ -2,7 +2,6 @@
 import { computed } from 'vue';
 import type { DbUser } from '../lib/db-service';
 import { avatarFull, toUserStats } from '../lib/view-format';
-import { useShadowStyle } from '../lib/use-shadow-style';
 import StatGrid from './StatGrid.vue';
 
 const props = defineProps<{ user: DbUser }>();
@@ -12,8 +11,30 @@ const emit = defineEmits<{
 }>();
 
 const stats = computed(() => toUserStats(props.user));
+</script>
 
-const STYLE_TEXT = `
+<template>
+  <div v-if="user.bannerUrl" class="xd-user-banner">
+    <img :src="user.bannerUrl + '/600x200'" loading="lazy" />
+  </div>
+  <div class="xd-user-avatar-row">
+    <img class="xd-user-avatar" :src="avatarFull(user.avatarUrl)" loading="lazy" />
+    <div class="xd-user-names">
+      <div class="xd-author-name">{{ user.name }}</div>
+      <div class="xd-author-handle">@{{ user.screenName }}</div>
+    </div>
+  </div>
+  <div v-if="user.description" class="xd-user-bio">{{ user.description }}</div>
+  <div v-if="user.location" class="xd-user-location">{{ user.location }}</div>
+
+  <StatGrid :stats="stats" />
+
+  <div class="xd-detail-actions">
+    <button class="xd-btn xd-btn--accent" @click="emit('open-profile', user.id)">Open Profile</button>
+  </div>
+</template>
+
+<style scoped>
 .xd-user-banner {
   border-radius: var(--xd-radius);
   overflow: hidden;
@@ -59,32 +80,4 @@ const STYLE_TEXT = `
   color: var(--xd-text-muted);
   margin-bottom: 8px;
 }
-
-.xd-detail-actions {
-  padding: 4px 0;
-}
-`;
-
-useShadowStyle('user-detail-card', STYLE_TEXT);
-</script>
-
-<template>
-  <div v-if="user.bannerUrl" class="xd-user-banner">
-    <img :src="user.bannerUrl + '/600x200'" loading="lazy" />
-  </div>
-  <div class="xd-user-avatar-row">
-    <img class="xd-user-avatar" :src="avatarFull(user.avatarUrl)" loading="lazy" />
-    <div class="xd-user-names">
-      <div class="xd-author-name">{{ user.name }}</div>
-      <div class="xd-author-handle">@{{ user.screenName }}</div>
-    </div>
-  </div>
-  <div v-if="user.description" class="xd-user-bio">{{ user.description }}</div>
-  <div v-if="user.location" class="xd-user-location">{{ user.location }}</div>
-
-  <StatGrid :stats="stats" />
-
-  <div class="xd-detail-actions">
-    <button class="xd-btn xd-btn--accent" @click="emit('open-profile', user.id)">Open Profile</button>
-  </div>
-</template>
+</style>

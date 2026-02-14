@@ -6,7 +6,6 @@ import {
   clearDb, dbVersion,
 } from '../lib/db-service';
 import type { DbTweet } from '../lib/db-service';
-import { useShadowStyle } from '../lib/use-shadow-style';
 import { GM_openInTab } from '$';
 import TweetSummaryItem from '../components/TweetSummaryItem.vue';
 import TweetDetailCard from '../components/TweetDetailCard.vue';
@@ -54,10 +53,6 @@ const detailUser = computed(() => {
   if (route.value.page === 'user') return getDbUser(route.value.userId) ?? null;
   return null;
 });
-
-const STYLE_TEXT = ``;
-
-useShadowStyle('database-tab', STYLE_TEXT);
 </script>
 
 <template>

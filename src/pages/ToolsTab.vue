@@ -5,7 +5,6 @@ import {
   captures, isCapturing, toggleCapture, clearCaptures, getCaptureById, hashHex,
   type CapturedXhr,
 } from '../lib/xhr-capture-service';
-import { useShadowStyle } from '../lib/use-shadow-style';
 import { GM_download } from '$';
 
 const route = toolsRoute;
@@ -95,89 +94,6 @@ function statusClass(status: number): string {
   if (status >= 400) return 'xd-status--error';
   return 'xd-status--warn';
 }
-
-const STYLE_TEXT = `
-.xd-tool-card {
-  display: flex;
-  align-items: center;
-  padding: 10px 12px;
-  border: 1px solid var(--xd-border);
-  border-radius: var(--xd-radius);
-  background: var(--xd-bg-secondary);
-  cursor: pointer;
-  margin-bottom: 4px;
-}
-
-.xd-tool-card:hover {
-  border-color: var(--xd-accent);
-}
-
-.xd-tool-card-title {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--xd-text-primary);
-}
-
-.xd-tool-card-desc {
-  font-size: 10px;
-  color: var(--xd-text-muted);
-  margin-top: 2px;
-}
-
-.xd-capture-status {
-  display: inline-block;
-  font-size: 10px;
-  font-weight: 600;
-  padding: 1px 5px;
-  border-radius: 3px;
-  margin-left: 6px;
-  flex-shrink: 0;
-}
-
-.xd-status--ok {
-  color: var(--xd-success);
-}
-
-.xd-status--error {
-  color: var(--xd-error);
-}
-
-.xd-status--warn {
-  color: #e0a030;
-}
-
-.xd-detail-section {
-  margin-bottom: 10px;
-}
-
-.xd-detail-section-title {
-  font-size: 10px;
-  font-weight: 600;
-  color: var(--xd-text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  margin-bottom: 4px;
-}
-
-.xd-detail-pre {
-  font-family: "Cascadia Code", "Fira Code", "Consolas", monospace;
-  font-size: 10px;
-  color: var(--xd-text-primary);
-  background: var(--xd-bg-tertiary);
-  border: 1px solid var(--xd-border);
-  border-radius: var(--xd-radius);
-  padding: 6px 8px;
-  white-space: pre-wrap;
-  word-break: break-all;
-  max-height: 200px;
-  overflow-y: auto;
-  line-height: 1.4;
-  scrollbar-width: thin;
-  scrollbar-color: var(--xd-border) var(--xd-bg-tertiary);
-}
-`;
-
-useShadowStyle('tools-tab', STYLE_TEXT);
 </script>
 
 <template>
@@ -289,7 +205,7 @@ useShadowStyle('tools-tab', STYLE_TEXT);
           <section class="xd-detail-section">
             <div class="xd-detail-section-title">
               Response Body
-              <span v-if="isResponseTruncated" style="font-weight: 400; text-transform: none; letter-spacing: 0;">
+              <span v-if="isResponseTruncated" class="xd-detail-section-note">
                 (truncated, download for full)
               </span>
             </div>
@@ -304,3 +220,90 @@ useShadowStyle('tools-tab', STYLE_TEXT);
     </template>
   </div>
 </template>
+
+<style scoped>
+.xd-tool-card {
+  display: flex;
+  align-items: center;
+  padding: 10px 12px;
+  border: 1px solid var(--xd-border);
+  border-radius: var(--xd-radius);
+  background: var(--xd-bg-secondary);
+  cursor: pointer;
+  margin-bottom: 4px;
+}
+
+.xd-tool-card:hover {
+  border-color: var(--xd-accent);
+}
+
+.xd-tool-card-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--xd-text-primary);
+}
+
+.xd-tool-card-desc {
+  font-size: 10px;
+  color: var(--xd-text-muted);
+  margin-top: 2px;
+}
+
+.xd-capture-status {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 5px;
+  border-radius: 3px;
+  margin-left: 6px;
+  flex-shrink: 0;
+}
+
+.xd-status--ok {
+  color: var(--xd-success);
+}
+
+.xd-status--error {
+  color: var(--xd-error);
+}
+
+.xd-status--warn {
+  color: #e0a030;
+}
+
+.xd-detail-section {
+  margin-bottom: 10px;
+}
+
+.xd-detail-section-title {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--xd-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 4px;
+}
+
+.xd-detail-section-note {
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.xd-detail-pre {
+  font-family: "Cascadia Code", "Fira Code", "Consolas", monospace;
+  font-size: 10px;
+  color: var(--xd-text-primary);
+  background: var(--xd-bg-tertiary);
+  border: 1px solid var(--xd-border);
+  border-radius: var(--xd-radius);
+  padding: 6px 8px;
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 200px;
+  overflow-y: auto;
+  line-height: 1.4;
+  scrollbar-width: thin;
+  scrollbar-color: var(--xd-border) var(--xd-bg-tertiary);
+}
+</style>

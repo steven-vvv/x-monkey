@@ -3,7 +3,6 @@ import { computed } from 'vue';
 import type { DbTweet } from '../lib/db-service';
 import { getDbUser } from '../lib/db-service';
 import { tweetText } from '../lib/view-format';
-import { useShadowStyle } from '../lib/use-shadow-style';
 
 const props = withDefaults(defineProps<{
   tweet: DbTweet;
@@ -20,8 +19,27 @@ const emit = defineEmits<{
 
 const author = computed(() => getDbUser(props.tweet.authorId));
 const text = computed(() => tweetText(props.tweet) || '(no text)');
+</script>
 
-const STYLE_TEXT = `
+<template>
+  <div
+    class="xd-list-item xd-list-item--clickable"
+    :class="{ 'xd-summary-item--compact': compact }"
+    @click="emit('select', tweet.id)"
+  >
+    <div class="xd-list-item-info">
+      <div class="xd-list-item-title">
+        <span v-if="showFocalDot && tweet._focal" class="xd-focal-dot"></span>
+        <span class="xd-author-name">{{ author?.name ?? '?' }}</span>
+        <span class="xd-author-handle">@{{ author?.screenName ?? '?' }}</span>
+      </div>
+      <div class="xd-list-item-meta xd-text-ellipsis">{{ text }}</div>
+    </div>
+    <div v-if="tweet.mediaIds.length > 0" class="xd-media-badge">{{ tweet.mediaIds.length }}</div>
+  </div>
+</template>
+
+<style scoped>
 .xd-summary-item--compact {
   padding: 4px 8px;
 }
@@ -49,25 +67,4 @@ const STYLE_TEXT = `
   margin-right: 4px;
   vertical-align: middle;
 }
-`;
-
-useShadowStyle('tweet-summary-item', STYLE_TEXT);
-</script>
-
-<template>
-  <div
-    class="xd-list-item xd-list-item--clickable"
-    :class="{ 'xd-summary-item--compact': compact }"
-    @click="emit('select', tweet.id)"
-  >
-    <div class="xd-list-item-info">
-      <div class="xd-list-item-title">
-        <span v-if="showFocalDot && tweet._focal" class="xd-focal-dot"></span>
-        <span class="xd-author-name">{{ author?.name ?? '?' }}</span>
-        <span class="xd-author-handle">@{{ author?.screenName ?? '?' }}</span>
-      </div>
-      <div class="xd-list-item-meta xd-text-ellipsis">{{ text }}</div>
-    </div>
-    <div v-if="tweet.mediaIds.length > 0" class="xd-media-badge">{{ tweet.mediaIds.length }}</div>
-  </div>
-</template>
+</style>

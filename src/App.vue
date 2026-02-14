@@ -11,7 +11,6 @@ import {
 import { getConfig, clampAnchor, updateConfig } from './lib/config-service';
 import { getTweetCount } from './lib/db-service';
 import { onCapture } from './lib/fetch-interceptor';
-import { useShadowStyle } from './lib/use-shadow-style';
 import { unsafeWindow } from '$';
 
 const BUBBLE_R = 18;
@@ -75,30 +74,6 @@ const contentScaleStyle = computed(() => {
 });
 
 const tweetCount = computed(() => { void captureNotify.value; return getTweetCount(); });
-
-const STYLE_TEXT = `
-.xd-badge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 16px;
-  height: 16px;
-  padding: 0 4px;
-  border-radius: 8px;
-  background: var(--xd-accent);
-  color: #fff;
-  font-size: 10px;
-  font-weight: 600;
-}
-
-.xd-bubble-badge {
-  position: absolute;
-  top: -4px;
-  right: -4px;
-}
-`;
-
-useShadowStyle('app', STYLE_TEXT);
 
 let dragStartX = 0;
 let dragStartY = 0;
@@ -213,3 +188,25 @@ function onResizePointerDown(e: PointerEvent) {
     <div class="xd-resize-handle" @pointerdown="onResizePointerDown"></div>
   </div>
 </template>
+
+<style scoped>
+.xd-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--xd-accent);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.xd-bubble-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+}
+</style>

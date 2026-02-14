@@ -1,6 +1,4 @@
 <script setup lang="ts">
-import { useShadowStyle } from '../lib/use-shadow-style';
-
 const props = defineProps<{
   leftLabel: string;
   rightLabel: string;
@@ -19,14 +17,28 @@ function onInput(event: Event, side: 'left' | 'right') {
   if (side === 'left') emit('update:left', n);
   else emit('update:right', n);
 }
+</script>
 
-const STYLE_TEXT = `
-.xd-settings-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
+<template>
+  <div class="xd-settings-row">
+    <label class="xd-settings-label">{{ props.leftLabel }}</label>
+    <input
+      class="xd-settings-input"
+      type="number"
+      :value="String(Math.round(props.leftValue))"
+      @change="onInput($event, 'left')"
+    />
+    <label class="xd-settings-label">{{ props.rightLabel }}</label>
+    <input
+      class="xd-settings-input"
+      type="number"
+      :value="String(Math.round(props.rightValue))"
+      @change="onInput($event, 'right')"
+    />
+  </div>
+</template>
 
+<style scoped>
 .xd-settings-label {
   font-size: 11px;
   color: var(--xd-text-muted);
@@ -48,26 +60,4 @@ const STYLE_TEXT = `
 .xd-settings-input:focus {
   border-color: var(--xd-accent);
 }
-`;
-
-useShadowStyle('settings-number-pair-row', STYLE_TEXT);
-</script>
-
-<template>
-  <div class="xd-settings-row">
-    <label class="xd-settings-label">{{ props.leftLabel }}</label>
-    <input
-      class="xd-settings-input"
-      type="number"
-      :value="String(Math.round(props.leftValue))"
-      @change="onInput($event, 'left')"
-    />
-    <label class="xd-settings-label">{{ props.rightLabel }}</label>
-    <input
-      class="xd-settings-input"
-      type="number"
-      :value="String(Math.round(props.rightValue))"
-      @change="onInput($event, 'right')"
-    />
-  </div>
-</template>
+</style>

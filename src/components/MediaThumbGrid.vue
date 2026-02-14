@@ -1,14 +1,28 @@
 <script setup lang="ts">
 import type { XMedia } from '../lib/types';
-import { useShadowStyle } from '../lib/use-shadow-style';
 
 const props = defineProps<{ media: XMedia[] }>();
 
 const emit = defineEmits<{
   (e: 'open', url: string): void;
 }>();
+</script>
 
-const STYLE_TEXT = `
+<template>
+  <div v-if="props.media.length > 0" class="xd-detail-media">
+    <div
+      v-for="m in props.media"
+      :key="m.id"
+      class="xd-thumb"
+      @click="emit('open', m.sourceUrl)"
+    >
+      <img :src="m.thumbUrl" loading="lazy" />
+      <span v-if="m.type !== 'photo'" class="xd-thumb-badge">{{ m.type === 'video' ? 'VID' : 'GIF' }}</span>
+    </div>
+  </div>
+</template>
+
+<style scoped>
 .xd-detail-media {
   display: flex;
   flex-wrap: wrap;
@@ -48,21 +62,4 @@ const STYLE_TEXT = `
   font-size: 9px;
   font-weight: 600;
 }
-`;
-
-useShadowStyle('media-thumb-grid', STYLE_TEXT);
-</script>
-
-<template>
-  <div v-if="props.media.length > 0" class="xd-detail-media">
-    <div
-      v-for="m in props.media"
-      :key="m.id"
-      class="xd-thumb"
-      @click="emit('open', m.sourceUrl)"
-    >
-      <img :src="m.thumbUrl" loading="lazy" />
-      <span v-if="m.type !== 'photo'" class="xd-thumb-badge">{{ m.type === 'video' ? 'VID' : 'GIF' }}</span>
-    </div>
-  </div>
-</template>
+</style>

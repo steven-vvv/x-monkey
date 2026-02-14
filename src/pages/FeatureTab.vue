@@ -3,7 +3,6 @@ import { computed } from 'vue';
 import { featureRoute, featureNavigateTo } from '../lib/store';
 import { getDbTweet, getDbUser, getParentChain, getReplies, dbVersion } from '../lib/db-service';
 import type { DbTweet } from '../lib/db-service';
-import { useShadowStyle } from '../lib/use-shadow-style';
 import { GM_openInTab } from '$';
 import TweetSummaryItem from '../components/TweetSummaryItem.vue';
 import TweetDetailCard from '../components/TweetDetailCard.vue';
@@ -62,25 +61,6 @@ const focalReplies = computed(() => {
   if (!focalTweet.value) return [];
   return getReplies(focalTweet.value.id);
 });
-
-const STYLE_TEXT = `
-.xd-context-label {
-  font-size: 10px;
-  font-weight: 600;
-  color: var(--xd-text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  margin-bottom: 4px;
-}
-
-.xd-context-divider {
-  height: 1px;
-  background: var(--xd-border);
-  margin: 8px 0;
-}
-`;
-
-useShadowStyle('feature-tab', STYLE_TEXT);
 </script>
 
 <template>
@@ -149,3 +129,20 @@ useShadowStyle('feature-tab', STYLE_TEXT);
     </template>
   </div>
 </template>
+
+<style scoped>
+.xd-context-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--xd-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 4px;
+}
+
+.xd-context-divider {
+  height: 1px;
+  background: var(--xd-border);
+  margin: 8px 0;
+}
+</style>

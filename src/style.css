@@ -215,6 +215,12 @@
   scrollbar-color: var(--xd-border) var(--xd-bg-primary);
 }
 
+.xd-settings-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .xd-empty {
   display: flex;
   align-items: center;
@@ -355,14 +361,6 @@
   font-size: 11px;
 }
 
-.xd-detail-row {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  padding: 2px 0;
-  font-size: 11px;
-}
-
 .xd-detail-label {
   color: var(--xd-text-secondary);
   flex-shrink: 0;
@@ -373,4 +371,8 @@
 .xd-detail-value {
   color: var(--xd-text-primary);
   word-break: break-all;
+}
+
+.xd-detail-actions {
+  padding: 4px 0;
 }

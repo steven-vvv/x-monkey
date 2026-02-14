@@ -1,12 +1,19 @@
 <script setup lang="ts">
-import { useShadowStyle } from '../lib/use-shadow-style';
-
 defineProps<{
   title: string;
   hint?: string;
 }>();
+</script>
 
-const STYLE_TEXT = `
+<template>
+  <section class="xd-settings-section">
+    <div class="xd-settings-title">{{ title }}</div>
+    <slot />
+    <div v-if="hint" class="xd-settings-hint">{{ hint }}</div>
+  </section>
+</template>
+
+<style scoped>
 .xd-settings-section {
   margin-bottom: 12px;
 }
@@ -24,15 +31,4 @@ const STYLE_TEXT = `
   margin-top: 4px;
   line-height: 1.3;
 }
-`;
-
-useShadowStyle('settings-section', STYLE_TEXT);
-</script>
-
-<template>
-  <section class="xd-settings-section">
-    <div class="xd-settings-title">{{ title }}</div>
-    <slot />
-    <div v-if="hint" class="xd-settings-hint">{{ hint }}</div>
-  </section>
-</template>
+</style>

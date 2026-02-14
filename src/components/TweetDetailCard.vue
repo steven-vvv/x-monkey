@@ -3,7 +3,6 @@ import { computed } from 'vue';
 import type { DbTweet } from '../lib/db-service';
 import { getDbUser, getMediaForTweet } from '../lib/db-service';
 import { toTweetStats, tweetText } from '../lib/view-format';
-import { useShadowStyle } from '../lib/use-shadow-style';
 import StatGrid from './StatGrid.vue';
 import MediaThumbGrid from './MediaThumbGrid.vue';
 
@@ -19,28 +18,6 @@ const author = computed(() => getDbUser(props.tweet.authorId));
 const text = computed(() => tweetText(props.tweet));
 const stats = computed(() => toTweetStats(props.tweet));
 const media = computed(() => getMediaForTweet(props.tweet.id));
-
-const STYLE_TEXT = `
-.xd-detail-author {
-  padding: 6px 0;
-  margin-bottom: 4px;
-}
-
-.xd-detail-text {
-  font-size: 12px;
-  color: var(--xd-text-primary);
-  line-height: 1.5;
-  white-space: pre-wrap;
-  word-break: break-word;
-  margin-bottom: 8px;
-}
-
-.xd-detail-actions {
-  padding: 4px 0;
-}
-`;
-
-useShadowStyle('tweet-detail-card', STYLE_TEXT);
 </script>
 
 <template>
@@ -59,3 +36,19 @@ useShadowStyle('tweet-detail-card', STYLE_TEXT);
     <button class="xd-btn xd-btn--accent" @click="emit('open-original', tweet)">Open Original</button>
   </div>
 </template>
+
+<style scoped>
+.xd-detail-author {
+  padding: 6px 0;
+  margin-bottom: 4px;
+}
+
+.xd-detail-text {
+  font-size: 12px;
+  color: var(--xd-text-primary);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin-bottom: 8px;
+}
+</style>
