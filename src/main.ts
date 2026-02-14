@@ -3,16 +3,42 @@ import { initConfig, getConfig, resetLayout } from './lib/config-service';
 import { initTheme } from './lib/theme-service';
 import { currentUrl, syncFeatureRoute } from './lib/store';
 import { clearDb } from './lib/db-service';
-import cssText from './style.css?inline';
 import { unsafeWindow, GM_log, GM_registerMenuCommand } from '$';
+import './style.css';
 
 installXhrInterceptor();
 
+type CssBridgeWindow = Window & {
+  __XD_CSS_SINK__?: (cssText: string) => void;
+  __XD_CSS_QUEUE__?: string[];
+};
+
+const cssBridgeWindow = window as CssBridgeWindow;
+
+function initShadowCssBridge(shadow: ShadowRoot, doc: Document): void {
+  const injectedCss = new Set<string>();
+
+  const sink = (cssText: string) => {
+    if (!cssText || injectedCss.has(cssText)) return;
+    injectedCss.add(cssText);
+
+    const styleEl = doc.createElement('style');
+    styleEl.setAttribute('data-xd-vite-css', '1');
+    styleEl.textContent = cssText;
+    shadow.append(styleEl);
+  };
+
+  cssBridgeWindow.__XD_CSS_SINK__ = sink;
+
+  const queuedCss = cssBridgeWindow.__XD_CSS_QUEUE__ ?? [];
+  for (const cssText of queuedCss) {
+    sink(cssText);
+  }
+  cssBridgeWindow.__XD_CSS_QUEUE__ = [];
+}
+
 async function mount() {
   await initConfig();
-
-  const { createApp } = await import('vue');
-  const { default: App } = await import('./App.vue');
 
   const win = unsafeWindow;
   const doc = win.document;
@@ -23,9 +49,10 @@ async function mount() {
 
   const shadow = host.attachShadow({ mode: 'closed' });
 
-  const style = doc.createElement('style');
-  style.textContent = cssText;
-  shadow.append(style);
+  initShadowCssBridge(shadow, doc);
+
+  const { createApp } = await import('vue');
+  const { default: App } = await import('./App.vue');
 
   const appEl = doc.createElement('div');
   shadow.append(appEl);

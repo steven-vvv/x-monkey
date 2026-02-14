@@ -10,6 +10,8 @@ declare module '*.vue' {
 }
 
 interface Window {
+  __XD_CSS_SINK__?: (cssText: string) => void;
+  __XD_CSS_QUEUE__?: string[];
   onurlchange?: null;
   addEventListener(type: 'urlchange', cb: (data: { url: string }) => void): void;
   removeEventListener(type: 'urlchange', cb: (...args: any[]) => void): void;
