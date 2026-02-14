@@ -3,6 +3,12 @@
 //// <reference types="vite-plugin-monkey/global" />
 /// <reference types="vite-plugin-monkey/style" />
 
+declare module '*.vue' {
+  import type { DefineComponent } from 'vue';
+  const component: DefineComponent<{}, {}, any>;
+  export default component;
+}
+
 interface Window {
   onurlchange?: null;
   addEventListener(type: 'urlchange', cb: (data: { url: string }) => void): void;
