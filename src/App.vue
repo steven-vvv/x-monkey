@@ -76,6 +76,7 @@ const contentScaleStyle = computed(() => {
 });
 
 const tweetCount = computed(() => { void captureNotify.value; return getTweetCount(); });
+const hasTweetIncome = computed(() => tweetCount.value > 0);
 
 let dragStartX = 0;
 let dragStartY = 0;
@@ -148,11 +149,11 @@ function onResizePointerDown(e: PointerEvent) {
   <div
     v-if="cfg.panelVisible && !expanded"
     class="xd-bubble"
+    :class="{ 'xd-bubble--has-income': hasTweetIncome }"
     :style="bubbleStyle"
     @pointerdown="onBubbleDown"
     @pointerup="onBubbleUp"
   >
-    <span v-if="tweetCount > 0" class="xd-badge xd-bubble-badge">{{ tweetCount }}</span>
     XD
   </div>
   <div
@@ -198,25 +199,3 @@ function onResizePointerDown(e: PointerEvent) {
     </div>
   </div>
 </template>
-
-<style scoped>
-.xd-badge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 16px;
-  height: 16px;
-  padding: 0 4px;
-  border-radius: 8px;
-  background: var(--xd-accent);
-  color: #fff;
-  font-size: 10px;
-  font-weight: 600;
-}
-
-.xd-bubble-badge {
-  position: absolute;
-  top: -4px;
-  right: -4px;
-}
-</style>

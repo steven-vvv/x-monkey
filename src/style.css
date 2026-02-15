@@ -61,8 +61,17 @@
 }
 
 .xd-bubble:hover {
-  border-color: var(--xd-accent);
+  background: var(--xd-bg-secondary);
   color: var(--xd-text-primary);
+}
+
+.xd-bubble--has-income {
+  border-color: var(--xd-accent);
+  color: var(--xd-accent);
+}
+
+.xd-bubble--has-income:hover {
+  border-color: var(--xd-accent-hover);
 }
 
 .xd-panel {
