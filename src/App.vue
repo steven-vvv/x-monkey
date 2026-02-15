@@ -146,7 +146,7 @@ function onResizePointerDown(e: PointerEvent) {
 
 <template>
   <div
-    v-if="!expanded"
+    v-if="cfg.panelVisible && !expanded"
     class="xd-bubble"
     :style="bubbleStyle"
     @pointerdown="onBubbleDown"
@@ -156,7 +156,7 @@ function onResizePointerDown(e: PointerEvent) {
     XD
   </div>
   <div
-    v-else
+    v-else-if="cfg.panelVisible"
     class="xd-panel"
     :style="panelStyle"
   >

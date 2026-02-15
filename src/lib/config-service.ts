@@ -9,6 +9,7 @@ export interface AppConfig {
   anchorY: number;
   panelWidth: number;
   panelHeight: number;
+  panelVisible: boolean;
   uiScale: number; // 25-200%
   autoClearOnNavigate: boolean;
   theme: ThemeMode;
@@ -19,6 +20,7 @@ export const DEFAULT_CONFIG: AppConfig = {
   anchorY: 60,
   panelWidth: 360,
   panelHeight: 420,
+  panelVisible: true,
   uiScale: 100,
   autoClearOnNavigate: true,
   theme: 'page',

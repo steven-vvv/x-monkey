@@ -1,9 +1,10 @@
 import { installXhrInterceptor, clearUserMediaStore } from './lib/fetch-interceptor';
-import { initConfig, getConfig, resetLayout } from './lib/config-service';
+import { initConfig, getConfig, resetLayout, updateConfig } from './lib/config-service';
 import { initTheme } from './lib/theme-service';
 import { currentUrl, syncFeatureRoute } from './lib/store';
 import { clearDb } from './lib/db-service';
-import { unsafeWindow, GM_log, GM_registerMenuCommand } from '$';
+import { watch } from 'vue';
+import { unsafeWindow, GM_log, GM_registerMenuCommand, GM_unregisterMenuCommand } from '$';
 import './style.css';
 
 installXhrInterceptor();
@@ -13,7 +14,53 @@ type CssBridgeWindow = Window & {
   __XD_CSS_QUEUE__?: string[];
 };
 
+type MenuCommandId = string | number;
+
 const cssBridgeWindow = window as CssBridgeWindow;
+let visibilityMenuId: MenuCommandId | undefined;
+let visibilityMenuVersion = 0;
+
+function getVisibilityMenuCaption(visible: boolean): string {
+  return visible ? 'Hide Floating Window' : 'Show Floating Window';
+}
+
+function refreshVisibilityMenuCommand(): void {
+  const cfg = getConfig();
+  const currentVersion = ++visibilityMenuVersion;
+  const caption = getVisibilityMenuCaption(cfg.panelVisible);
+
+  if (visibilityMenuId !== undefined) {
+    try {
+      GM_unregisterMenuCommand(visibilityMenuId);
+    } catch (error) {
+      GM_log('[Menu] Failed to unregister visibility command', error);
+    } finally {
+      visibilityMenuId = undefined;
+    }
+  }
+
+  const nextId = GM_registerMenuCommand(
+    caption,
+    () => {
+      const nextVisible = !getConfig().panelVisible;
+      updateConfig({ panelVisible: nextVisible });
+      GM_log(`[Menu] Floating window ${nextVisible ? 'shown' : 'hidden'}`);
+    },
+    { id: 'xd-toggle-floating-window', autoClose: true, title: caption },
+  );
+
+  // Prevent stale command residue if rapid toggles trigger overlapping refreshes.
+  if (currentVersion !== visibilityMenuVersion) {
+    try {
+      GM_unregisterMenuCommand(nextId);
+    } catch {
+      // ignore stale cleanup failures
+    }
+    return;
+  }
+
+  visibilityMenuId = nextId;
+}
 
 function initShadowCssBridge(shadow: ShadowRoot, doc: Document): void {
   const injectedCss = new Set<string>();
@@ -39,6 +86,7 @@ function initShadowCssBridge(shadow: ShadowRoot, doc: Document): void {
 
 async function mount() {
   await initConfig();
+  const cfg = getConfig();
 
   const win = unsafeWindow;
   const doc = win.document;
@@ -63,6 +111,14 @@ async function mount() {
 
   syncFeatureRoute();
 
+  watch(
+    () => cfg.panelVisible,
+    () => {
+      refreshVisibilityMenuCommand();
+    },
+    { immediate: true },
+  );
+
   GM_registerMenuCommand('Reset Layout', () => {
     resetLayout();
     GM_log('[Menu] Layout reset to defaults');
@@ -76,7 +132,6 @@ async function mount() {
       currentUrl.value = info.url;
       syncFeatureRoute();
 
-      const cfg = getConfig();
       if (cfg.autoClearOnNavigate) {
         const prevMatch = /\/status\/(\d+)/.exec(prevUrl);
         const newMatch = /\/status\/(\d+)/.exec(info.url);
