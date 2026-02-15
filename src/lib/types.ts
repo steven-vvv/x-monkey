@@ -163,6 +163,12 @@ export interface XTweet {
   /** 浏览量（来源：`raw.views.count`，不可解析时为 null）。 */
   viewCount: number | null;
 
+  /**
+   * 是否可能包含敏感内容（来源：`raw.legacy.possibly_sensitive`）。
+   * 当响应未返回该字段时为 null。
+   */
+  possiblySensitive: boolean | null;
+
   /** 点赞数（来源：`raw.legacy.favorite_count`）。 */
   favoriteCount: number;
 

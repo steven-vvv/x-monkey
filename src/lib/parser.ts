@@ -186,6 +186,9 @@ function parseTweet(
   }
 
   const viewCount = raw.views?.count != null ? parseInt(raw.views.count, 10) : null;
+  const possiblySensitive = typeof legacy.possibly_sensitive === 'boolean'
+    ? legacy.possibly_sensitive
+    : (typeof raw.possibly_sensitive === 'boolean' ? raw.possibly_sensitive : null);
 
   const tweet: XTweet = {
     id: restId,
@@ -198,6 +201,7 @@ function parseTweet(
     inReplyToUserId: legacy.in_reply_to_user_id_str ? safeStr(legacy.in_reply_to_user_id_str) : null,
     quotedTweetId,
     viewCount: Number.isNaN(viewCount!) ? null : viewCount,
+    possiblySensitive,
     favoriteCount: safeNum(legacy.favorite_count),
     retweetCount: safeNum(legacy.retweet_count),
     replyCount: safeNum(legacy.reply_count),
