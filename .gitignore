@@ -25,4 +25,8 @@ dist-ssr
 
 # Prompts & Agent rules
 /AGENTS.md
+/GEMINI.md
 /prompts/
+
+# Dump files
+/dumps/
