@@ -1,5 +1,4 @@
 import { GM_log, unsafeWindow } from '$';
-import { reactive } from 'vue';
 import {
   parseHomeLatestTimelineResponse,
   parseHomeTimelineResponse,
@@ -8,7 +7,16 @@ import {
   parseUserTweetsResponse,
   type TimelineParsedResponse,
 } from './parser';
-import { upsertTweet, upsertUser, upsertMedia } from './db-service';
+import { runDbBatch, upsertTweet, upsertUser, upsertMedia } from './db-service';
+import type { ParsedResponse } from './types';
+import {
+  clearTimeline,
+  getTimelineTweetIds,
+  getTimelineVersion,
+  getUserMediaTimelineKey,
+  ingestTimeline,
+  setActiveUserMediaTimelineKey,
+} from './timeline-store';
 
 // --- Simple notification listeners (for badge count etc.) ---
 type CaptureListener = () => void;
@@ -51,104 +59,186 @@ function broadcastXhrCapture(data: CapturedXhr) {
   xhrCaptureListeners.forEach((fn) => fn(data));
 }
 
-// --- UserMedia reactive store (ordered tweet IDs only; data lives in global db) ---
-interface UserMediaStore {
-  tweetIds: string[];
-}
-
-const userMediaStore = reactive<UserMediaStore>({
-  tweetIds: [],
-});
-
-let userMediaVersion = reactive({ value: 0 });
-
 export function getUserMediaTweetIds(): string[] {
-  return userMediaStore.tweetIds;
+  return getTimelineTweetIds(getUserMediaTimelineKey());
 }
 
 export function getUserMediaVersion(): number {
-  return userMediaVersion.value;
+  return getTimelineVersion(getUserMediaTimelineKey());
 }
 
 export function clearUserMediaStore(): void {
-  userMediaStore.tweetIds = [];
-  userMediaVersion.value++;
+  clearTimeline(getUserMediaTimelineKey());
+  setActiveUserMediaTimelineKey('UserMedia');
 }
 
 // --- URL patterns ---
 const GRAPHQL_RE = /^https:\/\/x\.com\/i\/api\/graphql\/([^/?]+)\/([^/?]+)/;
-const TWEET_DETAIL_RE = /^https:\/\/x\.com\/i\/api\/graphql\/([^/]+)\/TweetDetail/;
-const HOME_TIMELINE_RE = /^https:\/\/x\.com\/i\/api\/graphql\/([^/]+)\/HomeTimeline/;
-const HOME_LATEST_TIMELINE_RE = /^https:\/\/x\.com\/i\/api\/graphql\/([^/]+)\/HomeLatestTimeline/;
-const USER_MEDIA_RE = /^https:\/\/x\.com\/i\/api\/graphql\/([^/]+)\/UserMedia/;
-const USER_TWEETS_RE = /^https:\/\/x\.com\/i\/api\/graphql\/([^/]+)\/UserTweets/;
 
 let captureIdCounter = 0;
 
-function extractFocalTweetId(url: string): string | null {
+interface GraphqlRequestContext {
+  method: string;
+  url: string;
+  graphqlId: string;
+  operationName: string;
+  variables: Record<string, unknown> | null;
+}
+
+interface EndpointHandler<TParsed extends ParsedResponse> {
+  label: string;
+  parse: (json: unknown) => TParsed;
+  handle: (request: GraphqlRequestContext, parsed: TParsed) => void;
+}
+
+function extractRequestVariables(url: string): Record<string, unknown> | null {
   try {
     const u = new URL(url);
     const vars = u.searchParams.get('variables');
     if (vars) {
       const parsed = JSON.parse(vars);
-      return typeof parsed.focalTweetId === 'string' ? parsed.focalTweetId : null;
+      return parsed && typeof parsed === 'object' ? parsed as Record<string, unknown> : null;
     }
   } catch { /* ignore */ }
   return null;
 }
 
-function ingestTimelineEntities(parsed: TimelineParsedResponse | ReturnType<typeof parseTweetDetailResponse>, focalId?: string | null): void {
-  for (const user of parsed.users.values()) {
-    upsertUser(user);
+function readStringVariable(variables: Record<string, unknown> | null, names: string[]): string | null {
+  if (!variables) return null;
+  for (const name of names) {
+    const value = variables[name];
+    if (typeof value === 'string' && value) return value;
+    if (typeof value === 'number' && Number.isFinite(value)) return String(value);
   }
-
-  for (const tweet of parsed.tweets.values()) {
-    const isFocal = focalId != null && tweet.id === focalId;
-    upsertTweet(tweet, isFocal);
-  }
-
-  for (const media of parsed.media.values()) {
-    const tweet = parsed.tweets.get(media.tweetId);
-    const isFocal = focalId != null && tweet?.id === focalId;
-    upsertMedia(media, isFocal);
-  }
+  return null;
 }
 
-function ingestTimelineResponse(label: string, parsed: TimelineParsedResponse): void {
-  if (parsed.tweetIds.length === 0 && parsed.tweets.size === 0) return;
-  ingestTimelineEntities(parsed);
-  notifyListeners();
-  GM_log(`[${label}] Ingested ${parsed.tweetIds.length} ordered tweets, ${parsed.tweets.size} total tweets`);
+function resolveTimelineKey(request: GraphqlRequestContext): string {
+  const scope = readStringVariable(request.variables, ['userId', 'rest_id', 'screen_name', 'screenName']);
+  return scope ? `${request.operationName}:${scope}` : request.operationName;
 }
 
-function ingestUserMediaResponse(json: unknown): void {
-  const parsed = parseUserMediaResponse(json);
-  if (parsed.tweetIds.length === 0 && parsed.tweets.size === 0) return;
+function logParseWarnings(label: string, parsed: ParsedResponse): void {
+  if (!parsed.meta?.warnings?.length) return;
+  GM_log(`[${label}] Parse warnings: ${parsed.meta.warnings.join(' | ')}`);
+}
 
-  ingestTimelineEntities(parsed);
-
-  const existing = new Set(userMediaStore.tweetIds);
-  for (const id of parsed.tweetIds) {
-    if (!existing.has(id)) {
-      userMediaStore.tweetIds.push(id);
-      existing.add(id);
+function ingestTimelineEntities(parsed: ParsedResponse, focalId?: string | null): void {
+  runDbBatch(() => {
+    for (const user of parsed.users.values()) {
+      upsertUser(user);
     }
-  }
 
-  userMediaVersion.value++;
-  notifyListeners();
-  GM_log(`[UserMedia] Ingested ${parsed.tweetIds.length} tweets (total: ${userMediaStore.tweetIds.length})`);
+    for (const tweet of parsed.tweets.values()) {
+      const isFocal = focalId != null && tweet.id === focalId;
+      upsertTweet(tweet, isFocal);
+    }
+
+    for (const media of parsed.media.values()) {
+      const tweet = parsed.tweets.get(media.tweetId);
+      const isFocal = focalId != null && tweet?.id === focalId;
+      upsertMedia(media, isFocal);
+    }
+  });
 }
 
-function ingestTweetDetailResponse(url: string, json: unknown): void {
-  const focalId = extractFocalTweetId(url);
+function ingestTimelineResponse(
+  label: string,
+  request: GraphqlRequestContext,
+  parsed: TimelineParsedResponse,
+  onTimelineKeyResolved?: (timelineKey: string) => void,
+): void {
+  logParseWarnings(label, parsed);
+
+  const timelineKey = resolveTimelineKey(request);
+  onTimelineKeyResolved?.(timelineKey);
+
+  if (parsed.tweetIds.length === 0 && parsed.tweets.size === 0) {
+    GM_log(`[${label}] Parsed empty response (path: ${parsed.meta?.instructionPath ?? 'n/a'}, key: ${timelineKey})`);
+    return;
+  }
+
+  ingestTimelineEntities(parsed);
+  ingestTimeline(timelineKey, parsed.tweetIds);
+
+  notifyListeners();
+  GM_log(`[${label}] Ingested ${parsed.tweetIds.length} ordered tweets, ${parsed.tweets.size} total tweets (key: ${timelineKey})`);
+}
+
+function ingestTweetDetailResponse(request: GraphqlRequestContext, parsed: ParsedResponse): void {
+  logParseWarnings('TweetDetail', parsed);
+
+  const focalId = readStringVariable(request.variables, ['focalTweetId']);
+  if (parsed.tweets.size === 0) {
+    GM_log(`[TweetDetail] Parsed empty response (path: ${parsed.meta?.instructionPath ?? 'n/a'})`);
+    return;
+  }
   if (focalId) {
     GM_log(`[TweetDetail] focalTweetId: ${focalId}`);
   }
-  const parsed = parseTweetDetailResponse(json);
-  ingestTimelineEntities(parsed, focalId);
 
+  ingestTimelineEntities(parsed, focalId);
   notifyListeners();
+}
+
+const ENDPOINT_HANDLERS: Record<string, EndpointHandler<any>> = {
+  TweetDetail: {
+    label: 'TweetDetail',
+    parse: parseTweetDetailResponse,
+    handle: (request, parsed: ParsedResponse) => {
+      ingestTweetDetailResponse(request, parsed);
+    },
+  },
+  HomeTimeline: {
+    label: 'HomeTimeline',
+    parse: parseHomeTimelineResponse,
+    handle: (request, parsed: TimelineParsedResponse) => {
+      ingestTimelineResponse('HomeTimeline', request, parsed);
+    },
+  },
+  HomeLatestTimeline: {
+    label: 'HomeLatestTimeline',
+    parse: parseHomeLatestTimelineResponse,
+    handle: (request, parsed: TimelineParsedResponse) => {
+      ingestTimelineResponse('HomeLatestTimeline', request, parsed);
+    },
+  },
+  UserTweets: {
+    label: 'UserTweets',
+    parse: parseUserTweetsResponse,
+    handle: (request, parsed: TimelineParsedResponse) => {
+      ingestTimelineResponse('UserTweets', request, parsed);
+    },
+  },
+  UserMedia: {
+    label: 'UserMedia',
+    parse: parseUserMediaResponse,
+    handle: (request, parsed: TimelineParsedResponse) => {
+      ingestTimelineResponse('UserMedia', request, parsed, (timelineKey) => {
+        setActiveUserMediaTimelineKey(timelineKey);
+      });
+    },
+  },
+};
+
+function handleGraphqlResponse(request: GraphqlRequestContext, responseBody: string): void {
+  const endpoint = ENDPOINT_HANDLERS[request.operationName];
+  if (!endpoint) return;
+
+  let json: unknown;
+  try {
+    json = JSON.parse(responseBody);
+  } catch (error) {
+    GM_log(`[XHR Interceptor] Failed to parse ${request.operationName} response JSON`, error);
+    return;
+  }
+
+  try {
+    const parsed = endpoint.parse(json);
+    endpoint.handle(request, parsed);
+  } catch (error) {
+    GM_log(`[XHR Interceptor] Failed to handle ${request.operationName} response`, error);
+  }
 }
 
 export function installXhrInterceptor(): void {
@@ -175,6 +265,13 @@ export function installXhrInterceptor(): void {
           const { url, method } = tracked;
           const match = GRAPHQL_RE.exec(url);
           if (!match) return;
+          const request: GraphqlRequestContext = {
+            method,
+            url,
+            graphqlId: match[1],
+            operationName: match[2],
+            variables: extractRequestVariables(url),
+          };
 
           const responseBody = this.responseText;
           const responseHeaders = this.getAllResponseHeaders();
@@ -185,8 +282,8 @@ export function installXhrInterceptor(): void {
             timestamp: Date.now(),
             method,
             url,
-            graphqlId: match[1],
-            operationName: match[2],
+            graphqlId: request.graphqlId,
+            operationName: request.operationName,
             status: this.status,
             statusText: this.statusText,
             responseHeaders,
@@ -195,40 +292,7 @@ export function installXhrInterceptor(): void {
           });
 
           if (this.status === 200) {
-            if (TWEET_DETAIL_RE.test(url)) {
-              try {
-                const json = JSON.parse(responseBody);
-                ingestTweetDetailResponse(url, json);
-              } catch { /* ignore */ }
-            }
-
-            if (USER_MEDIA_RE.test(url)) {
-              try {
-                const json = JSON.parse(responseBody);
-                ingestUserMediaResponse(json);
-              } catch { /* ignore */ }
-            }
-
-            if (HOME_TIMELINE_RE.test(url)) {
-              try {
-                const json = JSON.parse(responseBody);
-                ingestTimelineResponse('HomeTimeline', parseHomeTimelineResponse(json));
-              } catch { /* ignore */ }
-            }
-
-            if (HOME_LATEST_TIMELINE_RE.test(url)) {
-              try {
-                const json = JSON.parse(responseBody);
-                ingestTimelineResponse('HomeLatestTimeline', parseHomeLatestTimelineResponse(json));
-              } catch { /* ignore */ }
-            }
-
-            if (USER_TWEETS_RE.test(url)) {
-              try {
-                const json = JSON.parse(responseBody);
-                ingestTimelineResponse('UserTweets', parseUserTweetsResponse(json));
-              } catch { /* ignore */ }
-            }
+            handleGraphqlResponse(request, responseBody);
           }
         }
       });

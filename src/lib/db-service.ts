@@ -1,5 +1,6 @@
 import { reactive, computed } from 'vue';
 import type { XUser, XTweet, XMedia } from './types';
+import { mergeEntity } from './entity-merge';
 
 export interface DbTweet extends XTweet {
   _ts: number;
@@ -28,9 +29,32 @@ const db = reactive<Db>({
 });
 
 let changeCounter = reactive({ value: 0 });
+let batchDepth = 0;
+let batchDirty = false;
 
 function bump() {
   changeCounter.value++;
+}
+
+function markDirty() {
+  if (batchDepth > 0) {
+    batchDirty = true;
+    return;
+  }
+  bump();
+}
+
+export function runDbBatch(fn: () => void): void {
+  batchDepth++;
+  try {
+    fn();
+  } finally {
+    batchDepth--;
+    if (batchDepth === 0 && batchDirty) {
+      batchDirty = false;
+      bump();
+    }
+  }
 }
 
 export function upsertTweet(tweet: XTweet, focal: boolean): void {
@@ -41,22 +65,34 @@ export function upsertTweet(tweet: XTweet, focal: boolean): void {
     if (existing._focal && !focal) {
       return;
     }
-    Object.assign(existing, tweet, { _ts: now, _focal: existing._focal || focal });
+    const previousTs = existing._ts;
+    const previousFocal = existing._focal;
+    const changed = mergeEntity(existing, tweet);
+    existing._ts = now;
+    existing._focal = previousFocal || focal;
+    if (changed || previousTs !== existing._ts || previousFocal !== existing._focal) {
+      markDirty();
+    }
   } else {
     db.tweets.set(tweet.id, { ...tweet, _ts: now, _focal: focal });
+    markDirty();
   }
-  bump();
 }
 
 export function upsertUser(user: XUser): void {
   const now = Date.now();
   const existing = db.users.get(user.id);
   if (existing) {
-    Object.assign(existing, user, { _ts: now });
+    const previousTs = existing._ts;
+    const changed = mergeEntity(existing, user);
+    existing._ts = now;
+    if (changed || previousTs !== existing._ts) {
+      markDirty();
+    }
   } else {
     db.users.set(user.id, { ...user, _ts: now });
+    markDirty();
   }
-  bump();
 }
 
 export function upsertMedia(media: XMedia, focal: boolean): void {
@@ -67,11 +103,18 @@ export function upsertMedia(media: XMedia, focal: boolean): void {
     if (existing._focal && !focal) {
       return;
     }
-    Object.assign(existing, media, { _ts: now, _focal: existing._focal || focal });
+    const previousTs = existing._ts;
+    const previousFocal = existing._focal;
+    const changed = mergeEntity(existing, media);
+    existing._ts = now;
+    existing._focal = previousFocal || focal;
+    if (changed || previousTs !== existing._ts || previousFocal !== existing._focal) {
+      markDirty();
+    }
   } else {
     db.media.set(media.id, { ...media, _ts: now, _focal: focal });
+    markDirty();
   }
-  bump();
 }
 
 export function clearDb(): void {

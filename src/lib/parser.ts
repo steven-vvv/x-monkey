@@ -1,4 +1,5 @@
 import type { XUser, XTweet, XMedia, ParsedResponse, VideoVariant, MediaType } from './types';
+import { mergeEntity } from './entity-merge';
 
 function safeStr(v: unknown, fallback = ''): string {
   return typeof v === 'string' ? v : fallback;
@@ -13,11 +14,15 @@ function safeStringArray(v: unknown): string[] {
   return v.map((item) => safeStr(item)).filter(Boolean);
 }
 
-function createParsedResponse(): ParsedResponse {
+function createParsedResponse(instructionPath: string | null = null, warnings: string[] = []): ParsedResponse {
   return {
     users: new Map(),
     tweets: new Map(),
     media: new Map(),
+    meta: {
+      instructionPath,
+      warnings: [...warnings],
+    },
   };
 }
 
@@ -66,6 +71,26 @@ function parseUser(raw: Record<string, any>): XUser | null {
     pinnedTweetIds: safeStringArray(legacy.pinned_tweet_ids_str),
     createdAt: safeStr(coreInfo.created_at),
   };
+}
+
+function upsertParsedUser(ctx: ParsedResponse, user: XUser): XUser {
+  const existing = ctx.users.get(user.id);
+  if (existing) {
+    mergeEntity(existing, user);
+    return existing;
+  }
+  ctx.users.set(user.id, user);
+  return user;
+}
+
+function upsertParsedMedia(ctx: ParsedResponse, media: XMedia): XMedia {
+  const existing = ctx.media.get(media.id);
+  if (existing) {
+    mergeEntity(existing, media);
+    return existing;
+  }
+  ctx.media.set(media.id, media);
+  return media;
 }
 
 function resolveThumbUrl(mediaUrl: string): string {
@@ -133,7 +158,7 @@ function parseMediaItem(
   if (sourceUserRaw) {
     const sourceUser = parseUser(sourceUserRaw);
     if (sourceUser) {
-      ctx.users.set(sourceUser.id, sourceUser);
+      upsertParsedUser(ctx, sourceUser);
     }
   }
 
@@ -188,7 +213,7 @@ function parseTweet(
   if (userRaw) {
     const user = parseUser(userRaw);
     if (user) {
-      ctx.users.set(user.id, user);
+      upsertParsedUser(ctx, user);
     }
   }
 
@@ -205,12 +230,10 @@ function parseTweet(
     for (const m of extMedia) {
       const media = parseMediaItem(m, restId, ctx);
       if (!media) continue;
-      if (!ctx.media.has(media.id)) {
-        ctx.media.set(media.id, media);
-      }
-      if (!seenMediaIds.has(media.id)) {
-        seenMediaIds.add(media.id);
-        mediaIds.push(media.id);
+      const resolvedMedia = upsertParsedMedia(ctx, media);
+      if (!seenMediaIds.has(resolvedMedia.id)) {
+        seenMediaIds.add(resolvedMedia.id);
+        mediaIds.push(resolvedMedia.id);
       }
     }
   }
@@ -268,7 +291,7 @@ function parseTweet(
 
   const existing = ctx.tweets.get(tweet.id);
   if (existing) {
-    Object.assign(existing, tweet);
+    mergeEntity(existing, tweet);
     return existing;
   }
 
@@ -336,14 +359,104 @@ function walkEntry(
   walkEntryContent(entry?.content, ctx, orderedIds, seenIds);
 }
 
-function extractTimelineInstructions(json: unknown): any[] {
-  if (!json || typeof json !== 'object') return [];
+interface InstructionCandidate {
+  path: string;
+  read: (response: any) => unknown;
+}
+
+interface InstructionExtraction {
+  instructions: any[];
+  instructionPath: string | null;
+  warnings: string[];
+}
+
+const TIMELINE_INSTRUCTION_CANDIDATES: InstructionCandidate[] = [
+  {
+    path: 'data.user.result.timeline.timeline.instructions',
+    read: (response) => response?.data?.user?.result?.timeline?.timeline?.instructions,
+  },
+  {
+    path: 'data.user.result.timeline_v2.timeline.instructions',
+    read: (response) => response?.data?.user?.result?.timeline_v2?.timeline?.instructions,
+  },
+  {
+    path: 'data.home.home_timeline_urt.instructions',
+    read: (response) => response?.data?.home?.home_timeline_urt?.instructions,
+  },
+];
+
+const TWEET_DETAIL_INSTRUCTION_CANDIDATES: InstructionCandidate[] = [
+  {
+    path: 'data.threaded_conversation_with_injections_v2.instructions',
+    read: (response) => response?.data?.threaded_conversation_with_injections_v2?.instructions,
+  },
+];
+
+function extractInstructionArray(
+  json: unknown,
+  candidates: InstructionCandidate[],
+  label: string,
+): InstructionExtraction {
+  if (!json || typeof json !== 'object') {
+    return {
+      instructions: [],
+      instructionPath: null,
+      warnings: [`${label} response was not an object`],
+    };
+  }
 
   const response = json as any;
-  const instructions = response?.data?.user?.result?.timeline?.timeline?.instructions
-    ?? response?.data?.home?.home_timeline_urt?.instructions;
 
-  return Array.isArray(instructions) ? instructions : [];
+  for (const candidate of candidates) {
+    const value = candidate.read(response);
+    if (Array.isArray(value)) {
+      return {
+        instructions: value,
+        instructionPath: candidate.path,
+        warnings: [],
+      };
+    }
+  }
+
+  const warnings: string[] = [];
+  for (const candidate of candidates) {
+    const value = candidate.read(response);
+    if (value !== undefined) {
+      warnings.push(`${label} instructions at ${candidate.path} were not an array`);
+    }
+  }
+  warnings.push(`No ${label} instructions found at known paths`);
+
+  return {
+    instructions: [],
+    instructionPath: null,
+    warnings,
+  };
+}
+
+function walkInstruction(
+  instruction: any,
+  ctx: ParsedResponse,
+  orderedIds?: string[],
+  seenIds?: Set<string>,
+) {
+  if (!instruction || typeof instruction !== 'object') return;
+
+  if (Array.isArray(instruction.entries)) {
+    for (const entry of instruction.entries) {
+      walkEntry(entry, ctx, orderedIds, seenIds);
+    }
+  }
+
+  if (instruction.entry) {
+    walkEntry(instruction.entry, ctx, orderedIds, seenIds);
+  }
+
+  if (Array.isArray(instruction.moduleItems)) {
+    for (const item of instruction.moduleItems) {
+      walkModuleItem(item, ctx, orderedIds, seenIds);
+    }
+  }
 }
 
 export interface TimelineParsedResponse extends ParsedResponse {
@@ -354,34 +467,18 @@ export interface TimelineParsedResponse extends ParsedResponse {
 export interface UserMediaParsedResponse extends TimelineParsedResponse {}
 
 function parseTimelineResponse(json: unknown): TimelineParsedResponse {
+  const extracted = extractInstructionArray(json, TIMELINE_INSTRUCTION_CANDIDATES, 'timeline');
   const ctx: TimelineParsedResponse = {
-    ...createParsedResponse(),
+    ...createParsedResponse(extracted.instructionPath, extracted.warnings),
     tweetIds: [],
   };
 
-  const instructions = extractTimelineInstructions(json);
-  if (instructions.length === 0) return ctx;
+  if (extracted.instructions.length === 0) return ctx;
 
   const seenOrderedIds = new Set<string>();
 
-  for (const instruction of instructions) {
-    if (instruction.type === 'TimelineAddEntries' && Array.isArray(instruction.entries)) {
-      for (const entry of instruction.entries) {
-        walkEntry(entry, ctx, ctx.tweetIds, seenOrderedIds);
-      }
-      continue;
-    }
-
-    if (instruction.type === 'TimelineAddToModule' && Array.isArray(instruction.moduleItems)) {
-      for (const item of instruction.moduleItems) {
-        walkModuleItem(item, ctx, ctx.tweetIds, seenOrderedIds);
-      }
-      continue;
-    }
-
-    if (instruction.type === 'TimelinePinEntry' && instruction.entry) {
-      walkEntry(instruction.entry, ctx, ctx.tweetIds, seenOrderedIds);
-    }
+  for (const instruction of extracted.instructions) {
+    walkInstruction(instruction, ctx, ctx.tweetIds, seenOrderedIds);
   }
 
   return ctx;
@@ -404,19 +501,11 @@ export function parseUserMediaResponse(json: unknown): UserMediaParsedResponse {
 }
 
 export function parseTweetDetailResponse(json: unknown): ParsedResponse {
-  const ctx = createParsedResponse();
+  const extracted = extractInstructionArray(json, TWEET_DETAIL_INSTRUCTION_CANDIDATES, 'tweet detail');
+  const ctx = createParsedResponse(extracted.instructionPath, extracted.warnings);
 
-  if (!json || typeof json !== 'object') return ctx;
-
-  const instructions = (json as any)?.data?.threaded_conversation_with_injections_v2?.instructions;
-  if (!Array.isArray(instructions)) return ctx;
-
-  for (const instruction of instructions) {
-    if (instruction.type !== 'TimelineAddEntries') continue;
-    if (!Array.isArray(instruction.entries)) continue;
-    for (const entry of instruction.entries) {
-      walkEntry(entry, ctx);
-    }
+  for (const instruction of extracted.instructions) {
+    walkInstruction(instruction, ctx);
   }
 
   return ctx;

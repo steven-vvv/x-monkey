@@ -233,4 +233,10 @@ export interface ParsedResponse {
 
   /** 媒体集合（由 parseMediaItem 填充）。 */
   media: Map<string, XMedia>;
+
+  /** 解析元信息，用于记录 instruction 命中路径与告警。 */
+  meta?: {
+    instructionPath: string | null;
+    warnings: string[];
+  };
 }

@@ -8,7 +8,9 @@ import {
   parseUserTweetsResponse,
   type TimelineParsedResponse,
 } from '../src/lib/parser';
-import type { ParsedResponse, XTweet } from '../src/lib/types';
+import { clearDb, dbVersion, runDbBatch, upsertMedia, upsertTweet, upsertUser } from '../src/lib/db-service';
+import { clearTimeline, getTimelineTweetIds, getTimelineVersion, ingestTimeline } from '../src/lib/timeline-store';
+import type { ParsedResponse, XMedia, XTweet, XUser } from '../src/lib/types';
 
 interface CaseConfig {
   name: string;
@@ -45,7 +47,309 @@ function assertTweetShape(tweet: XTweet, caseName: string) {
   }
 }
 
+function buildUser(id: string): Record<string, any> {
+  return {
+    __typename: 'User',
+    rest_id: id,
+    core: {
+      name: `User ${id}`,
+      screen_name: `user_${id}`,
+      created_at: 'Tue Jan 01 00:00:00 +0000 2030',
+    },
+    legacy: {
+      description: '',
+      followers_count: 1,
+      friends_count: 2,
+      favourites_count: 3,
+      statuses_count: 4,
+      media_count: 5,
+      listed_count: 6,
+      pinned_tweet_ids_str: [],
+      entities: {
+        url: {
+          urls: [],
+        },
+      },
+    },
+    avatar: {
+      image_url: '',
+    },
+    location: {
+      location: '',
+    },
+    privacy: {
+      protected: false,
+    },
+    profile_image_shape: 'Circle',
+  };
+}
+
+function buildMedia(id: string): Record<string, any> {
+  return {
+    id_str: id,
+    media_key: `3_${id}`,
+    media_url_https: `https://pbs.twimg.com/media/${id}.jpg`,
+    original_info: {
+      width: 1200,
+      height: 800,
+    },
+    type: 'photo',
+  };
+}
+
+function buildTweet(id: string, userId: string, overrides: Record<string, any> = {}): Record<string, any> {
+  const media = overrides.media === undefined ? [] : overrides.media;
+
+  return {
+    __typename: 'Tweet',
+    rest_id: id,
+    core: {
+      user_results: {
+        result: buildUser(userId),
+      },
+    },
+    legacy: {
+      user_id_str: userId,
+      conversation_id_str: id,
+      full_text: overrides.fullText ?? `tweet-${id}`,
+      lang: overrides.lang ?? 'en',
+      created_at: overrides.createdAt ?? 'Tue Jan 01 00:00:00 +0000 2030',
+      favorite_count: overrides.favoriteCount ?? 1,
+      retweet_count: overrides.retweetCount ?? 2,
+      reply_count: overrides.replyCount ?? 3,
+      quote_count: overrides.quoteCount ?? 4,
+      bookmark_count: overrides.bookmarkCount ?? 5,
+      entities: {
+        media,
+      },
+      extended_entities: media.length > 0 ? { media } : undefined,
+    },
+    source: overrides.source ?? '<a href="https://x.com" rel="nofollow">Web</a>',
+    views: overrides.views ?? { count: '12' },
+  };
+}
+
+function assertInlineParserScenarios() {
+  const structuralFixture = {
+    data: {
+      home: {
+        home_timeline_urt: {
+          instructions: [
+            {
+              type: 'TimelineWeirdEntries',
+              entries: [
+                {
+                  content: {
+                    itemContent: {
+                      tweet_results: {
+                        result: buildTweet('t-entries', 'u-1'),
+                      },
+                    },
+                  },
+                },
+              ],
+            },
+            {
+              type: 'TimelineWeirdModule',
+              moduleItems: [
+                {
+                  item: {
+                    itemContent: {
+                      tweet_results: {
+                        result: buildTweet('t-module', 'u-2'),
+                      },
+                    },
+                  },
+                },
+              ],
+            },
+            {
+              type: 'TimelineUnknownPin',
+              entry: {
+                content: {
+                  itemContent: {
+                    tweet_results: {
+                      result: buildTweet('t-entry', 'u-3'),
+                    },
+                  },
+                },
+              },
+            },
+          ],
+        },
+      },
+    },
+  };
+
+  const structuralParsed = parseHomeTimelineResponse(structuralFixture);
+  if (structuralParsed.tweetIds.join(',') !== 't-entries,t-module,t-entry') {
+    fail(`[inline] structural traversal failed: ${structuralParsed.tweetIds.join(',')}`);
+  }
+
+  const duplicateFixture = {
+    data: {
+      home: {
+        home_timeline_urt: {
+          instructions: [
+            {
+              type: 'TimelineAddEntries',
+              entries: [
+                {
+                  content: {
+                    itemContent: {
+                      tweet_results: {
+                        result: buildTweet('t-merge', 'u-merge', {
+                          fullText: 'kept text',
+                          source: '<a href="https://x.com" rel="nofollow">Rich Web</a>',
+                          media: [buildMedia('m-merge')],
+                        }),
+                      },
+                    },
+                  },
+                },
+              ],
+            },
+            {
+              type: 'TimelineAddToModule',
+              moduleItems: [
+                {
+                  item: {
+                    itemContent: {
+                      tweet_results: {
+                        result: buildTweet('t-merge', 'u-merge', {
+                          fullText: '',
+                          source: '',
+                          media: [],
+                        }),
+                      },
+                    },
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      },
+    },
+  };
+
+  const duplicateParsed = parseHomeTimelineResponse(duplicateFixture);
+  const mergedTweet = duplicateParsed.tweets.get('t-merge');
+  if (!mergedTweet) fail('[inline] duplicate merge tweet missing');
+  if (mergedTweet.fullText !== 'kept text') fail('[inline] duplicate merge lost fullText');
+  if (mergedTweet.source !== 'Rich Web') fail('[inline] duplicate merge lost source');
+  if (mergedTweet.mediaIds.join(',') !== 'm-merge') fail('[inline] duplicate merge lost media ids');
+
+  const emptyParsed = parseHomeTimelineResponse({});
+  if (!emptyParsed.meta?.warnings?.length) fail('[inline] empty timeline response should emit warnings');
+}
+
+function assertDbBatchScenario() {
+  clearDb();
+  const startVersion = dbVersion.value;
+
+  const user: XUser = {
+    id: 'u-db',
+    name: 'User',
+    screenName: 'user',
+    description: '',
+    location: '',
+    avatarUrl: '',
+    profileUrl: null,
+    bannerUrl: null,
+    isBlueVerified: false,
+    verifiedType: null,
+    isProtected: false,
+    profileImageShape: 'Circle',
+    professionalType: null,
+    followersCount: 1,
+    friendsCount: 1,
+    favouritesCount: 1,
+    statusesCount: 1,
+    mediaCount: 1,
+    listedCount: 1,
+    pinnedTweetIds: [],
+    createdAt: 'Tue Jan 01 00:00:00 +0000 2030',
+  };
+
+  const tweet: XTweet = {
+    id: 't-db',
+    authorId: 'u-db',
+    conversationId: 't-db',
+    fullText: 'db tweet',
+    legacyFullText: 'db tweet',
+    noteText: null,
+    lang: 'en',
+    createdAt: 'Tue Jan 01 00:00:00 +0000 2030',
+    inReplyToTweetId: null,
+    inReplyToUserId: null,
+    quotedTweetId: null,
+    retweetedTweetId: null,
+    viewCount: 10,
+    possiblySensitive: false,
+    favoriteCount: 1,
+    retweetCount: 1,
+    replyCount: 1,
+    quoteCount: 1,
+    bookmarkCount: 1,
+    mediaIds: ['m-db'],
+    source: 'Web',
+  };
+
+  const media: XMedia = {
+    id: 'm-db',
+    mediaKey: '3_m-db',
+    tweetId: 't-db',
+    type: 'photo',
+    mediaUrl: 'https://pbs.twimg.com/media/m-db.jpg',
+    thumbUrl: 'https://pbs.twimg.com/media/m-db?format=jpg&name=small',
+    sourceUrl: 'https://pbs.twimg.com/media/m-db?format=jpg&name=orig',
+    width: 1200,
+    height: 800,
+    altText: null,
+    allowDownload: true,
+    sourceStatusId: null,
+    sourceUserId: null,
+    durationMs: null,
+    videoVariants: [],
+  };
+
+  runDbBatch(() => {
+    upsertUser(user);
+    upsertTweet(tweet, false);
+    upsertMedia(media, false);
+  });
+
+  if (dbVersion.value - startVersion !== 1) {
+    fail(`[inline] db batch should bump version exactly once, got ${dbVersion.value - startVersion}`);
+  }
+}
+
+function assertTimelineStoreScenario() {
+  const timelineKey = 'UserMedia:inline';
+  clearTimeline(timelineKey);
+  const startVersion = getTimelineVersion(timelineKey);
+
+  ingestTimeline(timelineKey, ['t1', 't2', 't1']);
+  if (getTimelineTweetIds(timelineKey).join(',') !== 't1,t2') {
+    fail('[inline] timeline store lost order or dedupe');
+  }
+  if (getTimelineVersion(timelineKey) - startVersion !== 1) {
+    fail('[inline] timeline store should bump version once for new ids');
+  }
+
+  const versionAfterDuplicate = getTimelineVersion(timelineKey);
+  ingestTimeline(timelineKey, ['t2']);
+  if (getTimelineVersion(timelineKey) !== versionAfterDuplicate) {
+    fail('[inline] timeline store should ignore duplicate-only ingest');
+  }
+}
+
 function main() {
+  assertInlineParserScenarios();
+  assertDbBatchScenario();
+  assertTimelineStoreScenario();
+
   let totalTweets = 0;
   let totalMedia = 0;
 
