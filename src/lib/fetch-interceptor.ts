@@ -1,6 +1,13 @@
 import { GM_log, unsafeWindow } from '$';
 import { reactive } from 'vue';
-import { parseTweetDetailResponse, parseUserMediaResponse } from './parser';
+import {
+  parseHomeLatestTimelineResponse,
+  parseHomeTimelineResponse,
+  parseTweetDetailResponse,
+  parseUserMediaResponse,
+  parseUserTweetsResponse,
+  type TimelineParsedResponse,
+} from './parser';
 import { upsertTweet, upsertUser, upsertMedia } from './db-service';
 
 // --- Simple notification listeners (for badge count etc.) ---
@@ -71,7 +78,10 @@ export function clearUserMediaStore(): void {
 // --- URL patterns ---
 const GRAPHQL_RE = /^https:\/\/x\.com\/i\/api\/graphql\/([^/?]+)\/([^/?]+)/;
 const TWEET_DETAIL_RE = /^https:\/\/x\.com\/i\/api\/graphql\/([^/]+)\/TweetDetail/;
+const HOME_TIMELINE_RE = /^https:\/\/x\.com\/i\/api\/graphql\/([^/]+)\/HomeTimeline/;
+const HOME_LATEST_TIMELINE_RE = /^https:\/\/x\.com\/i\/api\/graphql\/([^/]+)\/HomeLatestTimeline/;
 const USER_MEDIA_RE = /^https:\/\/x\.com\/i\/api\/graphql\/([^/]+)\/UserMedia/;
+const USER_TWEETS_RE = /^https:\/\/x\.com\/i\/api\/graphql\/([^/]+)\/UserTweets/;
 
 let captureIdCounter = 0;
 
@@ -87,22 +97,36 @@ function extractFocalTweetId(url: string): string | null {
   return null;
 }
 
-function ingestUserMediaResponse(json: unknown): void {
-  const parsed = parseUserMediaResponse(json);
-  if (parsed.tweetIds.length === 0) return;
-
-  // Write to global db first (shared data layer)
+function ingestTimelineEntities(parsed: TimelineParsedResponse | ReturnType<typeof parseTweetDetailResponse>, focalId?: string | null): void {
   for (const user of parsed.users.values()) {
     upsertUser(user);
   }
+
   for (const tweet of parsed.tweets.values()) {
-    upsertTweet(tweet, false);
-  }
-  for (const media of parsed.media.values()) {
-    upsertMedia(media, false);
+    const isFocal = focalId != null && tweet.id === focalId;
+    upsertTweet(tweet, isFocal);
   }
 
-  // Append new tweet IDs (deduplicated, preserve order)
+  for (const media of parsed.media.values()) {
+    const tweet = parsed.tweets.get(media.tweetId);
+    const isFocal = focalId != null && tweet?.id === focalId;
+    upsertMedia(media, isFocal);
+  }
+}
+
+function ingestTimelineResponse(label: string, parsed: TimelineParsedResponse): void {
+  if (parsed.tweetIds.length === 0 && parsed.tweets.size === 0) return;
+  ingestTimelineEntities(parsed);
+  notifyListeners();
+  GM_log(`[${label}] Ingested ${parsed.tweetIds.length} ordered tweets, ${parsed.tweets.size} total tweets`);
+}
+
+function ingestUserMediaResponse(json: unknown): void {
+  const parsed = parseUserMediaResponse(json);
+  if (parsed.tweetIds.length === 0 && parsed.tweets.size === 0) return;
+
+  ingestTimelineEntities(parsed);
+
   const existing = new Set(userMediaStore.tweetIds);
   for (const id of parsed.tweetIds) {
     if (!existing.has(id)) {
@@ -112,6 +136,7 @@ function ingestUserMediaResponse(json: unknown): void {
   }
 
   userMediaVersion.value++;
+  notifyListeners();
   GM_log(`[UserMedia] Ingested ${parsed.tweetIds.length} tweets (total: ${userMediaStore.tweetIds.length})`);
 }
 
@@ -121,21 +146,7 @@ function ingestTweetDetailResponse(url: string, json: unknown): void {
     GM_log(`[TweetDetail] focalTweetId: ${focalId}`);
   }
   const parsed = parseTweetDetailResponse(json);
-
-  for (const user of parsed.users.values()) {
-    upsertUser(user);
-  }
-
-  for (const tweet of parsed.tweets.values()) {
-    const isFocal = tweet.id === focalId;
-    upsertTweet(tweet, isFocal);
-  }
-
-  for (const media of parsed.media.values()) {
-    const tweet = parsed.tweets.get(media.tweetId);
-    const isFocal = tweet ? tweet.id === focalId : false;
-    upsertMedia(media, isFocal);
-  }
+  ingestTimelineEntities(parsed, focalId);
 
   notifyListeners();
 }
@@ -184,7 +195,6 @@ export function installXhrInterceptor(): void {
           });
 
           if (this.status === 200) {
-            // TweetDetail-specific ingestion
             if (TWEET_DETAIL_RE.test(url)) {
               try {
                 const json = JSON.parse(responseBody);
@@ -192,11 +202,31 @@ export function installXhrInterceptor(): void {
               } catch { /* ignore */ }
             }
 
-            // UserMedia-specific ingestion
             if (USER_MEDIA_RE.test(url)) {
               try {
                 const json = JSON.parse(responseBody);
                 ingestUserMediaResponse(json);
+              } catch { /* ignore */ }
+            }
+
+            if (HOME_TIMELINE_RE.test(url)) {
+              try {
+                const json = JSON.parse(responseBody);
+                ingestTimelineResponse('HomeTimeline', parseHomeTimelineResponse(json));
+              } catch { /* ignore */ }
+            }
+
+            if (HOME_LATEST_TIMELINE_RE.test(url)) {
+              try {
+                const json = JSON.parse(responseBody);
+                ingestTimelineResponse('HomeLatestTimeline', parseHomeLatestTimelineResponse(json));
+              } catch { /* ignore */ }
+            }
+
+            if (USER_TWEETS_RE.test(url)) {
+              try {
+                const json = JSON.parse(responseBody);
+                ingestTimelineResponse('UserTweets', parseUserTweetsResponse(json));
               } catch { /* ignore */ }
             }
           }

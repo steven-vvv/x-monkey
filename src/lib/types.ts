@@ -22,14 +22,26 @@ export interface XUser {
   /** 头像 URL（来源：`raw.avatar.image_url`，通常为 `_normal` 尺寸）。 */
   avatarUrl: string;
 
+  /** 用户资料链接（优先来源：`raw.legacy.entities.url.urls[0].expanded_url`）。 */
+  profileUrl: string | null;
+
   /** 头图 URL，若无头图则为 null（来源：`raw.legacy.profile_banner_url`）。 */
   bannerUrl: string | null;
 
   /** 是否蓝标认证（来源：`raw.is_blue_verified`）。 */
   isBlueVerified: boolean;
 
+  /** 认证类型（来源：`raw.verification.verified_type`）。 */
+  verifiedType: string | null;
+
   /** 是否受保护账号（来源：`raw.privacy.protected`）。 */
   isProtected: boolean;
+
+  /** 头像形状（来源：`raw.profile_image_shape`）。 */
+  profileImageShape: string;
+
+  /** 专业账号类型（来源：`raw.professional.professional_type`）。 */
+  professionalType: string | null;
 
   /** 粉丝数（来源：`raw.legacy.followers_count`）。 */
   followersCount: number;
@@ -48,6 +60,9 @@ export interface XUser {
 
   /** 被加入列表次数（来源：`raw.legacy.listed_count`）。 */
   listedCount: number;
+
+  /** 置顶推文 ID 列表（来源：`raw.legacy.pinned_tweet_ids_str`）。 */
+  pinnedTweetIds: string[];
 
   /** 账号创建时间（来源：`raw.core.created_at`，原始字符串）。 */
   createdAt: string;
@@ -142,8 +157,17 @@ export interface XTweet {
   /** 会话 ID（来源：`raw.legacy.conversation_id_str`）。 */
   conversationId: string;
 
-  /** 推文完整文本（来源：`raw.legacy.full_text`）。 */
+  /**
+   * 推文展示文本。
+   * 优先使用 `note_tweet.note_tweet_results.result.text`，否则回退 `raw.legacy.full_text`。
+   */
   fullText: string;
+
+  /** 原始 legacy 文本（来源：`raw.legacy.full_text`）。 */
+  legacyFullText: string;
+
+  /** Note Tweet 完整文本，若无则为 null。 */
+  noteText: string | null;
 
   /** 语言代码（来源：`raw.legacy.lang`）。 */
   lang: string;
@@ -159,6 +183,9 @@ export interface XTweet {
 
   /** 引用推文 ID（递归解析 `quoted_status_result` 后得到）。 */
   quotedTweetId: string | null;
+
+  /** 转推原文 ID（递归解析 `retweeted_status_result` 后得到）。 */
+  retweetedTweetId: string | null;
 
   /** 浏览量（来源：`raw.views.count`，不可解析时为 null）。 */
   viewCount: number | null;

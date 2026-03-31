@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "vite",
     "build": "vue-tsc -b && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "analyze:dumps": "bun run scripts/analyze-dumps.ts",
+    "verify:parsers": "bun run scripts/verify-parsers.ts"
   },
   "dependencies": {
     "vue": "^3.5.19",

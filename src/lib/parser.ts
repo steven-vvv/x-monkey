@@ -8,9 +8,28 @@ function safeNum(v: unknown, fallback = 0): number {
   return typeof v === 'number' ? v : fallback;
 }
 
+function safeStringArray(v: unknown): string[] {
+  if (!Array.isArray(v)) return [];
+  return v.map((item) => safeStr(item)).filter(Boolean);
+}
+
+function createParsedResponse(): ParsedResponse {
+  return {
+    users: new Map(),
+    tweets: new Map(),
+    media: new Map(),
+  };
+}
+
 function stripHtmlSource(html: string): string {
   const m = />([^<]*)</.exec(html);
   return m ? m[1] : html;
+}
+
+function resolveUserProfileUrl(legacy: Record<string, any>): string | null {
+  const expandedUrl = legacy?.entities?.url?.urls?.find((item: any) => typeof item?.expanded_url === 'string')?.expanded_url;
+  if (expandedUrl) return safeStr(expandedUrl);
+  return legacy?.url ? safeStr(legacy.url) : null;
 }
 
 function parseUser(raw: Record<string, any>): XUser | null {
@@ -31,15 +50,20 @@ function parseUser(raw: Record<string, any>): XUser | null {
     description: safeStr(legacy.description),
     location: safeStr(loc.location),
     avatarUrl: safeStr(avatar.image_url),
+    profileUrl: resolveUserProfileUrl(legacy),
     bannerUrl: legacy.profile_banner_url ? safeStr(legacy.profile_banner_url) : null,
     isBlueVerified: !!raw.is_blue_verified,
+    verifiedType: raw.verification?.verified_type ? safeStr(raw.verification.verified_type) : null,
     isProtected: !!priv.protected,
+    profileImageShape: safeStr(raw.profile_image_shape),
+    professionalType: raw.professional?.professional_type ? safeStr(raw.professional.professional_type) : null,
     followersCount: safeNum(legacy.followers_count),
     friendsCount: safeNum(legacy.friends_count),
     favouritesCount: safeNum(legacy.favourites_count),
     statusesCount: safeNum(legacy.statuses_count),
     mediaCount: safeNum(legacy.media_count),
     listedCount: safeNum(legacy.listed_count),
+    pinnedTweetIds: safeStringArray(legacy.pinned_tweet_ids_str),
     createdAt: safeStr(coreInfo.created_at),
   };
 }
@@ -88,7 +112,7 @@ function parseMediaItem(
   const videoInfo = raw.video_info;
 
   const variants: VideoVariant[] = [];
-  if (videoInfo?.variants) {
+  if (Array.isArray(videoInfo?.variants)) {
     for (const v of videoInfo.variants) {
       variants.push({
         bitrate: v.bitrate ?? null,
@@ -105,11 +129,10 @@ function parseMediaItem(
     ? resolvePhotoSourceUrl(mediaUrl)
     : (resolveBestVideoUrl(variants) || mediaUrl);
 
-  // Parse source user from additional_media_info (reposted media)
   const sourceUserRaw = raw.additional_media_info?.source_user?.user_results?.result;
   if (sourceUserRaw) {
     const sourceUser = parseUser(sourceUserRaw);
-    if (sourceUser && !ctx.users.has(sourceUser.id)) {
+    if (sourceUser) {
       ctx.users.set(sourceUser.id, sourceUser);
     }
   }
@@ -133,28 +156,38 @@ function parseMediaItem(
   };
 }
 
+function resolvePreferredTweetText(raw: Record<string, any>, legacy: Record<string, any>) {
+  const legacyFullText = safeStr(legacy.full_text);
+  const noteText = raw.note_tweet?.note_tweet_results?.result?.text
+    ? safeStr(raw.note_tweet.note_tweet_results.result.text)
+    : null;
+
+  return {
+    legacyFullText,
+    noteText,
+    fullText: noteText || legacyFullText,
+  };
+}
+
 function parseTweet(
   raw: Record<string, any>,
   ctx: ParsedResponse,
 ): XTweet | null {
   const typename = safeStr(raw.__typename);
 
-  // Handle TweetWithVisibilityResults wrapper
   if (typename === 'TweetWithVisibilityResults' && raw.tweet) {
     return parseTweet({ __typename: 'Tweet', ...raw.tweet }, ctx);
   }
 
-  // Handle tweets without __typename (e.g. unwrapped from visibility wrapper)
   if (typename !== 'Tweet' && typename !== '') return null;
 
   const restId = safeStr(raw.rest_id);
   if (!restId) return null;
 
-  // Parse author
   const userRaw = raw.core?.user_results?.result;
   if (userRaw) {
     const user = parseUser(userRaw);
-    if (user && !ctx.users.has(user.id)) {
+    if (user) {
       ctx.users.set(user.id, user);
     }
   }
@@ -162,45 +195,67 @@ function parseTweet(
   const legacy = raw.legacy;
   if (!legacy) return null;
 
-  // Parse media from extended_entities (preferred over entities)
   const mediaIds: string[] = [];
-  const extMedia = legacy.extended_entities?.media;
+  const seenMediaIds = new Set<string>();
+  const extMedia = Array.isArray(legacy.extended_entities?.media)
+    ? legacy.extended_entities.media
+    : legacy.entities?.media;
+
   if (Array.isArray(extMedia)) {
     for (const m of extMedia) {
       const media = parseMediaItem(m, restId, ctx);
-      if (media && !ctx.media.has(media.id)) {
+      if (!media) continue;
+      if (!ctx.media.has(media.id)) {
         ctx.media.set(media.id, media);
+      }
+      if (!seenMediaIds.has(media.id)) {
+        seenMediaIds.add(media.id);
         mediaIds.push(media.id);
       }
     }
   }
 
-  // Parse quoted tweet recursively
   let quotedTweetId: string | null = null;
   const quotedResult = raw.quoted_status_result?.result;
   if (quotedResult) {
-    const qt = parseTweet(quotedResult, ctx);
-    if (qt) {
-      quotedTweetId = qt.id;
+    const quotedTweet = parseTweet(quotedResult, ctx);
+    if (quotedTweet) {
+      quotedTweetId = quotedTweet.id;
+    }
+  }
+  if (!quotedTweetId && legacy.quoted_status_id_str) {
+    quotedTweetId = safeStr(legacy.quoted_status_id_str);
+  }
+
+  let retweetedTweetId: string | null = null;
+  const retweetedResult = raw.retweeted_status_result?.result ?? legacy.retweeted_status_result?.result;
+  if (retweetedResult) {
+    const retweetedTweet = parseTweet(retweetedResult, ctx);
+    if (retweetedTweet) {
+      retweetedTweetId = retweetedTweet.id;
     }
   }
 
-  const viewCount = raw.views?.count != null ? parseInt(raw.views.count, 10) : null;
+  const viewCount = raw.views?.count != null ? Number.parseInt(String(raw.views.count), 10) : null;
   const possiblySensitive = typeof legacy.possibly_sensitive === 'boolean'
     ? legacy.possibly_sensitive
     : (typeof raw.possibly_sensitive === 'boolean' ? raw.possibly_sensitive : null);
+  const text = resolvePreferredTweetText(raw, legacy);
 
   const tweet: XTweet = {
     id: restId,
     authorId: safeStr(legacy.user_id_str),
     conversationId: safeStr(legacy.conversation_id_str),
-    fullText: safeStr(legacy.full_text),
+    fullText: text.fullText,
+    legacyFullText: text.legacyFullText,
+    noteText: text.noteText,
     lang: safeStr(legacy.lang),
     createdAt: safeStr(legacy.created_at),
     inReplyToTweetId: legacy.in_reply_to_status_id_str ? safeStr(legacy.in_reply_to_status_id_str) : null,
     inReplyToUserId: legacy.in_reply_to_user_id_str ? safeStr(legacy.in_reply_to_user_id_str) : null,
     quotedTweetId,
-    viewCount: Number.isNaN(viewCount!) ? null : viewCount,
+    retweetedTweetId,
+    viewCount: Number.isNaN(viewCount ?? Number.NaN) ? null : viewCount,
     possiblySensitive,
     favoriteCount: safeNum(legacy.favorite_count),
     retweetCount: safeNum(legacy.retweet_count),
@@ -208,97 +263,148 @@ function parseTweet(
     quoteCount: safeNum(legacy.quote_count),
     bookmarkCount: safeNum(legacy.bookmark_count),
     mediaIds,
-    source: stripHtmlSource(safeStr(legacy.source ?? raw.source ?? '')),
+    source: stripHtmlSource(safeStr(raw.source ?? '')),
   };
 
-  if (!ctx.tweets.has(tweet.id)) {
-    ctx.tweets.set(tweet.id, tweet);
+  const existing = ctx.tweets.get(tweet.id);
+  if (existing) {
+    Object.assign(existing, tweet);
+    return existing;
   }
 
+  ctx.tweets.set(tweet.id, tweet);
   return tweet;
 }
 
-function walkTweetResult(result: any, ctx: ParsedResponse) {
-  if (!result || typeof result !== 'object') return;
-  parseTweet(result, ctx);
+function appendOrderedTweetId(tweetId: string, orderedIds: string[], seenIds: Set<string>) {
+  if (!tweetId || seenIds.has(tweetId)) return;
+  seenIds.add(tweetId);
+  orderedIds.push(tweetId);
 }
 
-function walkEntry(entry: any, ctx: ParsedResponse) {
-  if (!entry?.content) return;
-  const content = entry.content;
+function walkTweetResult(
+  result: any,
+  ctx: ParsedResponse,
+  orderedIds?: string[],
+  seenIds?: Set<string>,
+) {
+  if (!result || typeof result !== 'object') return;
+  const tweet = parseTweet(result, ctx);
+  if (tweet && orderedIds && seenIds) {
+    appendOrderedTweetId(tweet.id, orderedIds, seenIds);
+  }
+}
 
-  // TimelineTimelineItem
+function walkModuleItem(
+  item: any,
+  ctx: ParsedResponse,
+  orderedIds?: string[],
+  seenIds?: Set<string>,
+) {
+  const tweetResult = item?.item?.itemContent?.tweet_results?.result;
+  if (tweetResult) {
+    walkTweetResult(tweetResult, ctx, orderedIds, seenIds);
+  }
+}
+
+function walkEntryContent(
+  content: any,
+  ctx: ParsedResponse,
+  orderedIds?: string[],
+  seenIds?: Set<string>,
+) {
+  if (!content) return;
+
   const itemResult = content.itemContent?.tweet_results?.result;
   if (itemResult) {
-    walkTweetResult(itemResult, ctx);
+    walkTweetResult(itemResult, ctx, orderedIds, seenIds);
   }
 
-  // TimelineTimelineModule (conversation threads)
   if (Array.isArray(content.items)) {
     for (const item of content.items) {
-      const tweetResult = item?.item?.itemContent?.tweet_results?.result;
-      if (tweetResult) {
-        walkTweetResult(tweetResult, ctx);
-      }
+      walkModuleItem(item, ctx, orderedIds, seenIds);
     }
   }
 }
 
-export interface UserMediaParsedResponse extends ParsedResponse {
-  /** Tweet IDs in timeline display order (preserves server ordering). */
+function walkEntry(
+  entry: any,
+  ctx: ParsedResponse,
+  orderedIds?: string[],
+  seenIds?: Set<string>,
+) {
+  walkEntryContent(entry?.content, ctx, orderedIds, seenIds);
+}
+
+function extractTimelineInstructions(json: unknown): any[] {
+  if (!json || typeof json !== 'object') return [];
+
+  const response = json as any;
+  const instructions = response?.data?.user?.result?.timeline?.timeline?.instructions
+    ?? response?.data?.home?.home_timeline_urt?.instructions;
+
+  return Array.isArray(instructions) ? instructions : [];
+}
+
+export interface TimelineParsedResponse extends ParsedResponse {
+  /** Tweet IDs in timeline display order. */
   tweetIds: string[];
 }
 
-function walkModuleItem(item: any, ctx: ParsedResponse, orderedIds: string[]) {
-  const tweetResult = item?.item?.itemContent?.tweet_results?.result;
-  if (tweetResult) {
-    const tweet = parseTweet(tweetResult, ctx);
-    if (tweet) orderedIds.push(tweet.id);
-  }
-}
+export interface UserMediaParsedResponse extends TimelineParsedResponse {}
 
-export function parseUserMediaResponse(json: unknown): UserMediaParsedResponse {
-  const ctx: UserMediaParsedResponse = {
-    users: new Map(),
-    tweets: new Map(),
-    media: new Map(),
+function parseTimelineResponse(json: unknown): TimelineParsedResponse {
+  const ctx: TimelineParsedResponse = {
+    ...createParsedResponse(),
     tweetIds: [],
   };
 
-  if (!json || typeof json !== 'object') return ctx;
+  const instructions = extractTimelineInstructions(json);
+  if (instructions.length === 0) return ctx;
 
-  const instructions = (json as any)?.data?.user?.result?.timeline?.timeline?.instructions;
-  if (!Array.isArray(instructions)) return ctx;
+  const seenOrderedIds = new Set<string>();
 
   for (const instruction of instructions) {
-    // Subsequent page loads: tweets arrive via TimelineAddToModule
-    if (instruction.type === 'TimelineAddToModule' && Array.isArray(instruction.moduleItems)) {
-      for (const item of instruction.moduleItems) {
-        walkModuleItem(item, ctx, ctx.tweetIds);
-      }
-    }
-
-    // Initial page load: tweets inside TimelineAddEntries → TimelineTimelineModule
     if (instruction.type === 'TimelineAddEntries' && Array.isArray(instruction.entries)) {
       for (const entry of instruction.entries) {
-        if (entry.content?.entryType === 'TimelineTimelineModule' && Array.isArray(entry.content.items)) {
-          for (const item of entry.content.items) {
-            walkModuleItem(item, ctx, ctx.tweetIds);
-          }
-        }
+        walkEntry(entry, ctx, ctx.tweetIds, seenOrderedIds);
       }
+      continue;
+    }
+
+    if (instruction.type === 'TimelineAddToModule' && Array.isArray(instruction.moduleItems)) {
+      for (const item of instruction.moduleItems) {
+        walkModuleItem(item, ctx, ctx.tweetIds, seenOrderedIds);
+      }
+      continue;
+    }
+
+    if (instruction.type === 'TimelinePinEntry' && instruction.entry) {
+      walkEntry(instruction.entry, ctx, ctx.tweetIds, seenOrderedIds);
     }
   }
 
   return ctx;
 }
 
+export function parseHomeTimelineResponse(json: unknown): TimelineParsedResponse {
+  return parseTimelineResponse(json);
+}
+
+export function parseHomeLatestTimelineResponse(json: unknown): TimelineParsedResponse {
+  return parseTimelineResponse(json);
+}
+
+export function parseUserTweetsResponse(json: unknown): TimelineParsedResponse {
+  return parseTimelineResponse(json);
+}
+
+export function parseUserMediaResponse(json: unknown): UserMediaParsedResponse {
+  return parseTimelineResponse(json);
+}
+
 export function parseTweetDetailResponse(json: unknown): ParsedResponse {
-  const ctx: ParsedResponse = {
-    users: new Map(),
-    tweets: new Map(),
-    media: new Map(),
-  };
+  const ctx = createParsedResponse();
 
   if (!json || typeof json !== 'object') return ctx;
 
