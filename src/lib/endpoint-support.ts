@@ -47,6 +47,7 @@ export const SUPPORTED_ENDPOINTS = [
 ] as const satisfies readonly EndpointSupportRecord[];
 
 export type SupportedEndpointOperationName = (typeof SUPPORTED_ENDPOINTS)[number]['operationName'];
+export type SupportedTimelineOperationName = Extract<(typeof SUPPORTED_ENDPOINTS)[number], { kind: 'timeline' }>['operationName'];
 
 const supportedEndpointNameSet = new Set<string>(SUPPORTED_ENDPOINTS.map((item) => item.operationName));
 

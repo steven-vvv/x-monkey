@@ -10,8 +10,17 @@ import {
   parseUserTweetsResponse,
   type TimelineParsedResponse,
 } from '../src/lib/parser';
-import { clearDb, dbVersion, runDbBatch, upsertMedia, upsertTweet, upsertUser } from '../src/lib/db-service';
-import { clearTimeline, getTimelineTweetIds, getTimelineVersion, ingestTimeline } from '../src/lib/timeline-store';
+import { clearDb, dbVersion, getTweetCount, runDbBatch, upsertMedia, upsertTweet, upsertUser } from '../src/lib/db-service';
+import { clearCaptureState } from '../src/lib/capture-state-service';
+import {
+  buildTimelineRecordKey,
+  clearTimelineState,
+  getTimelineTweetIds,
+  getTimelineTweetIdsByAlias,
+  getTimelineVersion,
+  ingestTimeline,
+  resolveTimelineRecordKey,
+} from '../src/lib/timeline-store';
 import type { ParsedResponse, XMedia, XTweet, XUser } from '../src/lib/types';
 
 interface CaseConfig {
@@ -361,8 +370,8 @@ function assertDbBatchScenario() {
 
   runDbBatch(() => {
     upsertUser(user);
-    upsertTweet(tweet, false);
-    upsertMedia(media, false);
+    upsertTweet(tweet);
+    upsertMedia(media);
   });
 
   if (dbVersion.value - startVersion !== 1) {
@@ -371,22 +380,126 @@ function assertDbBatchScenario() {
 }
 
 function assertTimelineStoreScenario() {
-  const timelineKey = 'UserMedia:inline';
-  clearTimeline(timelineKey);
-  const startVersion = getTimelineVersion(timelineKey);
+  clearTimelineState();
 
-  ingestTimeline(timelineKey, ['t1', 't2', 't1']);
-  if (getTimelineTweetIds(timelineKey).join(',') !== 't1,t2') {
+  const screenNameKey = buildTimelineRecordKey('UserMedia', 'InlineUser');
+  const userIdKey = buildTimelineRecordKey('UserMedia', 'u-inline');
+
+  const firstIngest = ingestTimeline({
+    key: screenNameKey,
+    operationName: 'UserMedia',
+    tweetIds: ['t1', 't2', 't1'],
+    aliases: ['InlineUser'],
+  });
+
+  if (firstIngest.key !== screenNameKey) {
+    fail('[inline] timeline store should preserve the first canonical key');
+  }
+  if (getTimelineTweetIds(screenNameKey).join(',') !== 't1,t2') {
     fail('[inline] timeline store lost order or dedupe');
   }
-  if (getTimelineVersion(timelineKey) - startVersion !== 1) {
+  if (getTimelineTweetIdsByAlias('UserMedia', 'inlineuser').join(',') !== 't1,t2') {
+    fail('[inline] timeline store should resolve aliases case-insensitively');
+  }
+  if (getTimelineVersion(screenNameKey) !== 1) {
     fail('[inline] timeline store should bump version once for new ids');
   }
 
-  const versionAfterDuplicate = getTimelineVersion(timelineKey);
-  ingestTimeline(timelineKey, ['t2']);
-  if (getTimelineVersion(timelineKey) !== versionAfterDuplicate) {
+  const secondIngest = ingestTimeline({
+    key: userIdKey,
+    operationName: 'UserMedia',
+    tweetIds: ['t3'],
+    aliases: ['u-inline', 'InlineUser'],
+  });
+
+  if (secondIngest.key !== screenNameKey) {
+    fail('[inline] timeline store should merge alternate aliases into the existing record');
+  }
+  if (resolveTimelineRecordKey('UserMedia', 'u-inline') !== screenNameKey) {
+    fail('[inline] timeline store should index secondary aliases');
+  }
+  if (getTimelineTweetIdsByAlias('UserMedia', 'u-inline').join(',') !== 't1,t2,t3') {
+    fail('[inline] timeline store should append new ids onto the merged record');
+  }
+
+  const versionAfterDuplicate = getTimelineVersion(screenNameKey);
+  ingestTimeline({
+    key: userIdKey,
+    operationName: 'UserMedia',
+    tweetIds: ['t2'],
+    aliases: ['u-inline'],
+  });
+  if (getTimelineVersion(screenNameKey) !== versionAfterDuplicate) {
     fail('[inline] timeline store should ignore duplicate-only ingest');
+  }
+}
+
+function assertCaptureStateClearScenario() {
+  clearCaptureState();
+
+  runDbBatch(() => {
+    upsertUser({
+      id: 'u-clear',
+      name: 'User',
+      screenName: 'user',
+      description: '',
+      location: '',
+      avatarUrl: '',
+      profileUrl: null,
+      bannerUrl: null,
+      isBlueVerified: false,
+      verifiedType: null,
+      isProtected: false,
+      profileImageShape: 'Circle',
+      professionalType: null,
+      followersCount: 0,
+      friendsCount: 0,
+      favouritesCount: 0,
+      statusesCount: 0,
+      mediaCount: 0,
+      listedCount: 0,
+      pinnedTweetIds: [],
+      createdAt: 'Tue Jan 01 00:00:00 +0000 2030',
+    });
+    upsertTweet({
+      id: 't-clear',
+      authorId: 'u-clear',
+      conversationId: 't-clear',
+      fullText: 'clear',
+      legacyFullText: 'clear',
+      noteText: null,
+      lang: 'en',
+      createdAt: 'Tue Jan 01 00:00:00 +0000 2030',
+      inReplyToTweetId: null,
+      inReplyToUserId: null,
+      quotedTweetId: null,
+      retweetedTweetId: null,
+      viewCount: null,
+      possiblySensitive: null,
+      favoriteCount: 0,
+      retweetCount: 0,
+      replyCount: 0,
+      quoteCount: 0,
+      bookmarkCount: 0,
+      mediaIds: [],
+      source: 'Web',
+    });
+  });
+
+  ingestTimeline({
+    key: buildTimelineRecordKey('UserMedia', 'clear-user'),
+    operationName: 'UserMedia',
+    tweetIds: ['t-clear'],
+    aliases: ['clear-user'],
+  });
+
+  clearCaptureState();
+
+  if (getTweetCount() !== 0) {
+    fail('[inline] clearCaptureState should empty the database');
+  }
+  if (getTimelineTweetIdsByAlias('UserMedia', 'clear-user').length !== 0) {
+    fail('[inline] clearCaptureState should empty timeline state');
   }
 }
 
@@ -394,6 +507,7 @@ function main() {
   assertInlineParserScenarios();
   assertDbBatchScenario();
   assertTimelineStoreScenario();
+  assertCaptureStateClearScenario();
 
   let totalTweets = 0;
   let totalMedia = 0;

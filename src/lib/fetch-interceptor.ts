@@ -1,5 +1,9 @@
 import { GM_log, unsafeWindow } from '$';
-import { isSupportedEndpointOperation, type SupportedEndpointOperationName } from './endpoint-support';
+import {
+  isSupportedEndpointOperation,
+  type SupportedEndpointOperationName,
+  type SupportedTimelineOperationName,
+} from './endpoint-support';
 import {
   parseBookmarksResponse,
   parseHomeLatestTimelineResponse,
@@ -11,14 +15,7 @@ import {
 } from './parser';
 import { runDbBatch, upsertTweet, upsertUser, upsertMedia } from './db-service';
 import type { ParsedResponse } from './types';
-import {
-  clearTimeline,
-  getTimelineTweetIds,
-  getTimelineVersion,
-  getUserMediaTimelineKey,
-  ingestTimeline,
-  setActiveUserMediaTimelineKey,
-} from './timeline-store';
+import { buildTimelineRecordKey, ingestTimeline } from './timeline-store';
 
 // --- Simple notification listeners (for badge count etc.) ---
 type CaptureListener = () => void;
@@ -61,21 +58,9 @@ function broadcastXhrCapture(data: CapturedXhr) {
   xhrCaptureListeners.forEach((fn) => fn(data));
 }
 
-export function getUserMediaTweetIds(): string[] {
-  return getTimelineTweetIds(getUserMediaTimelineKey());
-}
-
-export function getUserMediaVersion(): number {
-  return getTimelineVersion(getUserMediaTimelineKey());
-}
-
-export function clearUserMediaStore(): void {
-  clearTimeline(getUserMediaTimelineKey());
-  setActiveUserMediaTimelineKey('UserMedia');
-}
-
 // --- URL patterns ---
 const GRAPHQL_RE = /^https:\/\/x\.com\/i\/api\/graphql\/([^/?]+)\/([^/?]+)/;
+const TIMELINE_SCOPE_VARIABLE_NAMES = ['userId', 'rest_id', 'screen_name', 'screenName'];
 
 let captureIdCounter = 0;
 
@@ -115,9 +100,49 @@ function readStringVariable(variables: Record<string, unknown> | null, names: st
   return null;
 }
 
+function readTimelineScopeAliases(variables: Record<string, unknown> | null): string[] {
+  if (!variables) return [];
+
+  const aliases = new Set<string>();
+  for (const name of TIMELINE_SCOPE_VARIABLE_NAMES) {
+    const value = readStringVariable(variables, [name]);
+    if (value) aliases.add(value);
+  }
+
+  return [...aliases];
+}
+
 function resolveTimelineKey(request: GraphqlRequestContext): string {
-  const scope = readStringVariable(request.variables, ['userId', 'rest_id', 'screen_name', 'screenName']);
-  return scope ? `${request.operationName}:${scope}` : request.operationName;
+  const scope = readStringVariable(request.variables, TIMELINE_SCOPE_VARIABLE_NAMES);
+  return buildTimelineRecordKey(request.operationName as SupportedTimelineOperationName, scope);
+}
+
+function resolveTopLevelAuthorAliases(parsed: TimelineParsedResponse): string[] {
+  const authorIds = new Set<string>();
+  for (const tweetId of parsed.tweetIds) {
+    const authorId = parsed.tweets.get(tweetId)?.authorId;
+    if (authorId) {
+      authorIds.add(authorId);
+    }
+  }
+
+  if (authorIds.size !== 1) return [];
+
+  const authorId = [...authorIds][0];
+  const author = parsed.users.get(authorId);
+  return [authorId, author?.screenName ?? ''].filter(Boolean);
+}
+
+function resolveTimelineAliases(request: GraphqlRequestContext, parsed: TimelineParsedResponse): string[] {
+  const aliases = new Set<string>(readTimelineScopeAliases(request.variables));
+
+  if (request.operationName === 'UserMedia' || request.operationName === 'UserTweets') {
+    for (const alias of resolveTopLevelAuthorAliases(parsed)) {
+      aliases.add(alias);
+    }
+  }
+
+  return [...aliases];
 }
 
 function logParseWarnings(label: string, parsed: ParsedResponse): void {
@@ -125,21 +150,18 @@ function logParseWarnings(label: string, parsed: ParsedResponse): void {
   GM_log(`[${label}] Parse warnings: ${parsed.meta.warnings.join(' | ')}`);
 }
 
-function ingestTimelineEntities(parsed: ParsedResponse, focalId?: string | null): void {
+function ingestTimelineEntities(parsed: ParsedResponse): void {
   runDbBatch(() => {
     for (const user of parsed.users.values()) {
       upsertUser(user);
     }
 
     for (const tweet of parsed.tweets.values()) {
-      const isFocal = focalId != null && tweet.id === focalId;
-      upsertTweet(tweet, isFocal);
+      upsertTweet(tweet);
     }
 
     for (const media of parsed.media.values()) {
-      const tweet = parsed.tweets.get(media.tweetId);
-      const isFocal = focalId != null && tweet?.id === focalId;
-      upsertMedia(media, isFocal);
+      upsertMedia(media);
     }
   });
 }
@@ -148,12 +170,11 @@ function ingestTimelineResponse(
   label: string,
   request: GraphqlRequestContext,
   parsed: TimelineParsedResponse,
-  onTimelineKeyResolved?: (timelineKey: string) => void,
 ): void {
   logParseWarnings(label, parsed);
 
   const timelineKey = resolveTimelineKey(request);
-  onTimelineKeyResolved?.(timelineKey);
+  const aliases = resolveTimelineAliases(request, parsed);
 
   if (parsed.tweetIds.length === 0 && parsed.tweets.size === 0) {
     GM_log(`[${label}] Parsed empty response (path: ${parsed.meta?.instructionPath ?? 'n/a'}, key: ${timelineKey})`);
@@ -161,7 +182,12 @@ function ingestTimelineResponse(
   }
 
   ingestTimelineEntities(parsed);
-  ingestTimeline(timelineKey, parsed.tweetIds);
+  ingestTimeline({
+    key: timelineKey,
+    operationName: request.operationName as SupportedTimelineOperationName,
+    tweetIds: parsed.tweetIds,
+    aliases,
+  });
 
   notifyListeners();
   GM_log(`[${label}] Ingested ${parsed.tweetIds.length} ordered tweets, ${parsed.tweets.size} total tweets (key: ${timelineKey})`);
@@ -170,16 +196,17 @@ function ingestTimelineResponse(
 function ingestTweetDetailResponse(request: GraphqlRequestContext, parsed: ParsedResponse): void {
   logParseWarnings('TweetDetail', parsed);
 
-  const focalId = readStringVariable(request.variables, ['focalTweetId']);
   if (parsed.tweets.size === 0) {
     GM_log(`[TweetDetail] Parsed empty response (path: ${parsed.meta?.instructionPath ?? 'n/a'})`);
     return;
   }
+
+  const focalId = readStringVariable(request.variables, ['focalTweetId']);
   if (focalId) {
     GM_log(`[TweetDetail] focalTweetId: ${focalId}`);
   }
 
-  ingestTimelineEntities(parsed, focalId);
+  ingestTimelineEntities(parsed);
   notifyListeners();
 }
 
@@ -223,9 +250,7 @@ const ENDPOINT_HANDLERS: Record<SupportedEndpointOperationName, EndpointHandler<
     label: 'UserMedia',
     parse: parseUserMediaResponse,
     handle: (request, parsed: TimelineParsedResponse) => {
-      ingestTimelineResponse('UserMedia', request, parsed, (timelineKey) => {
-        setActiveUserMediaTimelineKey(timelineKey);
-      });
+      ingestTimelineResponse('UserMedia', request, parsed);
     },
   },
 };

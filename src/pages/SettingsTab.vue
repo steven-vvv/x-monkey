@@ -123,10 +123,10 @@ function onNumberInput(key: keyof AppConfig, e: Event) {
         </div>
       </SettingsSection>
 
-      <SettingsSection title="Behavior" hint="X is a SPA. Enable this to avoid memory bloat when navigating between tweets.">
+      <SettingsSection title="Behavior" hint="By default, captured data is retained for the current page session. Enable auto-clear only if URL changes should reset the in-memory capture state.">
         <label class="xd-settings-check-row">
           <input type="checkbox" :checked="draft.autoClearOnNavigate" @change="setDraft('autoClearOnNavigate', !draft.autoClearOnNavigate)" />
-          <span>Auto-clear database on navigation</span>
+          <span>Auto-clear capture state on navigation</span>
         </label>
       </SettingsSection>
     </div>

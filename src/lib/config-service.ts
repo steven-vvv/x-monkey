@@ -15,6 +15,10 @@ export interface AppConfig {
   theme: ThemeMode;
 }
 
+interface PersistedAppConfig extends Partial<AppConfig> {
+  __version?: number;
+}
+
 export const DEFAULT_CONFIG: AppConfig = {
   anchorX: 60,
   anchorY: 60,
@@ -22,11 +26,12 @@ export const DEFAULT_CONFIG: AppConfig = {
   panelHeight: 420,
   panelVisible: true,
   uiScale: 100,
-  autoClearOnNavigate: true,
+  autoClearOnNavigate: false,
   theme: 'page',
 };
 
 const CONFIG_KEY = 'xd_config';
+const CONFIG_STORAGE_VERSION = 2;
 
 const config = reactive<AppConfig>({ ...DEFAULT_CONFIG });
 
@@ -34,18 +39,39 @@ let initialized = false;
 let listenerId: GmValueListenerId | undefined;
 let persistencePaused = false;
 
+function normalizePersistedConfig(saved: PersistedAppConfig): AppConfig {
+  const merged: AppConfig = {
+    ...DEFAULT_CONFIG,
+    ...saved,
+  };
+
+  const savedVersion = typeof saved.__version === 'number' ? saved.__version : 0;
+  if (savedVersion < CONFIG_STORAGE_VERSION) {
+    merged.autoClearOnNavigate = DEFAULT_CONFIG.autoClearOnNavigate;
+  }
+
+  return merged;
+}
+
+function toPersistedConfig(value: AppConfig): PersistedAppConfig {
+  return {
+    ...value,
+    __version: CONFIG_STORAGE_VERSION,
+  };
+}
+
 export async function initConfig(): Promise<void> {
   if (initialized) return;
   initialized = true;
 
-  const saved = await GM_getValue<Partial<AppConfig>>(CONFIG_KEY, {});
-  Object.assign(config, DEFAULT_CONFIG, saved);
+  const saved = await GM_getValue<PersistedAppConfig>(CONFIG_KEY, {});
+  Object.assign(config, normalizePersistedConfig(saved));
 
   watch(
     () => ({ ...config }),
     (val) => {
       if (!persistencePaused) {
-        GM_setValue(CONFIG_KEY, val);
+        GM_setValue(CONFIG_KEY, toPersistedConfig(val));
       }
     },
     { deep: true },
@@ -57,7 +83,7 @@ export async function initConfig(): Promise<void> {
       if (!remote) return;
       if (persistencePaused) return;
       if (newVal && typeof newVal === 'object') {
-        Object.assign(config, DEFAULT_CONFIG, newVal);
+        Object.assign(config, normalizePersistedConfig(newVal as PersistedAppConfig));
       }
     },
   );
@@ -94,7 +120,7 @@ export function pausePersistence(): void {
 
 export function resumePersistence(): void {
   persistencePaused = false;
-  GM_setValue(CONFIG_KEY, { ...config });
+  GM_setValue(CONFIG_KEY, toPersistedConfig({ ...config }));
 }
 
 export function resetLayout(): void {

@@ -3,9 +3,7 @@ import { computed } from 'vue';
 import { featureRoute, featureNavigateTo } from '../lib/store';
 import { getDbTweet, getDbUser, getParentChain, getReplies, getMediaForTweet, dbVersion } from '../lib/db-service';
 import type { DbTweet } from '../lib/db-service';
-import {
-  getUserMediaTweetIds, getUserMediaVersion,
-} from '../lib/fetch-interceptor';
+import { getTimelineTweetIdsByAlias, getTimelineVersionByAlias } from '../lib/timeline-store';
 import { GM_openInTab } from '$';
 import TweetSummaryItem from '../components/TweetSummaryItem.vue';
 import TweetDetailCard from '../components/TweetDetailCard.vue';
@@ -55,12 +53,17 @@ function openProfile(userId: string) {
 }
 
 // --- UserMedia helpers ---
-const umVersion = computed(() => getUserMediaVersion());
+const userMediaUsername = computed(() => {
+  if (route.value.page === 'user-media') return route.value.username;
+  return null;
+});
+
+const umVersion = computed(() => getTimelineVersionByAlias('UserMedia', userMediaUsername.value));
 
 const umTweetList = computed(() => {
   void umVersion.value;
   void dbVersion.value;
-  return getUserMediaTweetIds().map((id) => {
+  return getTimelineTweetIdsByAlias('UserMedia', userMediaUsername.value).map((id) => {
     const tweet = getDbTweet(id);
     if (!tweet) return null;
     const author = getDbUser(tweet.authorId);

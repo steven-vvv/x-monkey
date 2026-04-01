@@ -1,8 +1,8 @@
-import { installXhrInterceptor, clearUserMediaStore } from './lib/fetch-interceptor';
+import { installXhrInterceptor } from './lib/fetch-interceptor';
 import { initConfig, getConfig, resetLayout, updateConfig } from './lib/config-service';
 import { initTheme } from './lib/theme-service';
 import { currentUrl, syncFeatureRoute } from './lib/store';
-import { clearDb } from './lib/db-service';
+import { clearCaptureState } from './lib/capture-state-service';
 import { watch } from 'vue';
 import { unsafeWindow, GM_log, GM_registerMenuCommand, GM_unregisterMenuCommand } from '$';
 import './style.css';
@@ -132,23 +132,9 @@ async function mount() {
       currentUrl.value = info.url;
       syncFeatureRoute();
 
-      if (cfg.autoClearOnNavigate) {
-        const prevMatch = /\/status\/(\d+)/.exec(prevUrl);
-        const newMatch = /\/status\/(\d+)/.exec(info.url);
-        const prevId = prevMatch?.[1];
-        const newId = newMatch?.[1];
-        if (prevId !== newId) {
-          GM_log('[Auto Clear] Detected tweet change, clearing database');
-          clearDb();
-        }
-      }
-
-      // Clear UserMedia store when navigating away from media page or to a different user
-      const prevMedia = /\/([^/]+)\/media/.exec(prevUrl)?.[1];
-      const newMedia = /\/([^/]+)\/media/.exec(info.url)?.[1];
-      if (prevMedia && prevMedia !== newMedia) {
-        GM_log('[Auto Clear] Detected media page change, clearing UserMedia store');
-        clearUserMediaStore();
+      if (cfg.autoClearOnNavigate && prevUrl !== info.url) {
+        GM_log('[Auto Clear] URL changed, clearing capture state');
+        clearCaptureState();
       }
     });
     GM_log('[URL Change Listener] Installed successfully');

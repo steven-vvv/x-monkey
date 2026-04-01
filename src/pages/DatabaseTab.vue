@@ -3,8 +3,9 @@ import { computed } from 'vue';
 import { dbRoute, dbNavigateTo } from '../lib/store';
 import {
   getAllTweets, getDbTweet, getDbUser,
-  clearDb, dbVersion,
+  dbVersion,
 } from '../lib/db-service';
+import { clearCaptureState } from '../lib/capture-state-service';
 import type { DbTweet } from '../lib/db-service';
 import { GM_openInTab } from '$';
 import TweetSummaryItem from '../components/TweetSummaryItem.vue';
@@ -65,7 +66,6 @@ const detailUser = computed(() => {
           v-for="item in tweetList"
           :key="item.id"
           :tweet="item"
-          show-focal-dot
           @select="openTweet"
         />
       </template>
@@ -94,7 +94,7 @@ const detailUser = computed(() => {
 
     <div class="xd-tab-actions">
       <span class="xd-tab-meta">{{ tweetList.length }} tweets</span>
-      <button class="xd-btn xd-btn--sm xd-btn--error" @click="clearDb">Clear</button>
+      <button class="xd-btn xd-btn--sm xd-btn--error" @click="clearCaptureState">Clear</button>
     </div>
   </div>
 </template>

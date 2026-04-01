@@ -1,16 +1,16 @@
 # x-monkey
 
-A lightweight userscript panel for capturing and browsing X (Twitter) TweetDetail data in real time.
+A lightweight userscript panel for continuously capturing and browsing X (Twitter) GraphQL tweet data in real time.
 
 ## What it does
 
-- Intercepts TweetDetail GraphQL responses from `x.com`.
+- Intercepts supported GraphQL responses from `x.com` across the userscript app session.
 - Parses and normalizes users, tweets, and media into an in-memory database.
 - Shows a draggable/resizable Vue panel with three tabs:
-  - **Feature**: current tweet context, parent chain, replies, and details.
+  - **Feature**: URL-driven feature entry points backed by the accumulated in-memory database.
   - **Database**: full captured tweet list and entity detail views.
   - **Settings**: panel size, scale, theme mode, and behavior options.
-- Supports auto-clear on tweet navigation and route sync with the current URL.
+- Keeps captured entities for the current page session by default; optional auto-clear is available for navigation changes.
 - Uses Shadow DOM style isolation and runtime theme switching.
 
 ## Tech stack

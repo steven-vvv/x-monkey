@@ -7,10 +7,8 @@ import { tweetText, formatTweetDate } from '../lib/view-format';
 const props = withDefaults(defineProps<{
   tweet: DbTweet;
   compact?: boolean;
-  showFocalDot?: boolean;
 }>(), {
   compact: false,
-  showFocalDot: false,
 });
 
 const emit = defineEmits<{
@@ -30,7 +28,6 @@ const dateText = computed(() => formatTweetDate(props.tweet.createdAt));
   >
     <div class="xd-list-item-info">
       <div class="xd-list-item-title">
-        <span v-if="showFocalDot && tweet._focal" class="xd-focal-dot"></span>
         <span class="xd-author-name">{{ author?.name ?? '?' }}</span>
         <span class="xd-author-handle">@{{ author?.screenName ?? '?' }}</span>
         <span class="xd-post-date">{{ dateText }}</span>
@@ -58,15 +55,5 @@ const dateText = computed(() => formatTweetDate(props.tweet.createdAt));
   color: var(--xd-text-secondary);
   font-size: 10px;
   flex-shrink: 0;
-}
-
-.xd-focal-dot {
-  display: inline-block;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--xd-accent);
-  margin-right: 4px;
-  vertical-align: middle;
 }
 </style>

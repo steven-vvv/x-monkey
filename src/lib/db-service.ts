@@ -4,7 +4,6 @@ import { mergeEntity } from './entity-merge';
 
 export interface DbTweet extends XTweet {
   _ts: number;
-  _focal: boolean;
 }
 
 export interface DbUser extends XUser {
@@ -13,7 +12,6 @@ export interface DbUser extends XUser {
 
 export interface DbMedia extends XMedia {
   _ts: number;
-  _focal: boolean;
 }
 
 interface Db {
@@ -57,24 +55,19 @@ export function runDbBatch(fn: () => void): void {
   }
 }
 
-export function upsertTweet(tweet: XTweet, focal: boolean): void {
+export function upsertTweet(tweet: XTweet): void {
   const now = Date.now();
   const existing = db.tweets.get(tweet.id);
 
   if (existing) {
-    if (existing._focal && !focal) {
-      return;
-    }
     const previousTs = existing._ts;
-    const previousFocal = existing._focal;
     const changed = mergeEntity(existing, tweet);
     existing._ts = now;
-    existing._focal = previousFocal || focal;
-    if (changed || previousTs !== existing._ts || previousFocal !== existing._focal) {
+    if (changed || previousTs !== existing._ts) {
       markDirty();
     }
   } else {
-    db.tweets.set(tweet.id, { ...tweet, _ts: now, _focal: focal });
+    db.tweets.set(tweet.id, { ...tweet, _ts: now });
     markDirty();
   }
 }
@@ -95,24 +88,19 @@ export function upsertUser(user: XUser): void {
   }
 }
 
-export function upsertMedia(media: XMedia, focal: boolean): void {
+export function upsertMedia(media: XMedia): void {
   const now = Date.now();
   const existing = db.media.get(media.id);
 
   if (existing) {
-    if (existing._focal && !focal) {
-      return;
-    }
     const previousTs = existing._ts;
-    const previousFocal = existing._focal;
     const changed = mergeEntity(existing, media);
     existing._ts = now;
-    existing._focal = previousFocal || focal;
-    if (changed || previousTs !== existing._ts || previousFocal !== existing._focal) {
+    if (changed || previousTs !== existing._ts) {
       markDirty();
     }
   } else {
-    db.media.set(media.id, { ...media, _ts: now, _focal: focal });
+    db.media.set(media.id, { ...media, _ts: now });
     markDirty();
   }
 }
@@ -144,10 +132,6 @@ export function getAllTweets(): DbTweet[] {
 
 export function getAllUsers(): DbUser[] {
   return Array.from(db.users.values());
-}
-
-export function getFocalTweets(): DbTweet[] {
-  return Array.from(db.tweets.values()).filter((t) => t._focal);
 }
 
 export function getTweetCount(): number {

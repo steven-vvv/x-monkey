@@ -9,8 +9,7 @@ import {
   type TabId,
 } from './lib/store';
 import { getConfig, clampAnchor, updateConfig, pausePersistence, resumePersistence } from './lib/config-service';
-import { getTweetCount } from './lib/db-service';
-import { onCapture } from './lib/fetch-interceptor';
+import { dbVersion, getTweetCount } from './lib/db-service';
 import { unsafeWindow } from '$';
 
 const BUBBLE_R = 18;
@@ -18,8 +17,6 @@ const MIN_W = 280;
 const MIN_H = 200;
 
 const expanded = ref(false);
-const captureNotify = ref(0);
-onCapture(() => { captureNotify.value++; });
 
 const cfg = getConfig();
 
@@ -75,7 +72,10 @@ const contentScaleStyle = computed(() => {
   };
 });
 
-const tweetCount = computed(() => { void captureNotify.value; return getTweetCount(); });
+const tweetCount = computed(() => {
+  void dbVersion.value;
+  return getTweetCount();
+});
 const hasTweetIncome = computed(() => tweetCount.value > 0);
 
 let dragStartX = 0;
