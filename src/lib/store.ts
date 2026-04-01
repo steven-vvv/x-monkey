@@ -1,15 +1,21 @@
 import { reactive, computed, ref } from 'vue';
 import { unsafeWindow } from '$';
+import { getFeatureTimelineLabel, getFeatureTimelineOperation, type FeatureTimelineSource } from './feature-timeline';
+import { getTimelineCreatedOrderByAlias } from './timeline-store';
 
 export type TabId = 'feature' | 'database' | 'settings' | 'tools';
 
+interface FeatureTimelineContext {
+  source?: FeatureTimelineSource;
+  username?: string;
+}
+
 export type FeatureRoute =
   | { page: 'status'; tweetId: string }
-  | { page: 'tweet'; tweetId: string }
-  | { page: 'user'; userId: string }
-  | { page: 'user-media'; username: string }
-  | { page: 'user-media-tweet'; tweetId: string }
-  | { page: 'user-media-user'; userId: string }
+  | { page: 'home-root' }
+  | ({ page: 'timeline' } & Required<Pick<FeatureTimelineContext, 'source'>> & Pick<FeatureTimelineContext, 'username'>)
+  | ({ page: 'tweet'; tweetId: string } & FeatureTimelineContext)
+  | ({ page: 'user'; userId: string } & FeatureTimelineContext)
   | { page: 'none' };
 
 export type DbRoute =
@@ -50,30 +56,75 @@ const nav = reactive<NavState>({
 
 export const currentUrl = ref(unsafeWindow.location.href);
 
-const STATUS_RE = /^https:\/\/x\.com\/([^/]+)\/status\/(\d+)/;
-const USER_MEDIA_RE = /^https:\/\/x\.com\/([^/]+)\/media(?:[?#]|$)/;
+const RESERVED_USER_ROOTS = new Set([
+  'home',
+  'explore',
+  'notifications',
+  'messages',
+  'compose',
+  'settings',
+  'search',
+  'i',
+]);
 
-export function getStatusTweetId(): string | null {
-  const m = STATUS_RE.exec(currentUrl.value);
-  return m ? m[2] : null;
+function getPathSegments(url: string): string[] {
+  try {
+    const parsed = new URL(url);
+    if (parsed.origin !== 'https://x.com') return [];
+    return parsed.pathname.split('/').filter(Boolean);
+  } catch {
+    return [];
+  }
 }
 
-export function getUserMediaUsername(): string | null {
-  const m = USER_MEDIA_RE.exec(currentUrl.value);
-  return m ? m[1] : null;
+function resolveInitialHomeSource(): FeatureTimelineSource {
+  const homeTimelineOrder = getTimelineCreatedOrderByAlias(getFeatureTimelineOperation('home-timeline'));
+  const homeLatestOrder = getTimelineCreatedOrderByAlias(getFeatureTimelineOperation('home-latest-timeline'));
+
+  if (homeTimelineOrder == null && homeLatestOrder == null) {
+    return 'home-timeline';
+  }
+  if (homeTimelineOrder == null) {
+    return 'home-latest-timeline';
+  }
+  if (homeLatestOrder == null) {
+    return 'home-timeline';
+  }
+  return homeLatestOrder < homeTimelineOrder ? 'home-latest-timeline' : 'home-timeline';
+}
+
+function resolveFeatureStack(url: string): FeatureRoute[] {
+  const segments = getPathSegments(url);
+
+  if (segments.length >= 3 && segments[1] === 'status' && /^\d+$/.test(segments[2])) {
+    return [{ page: 'status', tweetId: segments[2] }];
+  }
+
+  if (segments.length === 2 && segments[0] === 'i' && segments[1] === 'bookmarks') {
+    return [{ page: 'timeline', source: 'bookmarks' }];
+  }
+
+  if (segments.length === 1 && segments[0] === 'home') {
+    return [
+      { page: 'home-root' },
+      { page: 'timeline', source: resolveInitialHomeSource() },
+    ];
+  }
+
+  if (segments.length === 2 && segments[1] === 'media') {
+    return [{ page: 'timeline', source: 'user-media', username: segments[0] }];
+  }
+
+  if (segments.length === 1 && !RESERVED_USER_ROOTS.has(segments[0])) {
+    return [{ page: 'timeline', source: 'user-tweets', username: segments[0] }];
+  }
+
+  return [{ page: 'none' }];
 }
 
 export function syncFeatureRoute(): void {
-  const tweetId = getStatusTweetId();
-  const mediaUser = getUserMediaUsername();
-  if (tweetId) {
-    nav.featureStack = [{ page: 'status', tweetId }];
-  } else if (mediaUser) {
-    nav.featureStack = [{ page: 'user-media', username: mediaUser }];
-  } else {
-    nav.featureStack = [{ page: 'none' }];
-  }
-  nav.featureIndex = 0;
+  nav.featureStack = resolveFeatureStack(currentUrl.value);
+  nav.featureIndex = nav.featureStack.length - 1;
 }
 
 export function setActiveTab(tab: TabId): void {
@@ -89,20 +140,18 @@ export const featureBreadcrumbs = computed<Breadcrumb[]>(() => {
   return nav.featureStack.slice(0, nav.featureIndex + 1).map((r, i) => {
     let label = 'Page';
     if (r.page === 'status') label = 'Status';
+    else if (r.page === 'home-root') label = 'Home';
+    else if (r.page === 'timeline') label = getFeatureTimelineLabel(r.source);
     else if (r.page === 'tweet') label = 'Tweet';
     else if (r.page === 'user') label = 'User';
-    else if (r.page === 'user-media') label = 'Media';
-    else if (r.page === 'user-media-tweet') label = 'Tweet';
-    else if (r.page === 'user-media-user') label = 'User';
     else label = 'Feature';
     return { label, index: i, active: i === nav.featureIndex };
   });
 });
 
 export function featureNavigateTo(route: FeatureRoute): void {
-  // Max depth: status -> tweet -> user (3 levels)
-  if (nav.featureIndex >= 2) {
-    // Replace current if at max depth
+  // Max depth: home-root -> timeline -> tweet -> user (4 levels)
+  if (nav.featureIndex >= 3) {
     nav.featureStack[nav.featureIndex] = route;
     return;
   }

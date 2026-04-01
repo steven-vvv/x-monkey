@@ -15,6 +15,8 @@ import { clearCaptureState } from '../src/lib/capture-state-service';
 import {
   buildTimelineRecordKey,
   clearTimelineState,
+  getTimelineCreatedOrder,
+  getTimelineCreatedOrderByAlias,
   getTimelineTweetIds,
   getTimelineTweetIdsByAlias,
   getTimelineVersion,
@@ -404,6 +406,9 @@ function assertTimelineStoreScenario() {
   if (getTimelineVersion(screenNameKey) !== 1) {
     fail('[inline] timeline store should bump version once for new ids');
   }
+  if (getTimelineCreatedOrder(screenNameKey) == null) {
+    fail('[inline] timeline store should record timeline creation order');
+  }
 
   const secondIngest = ingestTimeline({
     key: userIdKey,
@@ -431,6 +436,26 @@ function assertTimelineStoreScenario() {
   });
   if (getTimelineVersion(screenNameKey) !== versionAfterDuplicate) {
     fail('[inline] timeline store should ignore duplicate-only ingest');
+  }
+
+  const homeKey = buildTimelineRecordKey('HomeTimeline');
+  ingestTimeline({
+    key: homeKey,
+    operationName: 'HomeTimeline',
+    tweetIds: ['h1', 'h2'],
+    insertMode: 'prepend',
+  });
+  ingestTimeline({
+    key: homeKey,
+    operationName: 'HomeTimeline',
+    tweetIds: ['h3', 'h2'],
+    insertMode: 'prepend',
+  });
+  if (getTimelineTweetIds(homeKey).join(',') !== 'h3,h1,h2') {
+    fail('[inline] prepend mode should insert new timeline ids at the top');
+  }
+  if (getTimelineCreatedOrderByAlias('HomeTimeline') == null) {
+    fail('[inline] timeline store should resolve created order without aliases');
   }
 }
 

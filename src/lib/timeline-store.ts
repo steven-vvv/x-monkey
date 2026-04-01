@@ -8,17 +8,22 @@ interface TimelineRecord {
   seenIds: Set<string>;
   version: number;
   aliases: Set<string>;
+  createdOrder: number;
 }
+
+export type TimelineInsertMode = 'append' | 'prepend';
 
 export interface TimelineIngestInput {
   key: string;
   operationName: SupportedTimelineOperationName;
   tweetIds: string[];
   aliases?: string[];
+  insertMode?: TimelineInsertMode;
 }
 
 const timelineState = reactive<Record<string, TimelineRecord>>({});
 const timelineAliasIndex = reactive<Record<string, string>>({});
+let timelineCreateCounter = 0;
 
 function normalizeAlias(alias: string): string {
   return alias.trim().toLowerCase();
@@ -64,6 +69,7 @@ function ensureTimelineRecord(input: TimelineIngestInput): TimelineRecord {
       seenIds: new Set<string>(),
       version: 0,
       aliases: new Set<string>(),
+      createdOrder: ++timelineCreateCounter,
     };
   }
 
@@ -90,20 +96,26 @@ export function ingestTimeline(input: TimelineIngestInput): { changed: boolean; 
   }
 
   const record = ensureTimelineRecord(input);
-  let changed = false;
+  const newTweetIds: string[] = [];
 
   for (const tweetId of input.tweetIds) {
     if (!tweetId || record.seenIds.has(tweetId)) continue;
     record.seenIds.add(tweetId);
-    record.tweetIds.push(tweetId);
-    changed = true;
+    newTweetIds.push(tweetId);
   }
 
-  if (changed) {
-    record.version++;
+  if (newTweetIds.length === 0) {
+    return { changed: false, key: record.key };
   }
 
-  return { changed, key: record.key };
+  if (input.insertMode === 'prepend') {
+    record.tweetIds = [...newTweetIds, ...record.tweetIds];
+  } else {
+    record.tweetIds.push(...newTweetIds);
+  }
+  record.version++;
+
+  return { changed: true, key: record.key };
 }
 
 export function resolveTimelineRecordKey(
@@ -125,6 +137,10 @@ export function getTimelineVersion(key: string): number {
   return timelineState[key]?.version ?? 0;
 }
 
+export function getTimelineCreatedOrder(key: string): number | null {
+  return timelineState[key]?.createdOrder ?? null;
+}
+
 export function getTimelineTweetIdsByAlias(
   operationName: SupportedTimelineOperationName,
   alias?: string | null,
@@ -139,6 +155,14 @@ export function getTimelineVersionByAlias(
 ): number {
   const key = resolveTimelineRecordKey(operationName, alias);
   return key ? getTimelineVersion(key) : 0;
+}
+
+export function getTimelineCreatedOrderByAlias(
+  operationName: SupportedTimelineOperationName,
+  alias?: string | null,
+): number | null {
+  const key = resolveTimelineRecordKey(operationName, alias);
+  return key ? getTimelineCreatedOrder(key) : null;
 }
 
 export function clearTimelineState(key?: string): void {

@@ -15,7 +15,7 @@ import {
 } from './parser';
 import { runDbBatch, upsertTweet, upsertUser, upsertMedia } from './db-service';
 import type { ParsedResponse } from './types';
-import { buildTimelineRecordKey, ingestTimeline } from './timeline-store';
+import { buildTimelineRecordKey, ingestTimeline, type TimelineInsertMode } from './timeline-store';
 
 // --- Simple notification listeners (for badge count etc.) ---
 type CaptureListener = () => void;
@@ -170,6 +170,7 @@ function ingestTimelineResponse(
   label: string,
   request: GraphqlRequestContext,
   parsed: TimelineParsedResponse,
+  insertMode: TimelineInsertMode = 'append',
 ): void {
   logParseWarnings(label, parsed);
 
@@ -187,6 +188,7 @@ function ingestTimelineResponse(
     operationName: request.operationName as SupportedTimelineOperationName,
     tweetIds: parsed.tweetIds,
     aliases,
+    insertMode,
   });
 
   notifyListeners();
@@ -229,14 +231,14 @@ const ENDPOINT_HANDLERS: Record<SupportedEndpointOperationName, EndpointHandler<
     label: 'HomeTimeline',
     parse: parseHomeTimelineResponse,
     handle: (request, parsed: TimelineParsedResponse) => {
-      ingestTimelineResponse('HomeTimeline', request, parsed);
+      ingestTimelineResponse('HomeTimeline', request, parsed, 'prepend');
     },
   },
   HomeLatestTimeline: {
     label: 'HomeLatestTimeline',
     parse: parseHomeLatestTimelineResponse,
     handle: (request, parsed: TimelineParsedResponse) => {
-      ingestTimelineResponse('HomeLatestTimeline', request, parsed);
+      ingestTimelineResponse('HomeLatestTimeline', request, parsed, 'prepend');
     },
   },
   UserTweets: {

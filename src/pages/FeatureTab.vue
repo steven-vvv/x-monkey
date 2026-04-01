@@ -1,16 +1,75 @@
 <script setup lang="ts">
 import { computed } from 'vue';
-import { featureRoute, featureNavigateTo } from '../lib/store';
-import { getDbTweet, getDbUser, getParentChain, getReplies, getMediaForTweet, dbVersion } from '../lib/db-service';
+import type { XMedia, XUser } from '../lib/types';
 import type { DbTweet } from '../lib/db-service';
+import { dbVersion, getDbTweet, getDbUser, getMediaForTweet, getParentChain, getReplies } from '../lib/db-service';
+import { HOME_FEATURE_TIMELINE_SOURCES, getFeatureTimelineLabel, getFeatureTimelineOperation, type FeatureTimelineSource } from '../lib/feature-timeline';
 import { getTimelineTweetIdsByAlias, getTimelineVersionByAlias } from '../lib/timeline-store';
+import { featureNavigateTo, featureRoute, type FeatureRoute } from '../lib/store';
 import { GM_openInTab } from '$';
 import TweetSummaryItem from '../components/TweetSummaryItem.vue';
 import TweetDetailCard from '../components/TweetDetailCard.vue';
 import UserDetailCard from '../components/UserDetailCard.vue';
-import UserMediaCard from '../components/UserMediaCard.vue';
+import TimelineTweetCard from '../components/TimelineTweetCard.vue';
+
+interface TimelineCardItem {
+  tweet: DbTweet;
+  author: XUser | undefined;
+  media: XMedia[];
+}
+
+interface FeatureTimelineContext {
+  source: FeatureTimelineSource;
+  username?: string;
+}
 
 const route = featureRoute;
+
+function getRouteTimelineContext(value: FeatureRoute): FeatureTimelineContext | null {
+  if (value.page === 'timeline') {
+    return {
+      source: value.source,
+      username: value.username,
+    };
+  }
+
+  if ((value.page === 'tweet' || value.page === 'user') && value.source) {
+    return {
+      source: value.source,
+      username: value.username,
+    };
+  }
+
+  return null;
+}
+
+function buildTimelineCardItems(source: FeatureTimelineSource, username?: string | null): TimelineCardItem[] {
+  const operationName = getFeatureTimelineOperation(source);
+  const tweetIds = getTimelineTweetIdsByAlias(operationName, username ?? null);
+
+  return tweetIds.map((id) => {
+    const tweet = getDbTweet(id);
+    if (!tweet) return null;
+    return {
+      tweet,
+      author: getDbUser(tweet.authorId),
+      media: getMediaForTweet(tweet.id),
+    };
+  }).filter(Boolean) as TimelineCardItem[];
+}
+
+function getTimelineWaitingText(source: FeatureTimelineSource): string {
+  if (source === 'user-media') return 'Waiting for media data...';
+  if (source === 'user-tweets') return 'Waiting for tweet timeline data...';
+  if (source === 'bookmarks') return 'Waiting for bookmarks data...';
+  if (source === 'home-timeline') return 'Waiting for HomeTimeline data...';
+  return 'Waiting for HomeLatestTimeline data...';
+}
+
+function createRouteWithCurrentTimelineContext<T extends FeatureRoute>(fallbackRoute: T, withContext: (context: FeatureTimelineContext) => T): T {
+  const context = getRouteTimelineContext(route.value);
+  return context ? withContext(context) : fallbackRoute;
+}
 
 const focalTweet = computed(() => {
   void dbVersion.value;
@@ -30,17 +89,48 @@ const detailUser = computed(() => {
   return null;
 });
 
-function openTweet(id: string) {
-  featureNavigateTo({ page: 'tweet', tweetId: id });
+const timelineItems = computed(() => {
+  if (route.value.page !== 'timeline') return [];
+  void dbVersion.value;
+  void getTimelineVersionByAlias(getFeatureTimelineOperation(route.value.source), route.value.username ?? null);
+  return buildTimelineCardItems(route.value.source, route.value.username);
+});
+
+const homeEntryCards = computed(() => {
+  return HOME_FEATURE_TIMELINE_SOURCES.map((source) => {
+    const operationName = getFeatureTimelineOperation(source);
+    void getTimelineVersionByAlias(operationName);
+    return {
+      source,
+      label: getFeatureTimelineLabel(source),
+      count: getTimelineTweetIdsByAlias(operationName).length,
+    };
+  });
+});
+
+function openTweet(tweetId: string) {
+  featureNavigateTo(createRouteWithCurrentTimelineContext(
+    { page: 'tweet', tweetId },
+    (context) => ({ page: 'tweet', tweetId, source: context.source, username: context.username }),
+  ));
 }
 
-function openUser(id: string) {
-  featureNavigateTo({ page: 'user', userId: id });
+function openUser(userId: string) {
+  featureNavigateTo(createRouteWithCurrentTimelineContext(
+    { page: 'user', userId },
+    (context) => ({ page: 'user', userId, source: context.source, username: context.username }),
+  ));
 }
 
-function openOriginal(t: DbTweet) {
-  const u = getDbUser(t.authorId);
-  if (u) GM_openInTab(`https://x.com/${u.screenName}/status/${t.id}`, { active: true });
+function openHomeTimeline(source: FeatureTimelineSource) {
+  featureNavigateTo({ page: 'timeline', source });
+}
+
+function openOriginal(tweet: DbTweet) {
+  const user = getDbUser(tweet.authorId);
+  if (user) {
+    GM_openInTab(`https://x.com/${user.screenName}/status/${tweet.id}`, { active: true });
+  }
 }
 
 function openMediaUrl(url: string) {
@@ -48,64 +138,10 @@ function openMediaUrl(url: string) {
 }
 
 function openProfile(userId: string) {
-  const u = getDbUser(userId);
-  if (u) GM_openInTab(`https://x.com/${u.screenName}`, { active: true });
-}
-
-// --- UserMedia helpers ---
-const userMediaUsername = computed(() => {
-  if (route.value.page === 'user-media') return route.value.username;
-  return null;
-});
-
-const umVersion = computed(() => getTimelineVersionByAlias('UserMedia', userMediaUsername.value));
-
-const umTweetList = computed(() => {
-  void umVersion.value;
-  void dbVersion.value;
-  return getTimelineTweetIdsByAlias('UserMedia', userMediaUsername.value).map((id) => {
-    const tweet = getDbTweet(id);
-    if (!tweet) return null;
-    const author = getDbUser(tweet.authorId);
-    const media = getMediaForTweet(id);
-    return { tweet, author, media };
-  }).filter(Boolean) as { tweet: DbTweet; author: import('../lib/types').XUser | undefined; media: import('../lib/types').XMedia[] }[];
-});
-
-function openUserMediaTweet(id: string) {
-  featureNavigateTo({ page: 'user-media-tweet', tweetId: id });
-}
-
-function openUserMediaUser(id: string) {
-  featureNavigateTo({ page: 'user-media-user', userId: id });
-}
-
-// UserMedia tweet detail
-const umDetailTweet = computed(() => {
-  void dbVersion.value;
-  if (route.value.page === 'user-media-tweet') {
-    return getDbTweet(route.value.tweetId) ?? null;
+  const user = getDbUser(userId);
+  if (user) {
+    GM_openInTab(`https://x.com/${user.screenName}`, { active: true });
   }
-  return null;
-});
-
-// UserMedia user detail
-const umDetailUser = computed(() => {
-  void dbVersion.value;
-  if (route.value.page === 'user-media-user') {
-    return getDbUser(route.value.userId) ?? null;
-  }
-  return null;
-});
-
-function openUmOriginal(t: DbTweet) {
-  const u = getDbUser(t.authorId);
-  if (u) GM_openInTab(`https://x.com/${u.screenName}/status/${t.id}`, { active: true });
-}
-
-function openUmProfile(userId: string) {
-  const u = getDbUser(userId);
-  if (u) GM_openInTab(`https://x.com/${u.screenName}`, { active: true });
 }
 
 const focalParents = computed(() => {
@@ -123,21 +159,28 @@ const focalReplies = computed(() => {
 
 <template>
   <div class="xd-body">
-    <!-- No matching page -->
     <template v-if="route.page === 'none'">
       <div class="xd-empty">No feature available for this page</div>
     </template>
 
-    <!-- Status page (level 1): focal tweet detail -->
+    <template v-else-if="route.page === 'home-root'">
+      <div v-for="entry in homeEntryCards" :key="entry.source" class="xd-list-item xd-list-item--clickable" @click="openHomeTimeline(entry.source)">
+        <div class="xd-list-item-info">
+          <div class="xd-list-item-title">{{ entry.label }}</div>
+          <div class="xd-list-item-meta">{{ entry.count }} tweets captured</div>
+        </div>
+      </div>
+    </template>
+
     <template v-else-if="route.page === 'status'">
       <div v-if="!focalTweet" class="xd-empty">Waiting for tweet data...</div>
       <template v-else>
         <template v-if="focalParents.length > 0">
           <div class="xd-context-label">Thread above</div>
           <TweetSummaryItem
-            v-for="p in focalParents"
-            :key="p.id"
-            :tweet="p"
+            v-for="tweet in focalParents"
+            :key="tweet.id"
+            :tweet="tweet"
             compact
             @select="openTweet"
           />
@@ -155,9 +198,9 @@ const focalReplies = computed(() => {
           <div class="xd-context-divider"></div>
           <div class="xd-context-label">Replies</div>
           <TweetSummaryItem
-            v-for="r in focalReplies"
-            :key="r.id"
-            :tweet="r"
+            v-for="tweet in focalReplies"
+            :key="tweet.id"
+            :tweet="tweet"
             compact
             @select="openTweet"
           />
@@ -165,7 +208,18 @@ const focalReplies = computed(() => {
       </template>
     </template>
 
-    <!-- Tweet detail (level 2, from thread above/replies) -->
+    <template v-else-if="route.page === 'timeline'">
+      <div v-if="timelineItems.length === 0" class="xd-empty">{{ getTimelineWaitingText(route.source) }}</div>
+      <TimelineTweetCard
+        v-for="item in timelineItems"
+        :key="item.tweet.id"
+        :tweet="item.tweet"
+        :author="item.author"
+        :media="item.media"
+        @select="openTweet"
+      />
+    </template>
+
     <template v-else-if="route.page === 'tweet'">
       <div v-if="!detailTweet" class="xd-empty">Tweet not found</div>
       <template v-else>
@@ -178,45 +232,10 @@ const focalReplies = computed(() => {
       </template>
     </template>
 
-    <!-- User detail (level 3) -->
     <template v-else-if="route.page === 'user'">
       <div v-if="!detailUser" class="xd-empty">User not found</div>
       <template v-else>
         <UserDetailCard :user="detailUser" @open-profile="openProfile" />
-      </template>
-    </template>
-
-    <!-- UserMedia: media tweet list (level 1) -->
-    <template v-else-if="route.page === 'user-media'">
-      <div v-if="umTweetList.length === 0" class="xd-empty">Waiting for media data...</div>
-      <UserMediaCard
-        v-for="item in umTweetList"
-        :key="item.tweet.id"
-        :tweet="item.tweet"
-        :author="item.author"
-        :media="item.media"
-        @select="openUserMediaTweet"
-      />
-    </template>
-
-    <!-- UserMedia: tweet detail (level 2) -->
-    <template v-else-if="route.page === 'user-media-tweet'">
-      <div v-if="!umDetailTweet" class="xd-empty">Tweet not found</div>
-      <template v-else>
-        <TweetDetailCard
-          :tweet="umDetailTweet"
-          @open-user="openUserMediaUser"
-          @open-original="openUmOriginal"
-          @open-media="openMediaUrl"
-        />
-      </template>
-    </template>
-
-    <!-- UserMedia: user detail (level 3) -->
-    <template v-else-if="route.page === 'user-media-user'">
-      <div v-if="!umDetailUser" class="xd-empty">User not found</div>
-      <template v-else>
-        <UserDetailCard :user="umDetailUser" @open-profile="openUmProfile" />
       </template>
     </template>
   </div>
