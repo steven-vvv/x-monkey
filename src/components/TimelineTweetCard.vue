@@ -34,7 +34,10 @@ const gridClass = computed(() => {
 <template>
   <div
     class="xd-timeline-card xd-list-item--clickable"
-    :class="{ 'xd-timeline-card--text-only': !hasMedia }"
+    :class="{
+      'xd-timeline-card--with-media': hasMedia,
+      'xd-timeline-card--text-only': !hasMedia,
+    }"
     @click="emit('select', tweet.id)"
   >
     <div class="xd-timeline-card-main">

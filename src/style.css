@@ -272,7 +272,6 @@
   display: flex;
   align-items: stretch;
   gap: 6px;
-  min-height: 96px;
   padding: 6px;
   border: 1px solid var(--xd-border);
   border-radius: var(--xd-radius);
@@ -285,17 +284,21 @@
   margin-bottom: 0;
 }
 
+.xd-timeline-card--with-media {
+  height: 96px;
+}
+
 .xd-timeline-card--text-only {
-  min-height: 0;
   padding: 8px;
+  align-items: flex-start;
 }
 
 .xd-timeline-card-main {
   flex: 1;
   min-width: 0;
+  min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 4px;
   overflow: hidden;
 }
 
@@ -306,6 +309,16 @@
   white-space: pre-wrap;
   word-break: break-word;
   overflow: hidden;
+}
+
+.xd-timeline-card--with-media .xd-timeline-card-text {
+  margin-top: 3px;
+  flex: 1;
+  min-height: 0;
+}
+
+.xd-timeline-card--text-only .xd-timeline-card-text {
+  margin-top: 4px;
   display: -webkit-box;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 4;
