@@ -383,6 +383,10 @@ const TIMELINE_INSTRUCTION_CANDIDATES: InstructionCandidate[] = [
     path: 'data.home.home_timeline_urt.instructions',
     read: (response) => response?.data?.home?.home_timeline_urt?.instructions,
   },
+  {
+    path: 'data.bookmark_timeline_v2.timeline.instructions',
+    read: (response) => response?.data?.bookmark_timeline_v2?.timeline?.instructions,
+  },
 ];
 
 const TWEET_DETAIL_INSTRUCTION_CANDIDATES: InstructionCandidate[] = [
@@ -466,6 +470,8 @@ export interface TimelineParsedResponse extends ParsedResponse {
 
 export interface UserMediaParsedResponse extends TimelineParsedResponse {}
 
+export interface BookmarksParsedResponse extends TimelineParsedResponse {}
+
 function parseTimelineResponse(json: unknown): TimelineParsedResponse {
   const extracted = extractInstructionArray(json, TIMELINE_INSTRUCTION_CANDIDATES, 'timeline');
   const ctx: TimelineParsedResponse = {
@@ -497,6 +503,10 @@ export function parseUserTweetsResponse(json: unknown): TimelineParsedResponse {
 }
 
 export function parseUserMediaResponse(json: unknown): UserMediaParsedResponse {
+  return parseTimelineResponse(json);
+}
+
+export function parseBookmarksResponse(json: unknown): BookmarksParsedResponse {
   return parseTimelineResponse(json);
 }
 

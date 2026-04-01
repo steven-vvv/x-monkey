@@ -1,13 +1,14 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
+import { SUPPORTED_ENDPOINTS, type EndpointKind } from '../src/lib/endpoint-support';
 
 type JsonObject = Record<string, any>;
 
 interface EndpointConfig {
   name: string;
   dir: string;
-  kind: 'timeline' | 'tweet-detail';
-  handledBefore: boolean;
+  kind: EndpointKind;
+  supportVersion: number | null;
 }
 
 interface EndpointStats {
@@ -31,12 +32,13 @@ interface EndpointStats {
 
 const ROOT = resolve(process.cwd());
 const ENDPOINTS: EndpointConfig[] = [
-  { name: 'HomeTimeline', dir: 'dumps/HomeTimeline', kind: 'timeline', handledBefore: false },
-  { name: 'HomeLatestTimeline', dir: 'dumps/HomeLatestTimeline', kind: 'timeline', handledBefore: false },
-  { name: 'UserTweets', dir: 'dumps/UserTweets', kind: 'timeline', handledBefore: false },
-  { name: 'UserMedia', dir: 'dumps/UserMedia', kind: 'timeline', handledBefore: true },
-  { name: 'legacy/UserMedia', dir: 'dumps/legacy/UserMedia', kind: 'timeline', handledBefore: true },
-  { name: 'legacy/TweetDetail', dir: 'dumps/legacy/TweetDetail', kind: 'tweet-detail', handledBefore: true },
+  ...SUPPORTED_ENDPOINTS.map((endpoint) => ({
+    name: endpoint.operationName,
+    dir: endpoint.dumpDir,
+    kind: endpoint.kind,
+    supportVersion: endpoint.supportVersion,
+  })),
+  { name: 'legacy/UserMedia', dir: 'dumps/legacy/UserMedia', kind: 'timeline', supportVersion: null },
 ];
 
 function readJson(filePath: string): JsonObject {
@@ -53,7 +55,8 @@ function normalizeTweetResult(result: any): JsonObject | null {
 
 function collectTimelineTweets(json: JsonObject) {
   const instructions = json?.data?.user?.result?.timeline?.timeline?.instructions
-    ?? json?.data?.home?.home_timeline_urt?.instructions;
+    ?? json?.data?.home?.home_timeline_urt?.instructions
+    ?? json?.data?.bookmark_timeline_v2?.timeline?.instructions;
 
   const tweets: JsonObject[] = [];
   const instructionTypes = new Map<string, number>();
@@ -224,7 +227,7 @@ function setToInline(set: Set<string>): string {
 
 function printEndpoint(config: EndpointConfig, stats: EndpointStats) {
   console.log(`## ${config.name}`);
-  console.log(`- handled-before: ${config.handledBefore ? 'yes' : 'no'}`);
+  console.log(`- support-version: ${config.supportVersion == null ? 'n/a' : `v${config.supportVersion}`}`);
   console.log(`- files: ${stats.files}`);
   console.log(`- tweets: ${stats.tweets}`);
   console.log(`- instruction-types: ${mapToInline(stats.instructionTypes)}`);
@@ -239,6 +242,7 @@ function printEndpoint(config: EndpointConfig, stats: EndpointStats) {
 }
 
 function printConclusions(statsByName: Map<string, EndpointStats>) {
+  const bookmarks = statsByName.get('Bookmarks');
   const newUserMedia = statsByName.get('UserMedia');
   const legacyUserMedia = statsByName.get('legacy/UserMedia');
   const homeTimeline = statsByName.get('HomeTimeline');
@@ -250,6 +254,10 @@ function printConclusions(statsByName: Map<string, EndpointStats>) {
   if (homeTimeline && homeLatestTimeline && userTweets && newUserMedia) {
     console.log(`- New endpoints share the same timeline traversal pattern as UserMedia: tweet nodes are consistently under itemContent/module items, so one generic timeline parser is sufficient.`);
     console.log(`- Timeline pin entries exist in UserTweets (${userTweets.instructionTypes.get('TimelinePinEntry') ?? 0}), so parser coverage must include instruction.entry in addition to entries/moduleItems.`);
+  }
+
+  if (bookmarks) {
+    console.log(`- Bookmarks uses a dedicated root path (data.bookmark_timeline_v2.timeline.instructions), but its tweet packaging still matches the generic timeline walker.`);
   }
 
   if (newUserMedia && legacyUserMedia) {

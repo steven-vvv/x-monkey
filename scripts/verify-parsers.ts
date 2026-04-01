@@ -1,6 +1,8 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
+import { SUPPORTED_ENDPOINTS, type SupportedEndpointOperationName } from '../src/lib/endpoint-support';
 import {
+  parseBookmarksResponse,
   parseHomeLatestTimelineResponse,
   parseHomeTimelineResponse,
   parseTweetDetailResponse,
@@ -17,16 +19,26 @@ interface CaseConfig {
   dir: string;
   parse: (json: unknown) => ParsedResponse | TimelineParsedResponse;
   ordered: boolean;
+  supportVersion: number;
 }
 
 const ROOT = resolve(process.cwd());
-const CASES: CaseConfig[] = [
-  { name: 'HomeTimeline', dir: 'dumps/HomeTimeline', parse: parseHomeTimelineResponse, ordered: true },
-  { name: 'HomeLatestTimeline', dir: 'dumps/HomeLatestTimeline', parse: parseHomeLatestTimelineResponse, ordered: true },
-  { name: 'UserTweets', dir: 'dumps/UserTweets', parse: parseUserTweetsResponse, ordered: true },
-  { name: 'UserMedia', dir: 'dumps/UserMedia', parse: parseUserMediaResponse, ordered: true },
-  { name: 'TweetDetail', dir: 'dumps/legacy/TweetDetail', parse: parseTweetDetailResponse, ordered: false },
-];
+const PARSERS: Record<SupportedEndpointOperationName, (json: unknown) => ParsedResponse | TimelineParsedResponse> = {
+  Bookmarks: parseBookmarksResponse,
+  HomeLatestTimeline: parseHomeLatestTimelineResponse,
+  HomeTimeline: parseHomeTimelineResponse,
+  TweetDetail: parseTweetDetailResponse,
+  UserMedia: parseUserMediaResponse,
+  UserTweets: parseUserTweetsResponse,
+};
+
+const CASES: CaseConfig[] = SUPPORTED_ENDPOINTS.map((endpoint) => ({
+  name: endpoint.operationName,
+  dir: endpoint.dumpDir,
+  parse: PARSERS[endpoint.operationName],
+  ordered: endpoint.kind === 'timeline',
+  supportVersion: endpoint.supportVersion,
+}));
 
 function fail(message: string): never {
   throw new Error(message);
@@ -130,6 +142,39 @@ function buildTweet(id: string, userId: string, overrides: Record<string, any> =
 }
 
 function assertInlineParserScenarios() {
+  const bookmarksFixture = {
+    data: {
+      bookmark_timeline_v2: {
+        timeline: {
+          instructions: [
+            {
+              type: 'TimelineAddEntries',
+              entries: [
+                {
+                  content: {
+                    itemContent: {
+                      tweet_results: {
+                        result: buildTweet('t-bookmark', 'u-bookmark'),
+                      },
+                    },
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      },
+    },
+  };
+
+  const bookmarksParsed = parseBookmarksResponse(bookmarksFixture);
+  if (bookmarksParsed.tweetIds.join(',') !== 't-bookmark') {
+    fail(`[inline] bookmark traversal failed: ${bookmarksParsed.tweetIds.join(',')}`);
+  }
+  if (bookmarksParsed.meta?.instructionPath !== 'data.bookmark_timeline_v2.timeline.instructions') {
+    fail(`[inline] bookmark instruction path mismatch: ${bookmarksParsed.meta?.instructionPath ?? '(null)'}`);
+  }
+
   const structuralFixture = {
     data: {
       home: {
@@ -398,7 +443,7 @@ function main() {
     totalMedia += caseMedia;
 
     const orderedText = testCase.ordered ? `, ordered=${caseOrdered}` : '';
-    console.log(`${testCase.name}: files=${files.length}, tweets=${caseTweets}, media=${caseMedia}, users=${caseUsers}${orderedText}`);
+    console.log(`${testCase.name}@v${testCase.supportVersion}: files=${files.length}, tweets=${caseTweets}, media=${caseMedia}, users=${caseUsers}${orderedText}`);
   }
 
   console.log(`Totals: tweets=${totalTweets}, media=${totalMedia}`);

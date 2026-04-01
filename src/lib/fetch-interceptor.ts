@@ -1,5 +1,7 @@
 import { GM_log, unsafeWindow } from '$';
+import { isSupportedEndpointOperation, type SupportedEndpointOperationName } from './endpoint-support';
 import {
+  parseBookmarksResponse,
   parseHomeLatestTimelineResponse,
   parseHomeTimelineResponse,
   parseTweetDetailResponse,
@@ -181,12 +183,19 @@ function ingestTweetDetailResponse(request: GraphqlRequestContext, parsed: Parse
   notifyListeners();
 }
 
-const ENDPOINT_HANDLERS: Record<string, EndpointHandler<any>> = {
+const ENDPOINT_HANDLERS: Record<SupportedEndpointOperationName, EndpointHandler<any>> = {
   TweetDetail: {
     label: 'TweetDetail',
     parse: parseTweetDetailResponse,
     handle: (request, parsed: ParsedResponse) => {
       ingestTweetDetailResponse(request, parsed);
+    },
+  },
+  Bookmarks: {
+    label: 'Bookmarks',
+    parse: parseBookmarksResponse,
+    handle: (request, parsed: TimelineParsedResponse) => {
+      ingestTimelineResponse('Bookmarks', request, parsed);
     },
   },
   HomeTimeline: {
@@ -222,8 +231,8 @@ const ENDPOINT_HANDLERS: Record<string, EndpointHandler<any>> = {
 };
 
 function handleGraphqlResponse(request: GraphqlRequestContext, responseBody: string): void {
+  if (!isSupportedEndpointOperation(request.operationName)) return;
   const endpoint = ENDPOINT_HANDLERS[request.operationName];
-  if (!endpoint) return;
 
   let json: unknown;
   try {
