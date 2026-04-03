@@ -7,8 +7,7 @@ import { HOME_FEATURE_TIMELINE_SOURCES, getFeatureTimelineLabel, getFeatureTimel
 import { getTimelineTweetIdsByAlias, getTimelineVersionByAlias } from '../lib/timeline-store';
 import { featureNavigateTo, featureRoute, type FeatureRoute } from '../lib/store';
 import { GM_openInTab } from '$';
-import TweetSummaryItem from '../components/TweetSummaryItem.vue';
-import TweetDetailCard from '../components/TweetDetailCard.vue';
+import TweetDetailView from '../components/TweetDetailView.vue';
 import UserDetailCard from '../components/UserDetailCard.vue';
 import TimelineTweetCard from '../components/TimelineTweetCard.vue';
 
@@ -81,6 +80,12 @@ const detailTweet = computed(() => {
   void dbVersion.value;
   if (route.value.page === 'tweet') return getDbTweet(route.value.tweetId) ?? null;
   return null;
+});
+
+const detailReplies = computed(() => {
+  void dbVersion.value;
+  if (!detailTweet.value) return [];
+  return getReplies(detailTweet.value.id);
 });
 
 const detailUser = computed(() => {
@@ -175,36 +180,16 @@ const focalReplies = computed(() => {
     <template v-else-if="route.page === 'status'">
       <div v-if="!focalTweet" class="xd-empty">Waiting for tweet data...</div>
       <template v-else>
-        <template v-if="focalParents.length > 0">
-          <div class="xd-context-label">Thread above</div>
-          <TweetSummaryItem
-            v-for="tweet in focalParents"
-            :key="tweet.id"
-            :tweet="tweet"
-            compact
-            @select="openTweet"
-          />
-          <div class="xd-context-divider"></div>
-        </template>
-
-        <TweetDetailCard
+        <TweetDetailView
           :tweet="focalTweet"
+          :parents="focalParents"
+          :replies="focalReplies"
+          show-parents
           @open-user="openUser"
           @open-original="openOriginal"
           @open-media="openMediaUrl"
+          @open-tweet="openTweet"
         />
-
-        <template v-if="focalReplies.length > 0">
-          <div class="xd-context-divider"></div>
-          <div class="xd-context-label">Replies</div>
-          <TweetSummaryItem
-            v-for="tweet in focalReplies"
-            :key="tweet.id"
-            :tweet="tweet"
-            compact
-            @select="openTweet"
-          />
-        </template>
       </template>
     </template>
 
@@ -223,11 +208,13 @@ const focalReplies = computed(() => {
     <template v-else-if="route.page === 'tweet'">
       <div v-if="!detailTweet" class="xd-empty">Tweet not found</div>
       <template v-else>
-        <TweetDetailCard
+        <TweetDetailView
           :tweet="detailTweet"
+          :replies="detailReplies"
           @open-user="openUser"
           @open-original="openOriginal"
           @open-media="openMediaUrl"
+          @open-tweet="openTweet"
         />
       </template>
     </template>
@@ -240,20 +227,3 @@ const focalReplies = computed(() => {
     </template>
   </div>
 </template>
-
-<style scoped>
-.xd-context-label {
-  font-size: 10px;
-  font-weight: 600;
-  color: var(--xd-text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  margin-bottom: 4px;
-}
-
-.xd-context-divider {
-  height: 1px;
-  background: var(--xd-border);
-  margin: 8px 0;
-}
-</style>

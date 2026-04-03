@@ -9,7 +9,7 @@ import { clearCaptureState } from '../lib/capture-state-service';
 import type { DbTweet } from '../lib/db-service';
 import { GM_openInTab } from '$';
 import TweetSummaryItem from '../components/TweetSummaryItem.vue';
-import TweetDetailCard from '../components/TweetDetailCard.vue';
+import TweetDetailView from '../components/TweetDetailView.vue';
 import UserDetailCard from '../components/UserDetailCard.vue';
 import RemoteDbTweetPanel from '../components/RemoteDbTweetPanel.vue';
 import { isRemoteDbPostApiReady } from '../lib/remote-db';
@@ -86,26 +86,18 @@ const shouldShowRemoteDbPanel = computed(() => {
       <template v-else-if="route.page === 'tweet'">
         <div v-if="!detailTweet" class="xd-empty">Tweet not found</div>
         <template v-else>
-          <TweetDetailCard
+          <TweetDetailView
             :tweet="detailTweet"
+            :replies="detailReplies"
             @open-user="openUser"
             @open-original="openOriginal"
             @open-media="openMediaUrl"
-          />
-
-          <RemoteDbTweetPanel v-if="shouldShowRemoteDbPanel" :tweet="detailTweet" />
-
-          <template v-if="detailReplies.length > 0">
-            <div class="xd-context-divider"></div>
-            <div class="xd-context-label">Replies</div>
-            <TweetSummaryItem
-              v-for="tweet in detailReplies"
-              :key="tweet.id"
-              :tweet="tweet"
-              compact
-              @select="openTweet"
-            />
-          </template>
+            @open-tweet="openTweet"
+          >
+            <template #after-detail>
+              <RemoteDbTweetPanel v-if="shouldShowRemoteDbPanel" :tweet="detailTweet" />
+            </template>
+          </TweetDetailView>
         </template>
       </template>
 
@@ -124,20 +116,3 @@ const shouldShowRemoteDbPanel = computed(() => {
     </div>
   </div>
 </template>
-
-<style scoped>
-.xd-context-label {
-  font-size: 10px;
-  font-weight: 600;
-  color: var(--xd-text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  margin-bottom: 4px;
-}
-
-.xd-context-divider {
-  height: 1px;
-  background: var(--xd-border);
-  margin: 8px 0;
-}
-</style>

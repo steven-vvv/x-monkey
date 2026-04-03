@@ -515,6 +515,21 @@
   color: var(--xd-text-secondary);
 }
 
+.xd-context-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--xd-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 4px;
+}
+
+.xd-context-divider {
+  height: 1px;
+  background: var(--xd-border);
+  margin: 8px 0;
+}
+
 .xd-detail-grid {
   display: grid;
   grid-template-columns: auto auto 12px auto auto;
