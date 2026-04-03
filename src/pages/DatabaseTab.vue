@@ -2,7 +2,7 @@
 import { computed } from 'vue';
 import { dbRoute, dbNavigateTo } from '../lib/store';
 import {
-  getAllTweets, getDbTweet, getDbUser,
+  getAllTweets, getDbTweet, getDbUser, getReplies,
   dbVersion,
 } from '../lib/db-service';
 import { clearCaptureState } from '../lib/capture-state-service';
@@ -11,8 +11,11 @@ import { GM_openInTab } from '$';
 import TweetSummaryItem from '../components/TweetSummaryItem.vue';
 import TweetDetailCard from '../components/TweetDetailCard.vue';
 import UserDetailCard from '../components/UserDetailCard.vue';
+import RemoteDbTweetPanel from '../components/RemoteDbTweetPanel.vue';
+import { getRemoteDbClientState } from '../lib/remote-db-client';
 
 const route = dbRoute;
+const remoteDbState = getRemoteDbClientState();
 
 const tweetList = computed(() => {
   void dbVersion.value;
@@ -48,11 +51,23 @@ const detailTweet = computed(() => {
   return null;
 });
 
+const detailReplies = computed(() => {
+  void dbVersion.value;
+  if (!detailTweet.value) return [];
+  return getReplies(detailTweet.value.id);
+});
+
 // User detail computeds
 const detailUser = computed(() => {
   void dbVersion.value;
   if (route.value.page === 'user') return getDbUser(route.value.userId) ?? null;
   return null;
+});
+
+const shouldShowRemoteDbPanel = computed(() => {
+  return remoteDbState.enabled
+    && remoteDbState.lifecycle === 'ready'
+    && remoteDbState.sessionState === 'authenticated';
 });
 </script>
 
@@ -80,6 +95,20 @@ const detailUser = computed(() => {
             @open-original="openOriginal"
             @open-media="openMediaUrl"
           />
+
+          <RemoteDbTweetPanel v-if="shouldShowRemoteDbPanel" :tweet="detailTweet" />
+
+          <template v-if="detailReplies.length > 0">
+            <div class="xd-context-divider"></div>
+            <div class="xd-context-label">Replies</div>
+            <TweetSummaryItem
+              v-for="tweet in detailReplies"
+              :key="tweet.id"
+              :tweet="tweet"
+              compact
+              @select="openTweet"
+            />
+          </template>
         </template>
       </template>
 
@@ -98,3 +127,20 @@ const detailUser = computed(() => {
     </div>
   </div>
 </template>
+
+<style scoped>
+.xd-context-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--xd-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 4px;
+}
+
+.xd-context-divider {
+  height: 1px;
+  background: var(--xd-border);
+  margin: 8px 0;
+}
+</style>
