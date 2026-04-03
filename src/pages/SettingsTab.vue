@@ -169,40 +169,6 @@ const remoteDbStatusText = computed(() => {
   return 'Not configured';
 });
 
-const remoteDbStatusClass = computed(() => {
-  if (!remoteDbState.enabled || !remoteDbState.runtimeEnabled || remoteDbState.lifecycle === 'paused') {
-    return 'xd-settings-status--muted';
-  }
-
-  if (remoteDbState.lifecycle === 'unconfigured') {
-    return 'xd-settings-status--muted';
-  }
-
-  if (
-    remoteDbState.lifecycle === 'initializing'
-    || remoteDbState.sessionState === 'checking'
-  ) {
-    return 'xd-settings-status--info';
-  }
-
-  if (remoteDbState.lifecycle === 'ready' && remoteDbState.sessionState === 'authenticated') {
-    return 'xd-settings-status--success';
-  }
-
-  if (
-    remoteDbState.sessionState === 'anonymous'
-    || remoteDbState.sessionState === 'pending_registration'
-  ) {
-    return 'xd-settings-status--warning';
-  }
-
-  if (remoteDbState.lifecycle === 'error' || remoteDbState.sessionState === 'error') {
-    return 'xd-settings-status--error';
-  }
-
-  return 'xd-settings-status--muted';
-});
-
 const remoteDbHint = computed(() => {
   if (remoteDbConfigurable) {
     return 'Check applies the current draft in memory. Save persists the enable switch and Base URL.';
@@ -290,15 +256,9 @@ async function checkRemoteDbConnection(): Promise<void> {
             <span>Enable remote database</span>
           </label>
 
-          <div class="xd-settings-status-row">
-            <span class="xd-settings-status" :class="remoteDbStatusClass">{{ remoteDbStatusText }}</span>
-            <button
-              v-if="shouldShowRemoteAccountAction"
-              class="xd-btn xd-btn--sm xd-btn--accent"
-              @click="openRemoteAccountPage"
-            >
-              Open Account
-            </button>
+          <div class="xd-settings-field">
+            <span class="xd-settings-field-label">Status</span>
+            <span class="xd-settings-field-value">{{ remoteDbStatusText }}</span>
           </div>
 
           <div v-if="remoteDbConfigurable" class="xd-settings-column">
@@ -318,6 +278,9 @@ async function checkRemoteDbConnection(): Promise<void> {
           </div>
           <div v-else class="xd-settings-row">
             <button class="xd-btn xd-btn--sm" :disabled="checkDisabled" @click="checkRemoteDbConnection">{{ checkButtonText }}</button>
+          </div>
+          <div v-if="shouldShowRemoteAccountAction" class="xd-settings-row">
+            <button class="xd-btn xd-btn--sm xd-btn--accent" @click="openRemoteAccountPage">Open Account</button>
           </div>
         </div>
       </SettingsSection>
@@ -343,45 +306,23 @@ async function checkRemoteDbConnection(): Promise<void> {
   gap: 6px;
 }
 
-.xd-settings-status-row {
+.xd-settings-field {
   display: flex;
   align-items: flex-start;
-  flex-wrap: wrap;
+  justify-content: space-between;
   gap: 8px;
-}
-
-.xd-settings-status {
-  display: inline-flex;
-  align-items: center;
-  max-width: 100%;
-  padding: 2px 8px;
-  border: 1px solid var(--xd-border);
-  border-radius: 999px;
-  background: var(--xd-bg-secondary);
-  color: var(--xd-text-secondary);
   font-size: 11px;
-  line-height: 1.4;
-  word-break: break-word;
 }
 
-.xd-settings-status--muted {
+.xd-settings-field-label {
   color: var(--xd-text-muted);
+  flex-shrink: 0;
 }
 
-.xd-settings-status--info {
-  color: var(--xd-text-secondary);
-}
-
-.xd-settings-status--success {
-  color: var(--xd-accent);
-}
-
-.xd-settings-status--warning {
+.xd-settings-field-value {
   color: var(--xd-text-primary);
-}
-
-.xd-settings-status--error {
-  color: var(--xd-error);
+  text-align: right;
+  word-break: break-word;
 }
 
 .xd-settings-column {
