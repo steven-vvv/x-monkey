@@ -12,10 +12,9 @@ import TweetSummaryItem from '../components/TweetSummaryItem.vue';
 import TweetDetailCard from '../components/TweetDetailCard.vue';
 import UserDetailCard from '../components/UserDetailCard.vue';
 import RemoteDbTweetPanel from '../components/RemoteDbTweetPanel.vue';
-import { getRemoteDbClientState } from '../lib/remote-db';
+import { isRemoteDbPostApiReady } from '../lib/remote-db';
 
 const route = dbRoute;
-const remoteDbState = getRemoteDbClientState();
 
 const tweetList = computed(() => {
   void dbVersion.value;
@@ -65,9 +64,7 @@ const detailUser = computed(() => {
 });
 
 const shouldShowRemoteDbPanel = computed(() => {
-  return remoteDbState.enabled
-    && remoteDbState.lifecycle === 'ready'
-    && remoteDbState.sessionState === 'authenticated';
+  return isRemoteDbPostApiReady();
 });
 </script>
 

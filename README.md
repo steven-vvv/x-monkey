@@ -49,6 +49,12 @@ Default repository configuration:
 
 This means the feature is enabled by default, the Settings tab will show the remote database section, and the Base URL can be entered later if it is not fixed in the file.
 
+Runtime behavior in the userscript:
+
+- A per-user `Enable remote database` switch is available in Settings.
+- `Check` applies the current draft enable state and Base URL in memory immediately.
+- `Save` persists the enable state and Base URL to userscript storage.
+
 Build-time fields:
 
 - `enabled`

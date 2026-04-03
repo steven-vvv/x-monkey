@@ -84,17 +84,6 @@ const comparison = computed(() => {
   return compareRemoteDbPostStatus(props.tweet, author.value, media.value, state.remoteItem);
 });
 
-const existsText = computed(() => {
-  if (!state.remoteItem || !comparison.value) return '-';
-  return comparison.value.exists ? 'Exists' : 'Not found';
-});
-
-const consistencyText = computed(() => {
-  if (!state.remoteItem || !comparison.value) return '-';
-  if (!comparison.value.exists) return 'Not synced';
-  return comparison.value.consistent ? 'Consistent' : 'Mismatch';
-});
-
 const transferText = computed(() => {
   if (!state.remoteItem || !comparison.value || !comparison.value.exists) {
     return '-';
@@ -128,8 +117,26 @@ const missingMediaText = computed(() => {
   return `Missing media: ${state.remoteItem.missingMediaSourceIds.length}`;
 });
 
+const statusText = computed(() => {
+  if (!state.remoteItem || !comparison.value) return '-';
+  if (!comparison.value.exists) return 'Not Found';
+  return comparison.value.consistent ? 'In Sync' : 'Mismatch';
+});
+
+const refreshDisabled = computed(() => {
+  return state.queryState === 'loading' || state.syncState === 'submitting';
+});
+
+const refreshButtonText = computed(() => {
+  if (state.queryState !== 'loading') {
+    return 'Refresh';
+  }
+
+  return state.remoteItem ? 'Refreshing...' : 'Loading...';
+});
+
 const syncDisabled = computed(() => {
-  return !author.value || state.syncState === 'submitting';
+  return !author.value || state.syncState === 'submitting' || state.queryState === 'loading';
 });
 
 const syncDisabledText = computed(() => {
@@ -166,16 +173,23 @@ async function syncCurrentTweet(): Promise<void> {
     state.syncMessage = toErrorMessage(error, 'Failed to sync current tweet to remote database');
   }
 }
+
+async function refreshRemoteStatus(): Promise<void> {
+  await loadRemoteStatus();
+}
 </script>
 
 <template>
   <section class="xd-remote-panel">
     <div class="xd-remote-panel-header">
       <div class="xd-remote-panel-title">Remote Database</div>
-      <button class="xd-btn xd-btn--sm xd-btn--accent" :disabled="syncDisabled" @click="syncCurrentTweet">{{ syncButtonText }}</button>
+      <div class="xd-remote-panel-actions">
+        <button class="xd-btn xd-btn--sm" :disabled="refreshDisabled" @click="refreshRemoteStatus">{{ refreshButtonText }}</button>
+        <button class="xd-btn xd-btn--sm xd-btn--accent" :disabled="syncDisabled" @click="syncCurrentTweet">{{ syncButtonText }}</button>
+      </div>
     </div>
 
-    <div v-if="state.queryState === 'loading'" class="xd-remote-note">
+    <div v-if="state.queryState === 'loading' && !state.remoteItem" class="xd-remote-note">
       Loading remote status...
     </div>
     <div v-else-if="state.queryState === 'error'" class="xd-remote-note xd-remote-note--error">
@@ -183,12 +197,8 @@ async function syncCurrentTweet(): Promise<void> {
     </div>
     <div v-else-if="state.remoteItem && comparison" class="xd-remote-grid">
       <div class="xd-remote-metric">
-        <span class="xd-remote-metric-label">Post</span>
-        <strong class="xd-remote-metric-value">{{ existsText }}</strong>
-      </div>
-      <div class="xd-remote-metric">
-        <span class="xd-remote-metric-label">Consistency</span>
-        <strong class="xd-remote-metric-value">{{ consistencyText }}</strong>
+        <span class="xd-remote-metric-label">Status</span>
+        <strong class="xd-remote-metric-value">{{ statusText }}</strong>
       </div>
       <div class="xd-remote-metric">
         <span class="xd-remote-metric-label">Transfer</span>
@@ -203,6 +213,9 @@ async function syncCurrentTweet(): Promise<void> {
       <div v-if="mismatchText" class="xd-remote-note">
         {{ mismatchText }}
       </div>
+    </div>
+    <div v-if="state.queryState === 'loading' && state.remoteItem" class="xd-remote-note">
+      Refreshing remote status...
     </div>
 
     <div v-if="syncDisabledText" class="xd-remote-note xd-remote-note--error">
@@ -244,6 +257,12 @@ async function syncCurrentTweet(): Promise<void> {
   font-size: 11px;
   font-weight: 600;
   color: var(--xd-text-secondary);
+}
+
+.xd-remote-panel-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .xd-remote-grid {
