@@ -4,6 +4,11 @@ export interface RemoteDbBuildConfig {
   defaultBaseUrl: string | null;
 }
 
+export interface RemoteDbClientConfig {
+  runtimeEnabled: boolean;
+  baseUrl: string | null | undefined;
+}
+
 export interface RemoteDbSessionResponse {
   authenticated: boolean;
   registered: boolean;
@@ -181,6 +186,7 @@ export interface RemoteDbPostStatusQueryResponse {
 
 export type RemoteDbLifecycleState =
   | 'disabled'
+  | 'paused'
   | 'unconfigured'
   | 'initializing'
   | 'ready'
@@ -196,6 +202,7 @@ export type RemoteDbSessionState =
 
 export interface RemoteDbClientState {
   enabled: boolean;
+  runtimeEnabled: boolean;
   configurable: boolean;
   defaultBaseUrl: string | null;
   baseUrl: string | null;

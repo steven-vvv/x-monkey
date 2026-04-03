@@ -90,9 +90,9 @@ async function mount() {
   const cfg = getConfig();
 
   watch(
-    () => cfg.remoteDbBaseUrl,
-    (baseUrl) => {
-      void configureRemoteDbClient(baseUrl);
+    () => [cfg.remoteDbEnabled, cfg.remoteDbBaseUrl] as const,
+    ([runtimeEnabled, baseUrl]) => {
+      void configureRemoteDbClient({ runtimeEnabled, baseUrl });
     },
     { immediate: true },
   );

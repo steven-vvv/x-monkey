@@ -2,6 +2,7 @@ import { reactive } from 'vue';
 import { GM_log, GM_xmlhttpRequest } from '$';
 import { REMOTE_DB_BUILD, normalizeRemoteDbBaseUrl } from './build';
 import type {
+  RemoteDbClientConfig,
   RemoteDbClientState,
   RemoteDbIngestResponse,
   RemoteDbPostStatusItem,
@@ -26,6 +27,7 @@ interface JsonResponse<T> {
 
 const remoteDbState = reactive<RemoteDbClientState>({
   enabled: REMOTE_DB_BUILD.enabled,
+  runtimeEnabled: REMOTE_DB_BUILD.enabled,
   configurable: REMOTE_DB_BUILD.configurable,
   defaultBaseUrl: REMOTE_DB_BUILD.defaultBaseUrl,
   baseUrl: REMOTE_DB_BUILD.enabled ? REMOTE_DB_BUILD.defaultBaseUrl : null,
@@ -54,16 +56,38 @@ export class RemoteDbHttpError extends Error {
   }
 }
 
+function applyClientState(partial: Partial<RemoteDbClientState>): void {
+  remoteDbState.enabled = REMOTE_DB_BUILD.enabled;
+  remoteDbState.configurable = REMOTE_DB_BUILD.configurable;
+  remoteDbState.defaultBaseUrl = REMOTE_DB_BUILD.defaultBaseUrl;
+  Object.assign(remoteDbState, partial);
+}
+
 function setDisabledState(): void {
-  remoteDbState.enabled = false;
-  remoteDbState.configurable = false;
-  remoteDbState.defaultBaseUrl = null;
-  remoteDbState.baseUrl = null;
-  remoteDbState.lifecycle = 'disabled';
-  remoteDbState.sessionState = 'unknown';
-  remoteDbState.session = null;
-  remoteDbState.lastError = null;
-  remoteDbState.lastCheckedAt = null;
+  applyClientState({
+    enabled: false,
+    runtimeEnabled: false,
+    configurable: false,
+    defaultBaseUrl: null,
+    baseUrl: null,
+    lifecycle: 'disabled',
+    sessionState: 'unknown',
+    session: null,
+    lastError: null,
+    lastCheckedAt: null,
+  });
+}
+
+function setPausedState(baseUrl: string | null): void {
+  applyClientState({
+    runtimeEnabled: false,
+    baseUrl,
+    lifecycle: 'paused',
+    sessionState: 'unknown',
+    session: null,
+    lastError: null,
+    lastCheckedAt: null,
+  });
 }
 
 function deriveSessionState(session: RemoteDbSessionResponse): RemoteDbSessionState {
@@ -73,44 +97,48 @@ function deriveSessionState(session: RemoteDbSessionResponse): RemoteDbSessionSt
 }
 
 function applySessionResult(baseUrl: string, session: RemoteDbSessionResponse): void {
-  remoteDbState.enabled = REMOTE_DB_BUILD.enabled;
-  remoteDbState.configurable = REMOTE_DB_BUILD.configurable;
-  remoteDbState.defaultBaseUrl = REMOTE_DB_BUILD.defaultBaseUrl;
-  remoteDbState.baseUrl = baseUrl;
-  remoteDbState.lifecycle = 'ready';
-  remoteDbState.sessionState = deriveSessionState(session);
-  remoteDbState.session = session;
-  remoteDbState.lastError = null;
-  remoteDbState.lastCheckedAt = Date.now();
+  applyClientState({
+    runtimeEnabled: true,
+    baseUrl,
+    lifecycle: 'ready',
+    sessionState: deriveSessionState(session),
+    session,
+    lastError: null,
+    lastCheckedAt: Date.now(),
+  });
 }
 
 function applySessionError(baseUrl: string | null, message: string): void {
-  remoteDbState.enabled = REMOTE_DB_BUILD.enabled;
-  remoteDbState.configurable = REMOTE_DB_BUILD.configurable;
-  remoteDbState.defaultBaseUrl = REMOTE_DB_BUILD.defaultBaseUrl;
-  remoteDbState.baseUrl = baseUrl;
-  remoteDbState.lifecycle = 'error';
-  remoteDbState.sessionState = 'error';
-  remoteDbState.session = null;
-  remoteDbState.lastError = message;
-  remoteDbState.lastCheckedAt = Date.now();
+  applyClientState({
+    runtimeEnabled: true,
+    baseUrl,
+    lifecycle: 'error',
+    sessionState: 'error',
+    session: null,
+    lastError: message,
+    lastCheckedAt: Date.now(),
+  });
 }
 
 function setUnconfiguredState(): void {
-  remoteDbState.enabled = REMOTE_DB_BUILD.enabled;
-  remoteDbState.configurable = REMOTE_DB_BUILD.configurable;
-  remoteDbState.defaultBaseUrl = REMOTE_DB_BUILD.defaultBaseUrl;
-  remoteDbState.baseUrl = null;
-  remoteDbState.lifecycle = 'unconfigured';
-  remoteDbState.sessionState = 'unknown';
-  remoteDbState.session = null;
-  remoteDbState.lastError = null;
-  remoteDbState.lastCheckedAt = null;
+  applyClientState({
+    runtimeEnabled: true,
+    baseUrl: null,
+    lifecycle: 'unconfigured',
+    sessionState: 'unknown',
+    session: null,
+    lastError: null,
+    lastCheckedAt: null,
+  });
 }
 
 function getConfiguredBaseUrl(): string {
   if (!REMOTE_DB_BUILD.enabled) {
     throw new Error('Remote database is disabled at build time');
+  }
+
+  if (!remoteDbState.runtimeEnabled) {
+    throw new Error('Remote database is disabled in settings');
   }
 
   if (!remoteDbState.baseUrl) {
@@ -213,13 +241,14 @@ async function requestJson<T>(options: JsonRequestOptions): Promise<JsonResponse
 }
 
 async function refreshSessionInternal(baseUrl: string, token: number): Promise<RemoteDbSessionResponse | null> {
-  remoteDbState.enabled = REMOTE_DB_BUILD.enabled;
-  remoteDbState.configurable = REMOTE_DB_BUILD.configurable;
-  remoteDbState.defaultBaseUrl = REMOTE_DB_BUILD.defaultBaseUrl;
-  remoteDbState.baseUrl = baseUrl;
-  remoteDbState.lifecycle = 'initializing';
-  remoteDbState.sessionState = 'checking';
-  remoteDbState.lastError = null;
+  applyClientState({
+    runtimeEnabled: true,
+    baseUrl,
+    lifecycle: 'initializing',
+    sessionState: 'checking',
+    session: null,
+    lastError: null,
+  });
 
   try {
     const { data } = await requestJson<RemoteDbSessionResponse>({
@@ -259,15 +288,20 @@ export function getRemoteDbClientState(): RemoteDbClientState {
   return remoteDbState;
 }
 
-export async function configureRemoteDbClient(rawBaseUrl: string | null | undefined): Promise<void> {
+export async function configureRemoteDbClient(config: RemoteDbClientConfig): Promise<void> {
   if (!REMOTE_DB_BUILD.enabled) {
     setDisabledState();
     return;
   }
 
-  const normalizedBaseUrl = normalizeRemoteDbBaseUrl(rawBaseUrl);
+  const normalizedBaseUrl = normalizeRemoteDbBaseUrl(config.baseUrl);
   sessionRequestToken += 1;
   const currentToken = sessionRequestToken;
+
+  if (!config.runtimeEnabled) {
+    setPausedState(normalizedBaseUrl);
+    return;
+  }
 
   if (!normalizedBaseUrl) {
     setUnconfiguredState();
@@ -280,6 +314,11 @@ export async function configureRemoteDbClient(rawBaseUrl: string | null | undefi
 export async function refreshRemoteDbSession(): Promise<RemoteDbSessionResponse | null> {
   if (!REMOTE_DB_BUILD.enabled) {
     setDisabledState();
+    return null;
+  }
+
+  if (!remoteDbState.runtimeEnabled) {
+    setPausedState(remoteDbState.baseUrl);
     return null;
   }
 
@@ -296,6 +335,7 @@ export async function refreshRemoteDbSession(): Promise<RemoteDbSessionResponse 
 
 export function isRemoteDbPostApiReady(): boolean {
   return remoteDbState.enabled
+    && remoteDbState.runtimeEnabled
     && remoteDbState.lifecycle === 'ready'
     && remoteDbState.sessionState === 'authenticated'
     && Boolean(remoteDbState.baseUrl);

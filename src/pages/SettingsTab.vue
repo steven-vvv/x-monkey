@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { reactive, watch, computed } from 'vue';
+import { computed, reactive, watch } from 'vue';
 import {
   getConfig, updateConfig, clampAnchor, clampDimensions,
   DEFAULT_CONFIG, type AppConfig, type ThemeMode,
@@ -7,7 +7,12 @@ import {
 import { GM_openInTab, unsafeWindow } from '$';
 import SettingsSection from '../components/SettingsSection.vue';
 import SettingsNumberPairRow from '../components/SettingsNumberPairRow.vue';
-import { REMOTE_DB_BUILD, normalizeRemoteDbBaseUrl, getRemoteDbClientState } from '../lib/remote-db';
+import {
+  REMOTE_DB_BUILD,
+  configureRemoteDbClient,
+  getRemoteDbClientState,
+  normalizeRemoteDbBaseUrl,
+} from '../lib/remote-db';
 
 const cfg = getConfig();
 const remoteDbState = getRemoteDbClientState();
@@ -19,8 +24,8 @@ const draft = reactive<AppConfig>({ ...cfg });
 const dirtyFields = reactive(new Set<keyof AppConfig>());
 
 const isDirty = computed(() => dirtyFields.size > 0);
-const remoteDbEnabled = REMOTE_DB_BUILD.enabled;
-const remoteDbConfigurable = REMOTE_DB_BUILD.enabled && REMOTE_DB_BUILD.configurable;
+const remoteDbFeatureEnabled = REMOTE_DB_BUILD.enabled;
+const remoteDbConfigurable = remoteDbFeatureEnabled && REMOTE_DB_BUILD.configurable;
 
 // Service → VM sync: when service config changes (e.g. drag, resize, remote),
 // merge into draft for fields that are NOT currently dirty.
@@ -51,10 +56,7 @@ function save() {
 
   const nextConfig: AppConfig = { ...draft };
   if (remoteDbConfigurable) {
-    const normalizedRemoteDbBaseUrl = normalizeRemoteDbBaseUrl(draft.remoteDbBaseUrl);
-    if (normalizedRemoteDbBaseUrl) {
-      nextConfig.remoteDbBaseUrl = normalizedRemoteDbBaseUrl;
-    }
+    nextConfig.remoteDbBaseUrl = normalizedDraftRemoteDbBaseUrl.value ?? '';
   }
 
   updateConfig(nextConfig);
@@ -68,6 +70,10 @@ function save() {
 function revert() {
   Object.assign(draft, cfg);
   dirtyFields.clear();
+  void configureRemoteDbClient({
+    runtimeEnabled: cfg.remoteDbEnabled,
+    baseUrl: cfg.remoteDbBaseUrl,
+  });
 }
 
 function resetLayout() {
@@ -104,13 +110,28 @@ function openRemoteAccountPage() {
   }
 }
 
+const normalizedDraftRemoteDbBaseUrl = computed(() => {
+  return normalizeRemoteDbBaseUrl(draft.remoteDbBaseUrl);
+});
+
 const hasInvalidRemoteDbBaseUrl = computed(() => {
   if (!remoteDbConfigurable) return false;
-  if (!dirtyFields.has('remoteDbBaseUrl')) return false;
-  return normalizeRemoteDbBaseUrl(draft.remoteDbBaseUrl) === null;
+  if (!draft.remoteDbBaseUrl.trim()) return false;
+  return normalizedDraftRemoteDbBaseUrl.value === null;
 });
 
 const saveDisabled = computed(() => !isDirty.value || hasInvalidRemoteDbBaseUrl.value);
+const checkPending = computed(() => {
+  return remoteDbState.lifecycle === 'initializing'
+    || remoteDbState.sessionState === 'checking';
+});
+const checkDisabled = computed(() => {
+  return checkPending.value
+    || (draft.remoteDbEnabled && hasInvalidRemoteDbBaseUrl.value);
+});
+const checkButtonText = computed(() => {
+  return checkPending.value ? 'Checking...' : 'Check';
+});
 
 const effectiveRemoteDbBaseUrl = computed(() => {
   return remoteDbState.baseUrl
@@ -119,44 +140,47 @@ const effectiveRemoteDbBaseUrl = computed(() => {
     ?? '';
 });
 
-const remoteDbModeText = computed(() => {
-  return remoteDbConfigurable ? 'Configurable' : 'Fixed at build time';
+const remoteDbAvailabilityText = computed(() => {
+  if (!remoteDbState.enabled || !remoteDbState.runtimeEnabled || remoteDbState.lifecycle === 'paused') {
+    return 'Disabled';
+  }
+
+  if (remoteDbState.lifecycle === 'unconfigured') {
+    return 'Not configured';
+  }
+
+  if (
+    remoteDbState.lifecycle === 'initializing'
+    || remoteDbState.sessionState === 'checking'
+  ) {
+    return 'Checking';
+  }
+
+  if (remoteDbState.sessionState === 'anonymous') {
+    return 'Sign in required';
+  }
+
+  if (remoteDbState.sessionState === 'pending_registration') {
+    return 'Registration required';
+  }
+
+  if (remoteDbState.lifecycle === 'ready' && remoteDbState.sessionState === 'authenticated') {
+    return 'Available';
+  }
+
+  if (remoteDbState.lifecycle === 'error' || remoteDbState.sessionState === 'error') {
+    return 'Connection failed';
+  }
+
+  return 'Not configured';
 });
 
-const remoteDbLifecycleText = computed(() => {
-  switch (remoteDbState.lifecycle) {
-    case 'disabled':
-      return 'Disabled';
-    case 'unconfigured':
-      return 'Not configured';
-    case 'initializing':
-      return 'Initializing';
-    case 'ready':
-      return 'Ready';
-    case 'error':
-      return 'Initialization failed';
-    default:
-      return 'Unknown';
+const remoteDbHint = computed(() => {
+  if (remoteDbConfigurable) {
+    return 'Check applies the current draft in memory. Save persists the enable switch and Base URL.';
   }
-});
 
-const remoteDbSessionText = computed(() => {
-  switch (remoteDbState.sessionState) {
-    case 'unknown':
-      return 'Unknown';
-    case 'checking':
-      return 'Checking';
-    case 'anonymous':
-      return 'Not logged in';
-    case 'pending_registration':
-      return 'Registration incomplete';
-    case 'authenticated':
-      return 'Ready';
-    case 'error':
-      return 'Status unavailable';
-    default:
-      return 'Unknown';
-  }
+  return 'Check re-runs availability detection. Save persists the enable switch.';
 });
 
 const shouldShowRemoteAccountAction = computed(() => {
@@ -166,6 +190,17 @@ const shouldShowRemoteAccountAction = computed(() => {
       || remoteDbState.sessionState === 'pending_registration'
     );
 });
+
+async function checkRemoteDbConnection(): Promise<void> {
+  if (draft.remoteDbEnabled && hasInvalidRemoteDbBaseUrl.value) {
+    return;
+  }
+
+  await configureRemoteDbClient({
+    runtimeEnabled: draft.remoteDbEnabled,
+    baseUrl: draft.remoteDbBaseUrl,
+  });
+}
 </script>
 
 <template>
@@ -217,49 +252,43 @@ const shouldShowRemoteAccountAction = computed(() => {
       </SettingsSection>
 
       <SettingsSection
-        v-if="remoteDbEnabled"
+        v-if="remoteDbFeatureEnabled"
         title="Remote Database"
-        :hint="remoteDbConfigurable ? 'Save a valid absolute http(s) Base URL to initialize the remote client and check the current session.' : 'Remote database URL is fixed at build time. The script checks session state automatically when it starts.'"
+        :hint="remoteDbHint"
       >
         <div class="xd-settings-stack">
+          <label class="xd-settings-check-row">
+            <input type="checkbox" :checked="draft.remoteDbEnabled" @change="setDraft('remoteDbEnabled', !draft.remoteDbEnabled)" />
+            <span>Enable remote database</span>
+          </label>
           <div class="xd-settings-field">
-            <span class="xd-settings-field-label">Mode</span>
-            <span class="xd-settings-field-value">{{ remoteDbModeText }}</span>
+            <span class="xd-settings-field-label">Availability</span>
+            <span class="xd-settings-field-value">{{ remoteDbAvailabilityText }}</span>
           </div>
           <div class="xd-settings-field">
-            <span class="xd-settings-field-label">Base URL</span>
+            <span class="xd-settings-field-label">Current Base URL</span>
             <span class="xd-settings-field-value">{{ effectiveRemoteDbBaseUrl || 'Not configured' }}</span>
           </div>
-          <div class="xd-settings-field">
-            <span class="xd-settings-field-label">Client</span>
-            <span class="xd-settings-field-value">{{ remoteDbLifecycleText }}</span>
-          </div>
-          <div class="xd-settings-field">
-            <span class="xd-settings-field-label">Session</span>
-            <span class="xd-settings-field-value">{{ remoteDbSessionText }}</span>
-          </div>
-          <div v-if="remoteDbState.session?.username" class="xd-settings-field">
-            <span class="xd-settings-field-label">Username</span>
-            <span class="xd-settings-field-value">{{ remoteDbState.session.username }}</span>
-          </div>
-          <div v-if="remoteDbState.session?.expiresAt" class="xd-settings-field">
-            <span class="xd-settings-field-label">Expires</span>
-            <span class="xd-settings-field-value">{{ remoteDbState.session.expiresAt }}</span>
-          </div>
-          <div v-if="remoteDbState.lastError" class="xd-settings-error">
-            {{ remoteDbState.lastError }}
-          </div>
           <div v-if="remoteDbConfigurable" class="xd-settings-column">
-            <input
-              class="xd-settings-input"
-              type="text"
-              :value="draft.remoteDbBaseUrl"
-              placeholder="https://example.com"
-              @input="setDraft('remoteDbBaseUrl', ($event.target as HTMLInputElement).value)"
-            />
+            <div class="xd-settings-input-row">
+              <input
+                class="xd-settings-input"
+                type="text"
+                :value="draft.remoteDbBaseUrl"
+                placeholder="https://example.com"
+                @input="setDraft('remoteDbBaseUrl', ($event.target as HTMLInputElement).value)"
+              />
+              <button class="xd-btn xd-btn--sm" :disabled="checkDisabled" @click="checkRemoteDbConnection">{{ checkButtonText }}</button>
+            </div>
             <div v-if="hasInvalidRemoteDbBaseUrl" class="xd-settings-error">
               Enter a valid absolute http(s) URL.
             </div>
+          </div>
+          <div v-else class="xd-settings-row">
+            <button class="xd-btn xd-btn--sm" :disabled="checkDisabled" @click="checkRemoteDbConnection">{{ checkButtonText }}</button>
+          </div>
+          <div v-if="remoteDbState.lastError" class="xd-settings-error">
+            {{ remoteDbState.lastError }}
           </div>
           <div v-if="shouldShowRemoteAccountAction" class="xd-settings-row">
             <button class="xd-btn xd-btn--sm xd-btn--accent" @click="openRemoteAccountPage">Open Account</button>
@@ -311,6 +340,17 @@ const shouldShowRemoteAccountAction = computed(() => {
   display: flex;
   flex-direction: column;
   gap: 4px;
+}
+
+.xd-settings-input-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.xd-settings-input-row .xd-settings-input {
+  flex: 1;
+  min-width: 0;
 }
 
 .xd-settings-check-row {

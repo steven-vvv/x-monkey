@@ -14,6 +14,7 @@ export interface AppConfig {
   uiScale: number; // 25-200%
   autoClearOnNavigate: boolean;
   theme: ThemeMode;
+  remoteDbEnabled: boolean;
   remoteDbBaseUrl: string;
 }
 
@@ -30,13 +31,14 @@ export const DEFAULT_CONFIG: AppConfig = {
   uiScale: 100,
   autoClearOnNavigate: false,
   theme: 'page',
+  remoteDbEnabled: REMOTE_DB_BUILD.enabled,
   remoteDbBaseUrl: REMOTE_DB_BUILD.enabled
     ? (REMOTE_DB_BUILD.defaultBaseUrl ?? '')
     : '',
 };
 
 const CONFIG_KEY = 'xd_config';
-const CONFIG_STORAGE_VERSION = 3;
+const CONFIG_STORAGE_VERSION = 4;
 
 const config = reactive<AppConfig>({ ...DEFAULT_CONFIG });
 
@@ -60,6 +62,18 @@ function resolvePersistedRemoteDbBaseUrl(savedValue: unknown): string {
   return normalizeRemoteDbBaseUrl(savedValue) ?? DEFAULT_CONFIG.remoteDbBaseUrl;
 }
 
+function resolvePersistedRemoteDbEnabled(savedValue: unknown): boolean {
+  if (!REMOTE_DB_BUILD.enabled) {
+    return false;
+  }
+
+  if (typeof savedValue !== 'boolean') {
+    return DEFAULT_CONFIG.remoteDbEnabled;
+  }
+
+  return savedValue;
+}
+
 function normalizePersistedConfig(saved: PersistedAppConfig): AppConfig {
   const merged: AppConfig = {
     ...DEFAULT_CONFIG,
@@ -73,6 +87,9 @@ function normalizePersistedConfig(saved: PersistedAppConfig): AppConfig {
 
   merged.remoteDbBaseUrl = resolvePersistedRemoteDbBaseUrl(
     savedVersion >= 3 ? saved.remoteDbBaseUrl : DEFAULT_CONFIG.remoteDbBaseUrl,
+  );
+  merged.remoteDbEnabled = resolvePersistedRemoteDbEnabled(
+    savedVersion >= 4 ? saved.remoteDbEnabled : DEFAULT_CONFIG.remoteDbEnabled,
   );
 
   return merged;
