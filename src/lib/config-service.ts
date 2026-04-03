@@ -1,6 +1,7 @@
 import { reactive, watch } from 'vue';
 import { GM_getValue, GM_setValue, GM_addValueChangeListener, GM_removeValueChangeListener } from '$';
 import type { GmValueListenerId } from '$';
+import { REMOTE_DB_BUILD, normalizeRemoteDbBaseUrl } from './remote-db-build';
 
 export type ThemeMode = 'dark' | 'light' | 'page';
 
@@ -13,6 +14,7 @@ export interface AppConfig {
   uiScale: number; // 25-200%
   autoClearOnNavigate: boolean;
   theme: ThemeMode;
+  remoteDbBaseUrl: string;
 }
 
 interface PersistedAppConfig extends Partial<AppConfig> {
@@ -28,16 +30,35 @@ export const DEFAULT_CONFIG: AppConfig = {
   uiScale: 100,
   autoClearOnNavigate: false,
   theme: 'page',
+  remoteDbBaseUrl: REMOTE_DB_BUILD.enabled
+    ? (REMOTE_DB_BUILD.defaultBaseUrl ?? '')
+    : '',
 };
 
 const CONFIG_KEY = 'xd_config';
-const CONFIG_STORAGE_VERSION = 2;
+const CONFIG_STORAGE_VERSION = 3;
 
 const config = reactive<AppConfig>({ ...DEFAULT_CONFIG });
 
 let initialized = false;
 let listenerId: GmValueListenerId | undefined;
 let persistencePaused = false;
+
+function resolvePersistedRemoteDbBaseUrl(savedValue: unknown): string {
+  if (!REMOTE_DB_BUILD.enabled) {
+    return '';
+  }
+
+  if (!REMOTE_DB_BUILD.configurable) {
+    return REMOTE_DB_BUILD.defaultBaseUrl ?? '';
+  }
+
+  if (typeof savedValue !== 'string') {
+    return DEFAULT_CONFIG.remoteDbBaseUrl;
+  }
+
+  return normalizeRemoteDbBaseUrl(savedValue) ?? DEFAULT_CONFIG.remoteDbBaseUrl;
+}
 
 function normalizePersistedConfig(saved: PersistedAppConfig): AppConfig {
   const merged: AppConfig = {
@@ -46,9 +67,13 @@ function normalizePersistedConfig(saved: PersistedAppConfig): AppConfig {
   };
 
   const savedVersion = typeof saved.__version === 'number' ? saved.__version : 0;
-  if (savedVersion < CONFIG_STORAGE_VERSION) {
+  if (savedVersion < 2) {
     merged.autoClearOnNavigate = DEFAULT_CONFIG.autoClearOnNavigate;
   }
+
+  merged.remoteDbBaseUrl = resolvePersistedRemoteDbBaseUrl(
+    savedVersion >= 3 ? saved.remoteDbBaseUrl : DEFAULT_CONFIG.remoteDbBaseUrl,
+  );
 
   return merged;
 }

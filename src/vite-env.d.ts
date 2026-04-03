@@ -9,6 +9,10 @@ declare module '*.vue' {
   export default component;
 }
 
+declare const __XD_REMOTE_DB_ENABLED__: boolean;
+declare const __XD_REMOTE_DB_CONFIGURABLE__: boolean;
+declare const __XD_REMOTE_DB_DEFAULT_BASE_URL__: string | null;
+
 interface Window {
   __XD_CSS_SINK__?: (cssText: string) => void;
   __XD_CSS_QUEUE__?: string[];
