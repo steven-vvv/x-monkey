@@ -1,6 +1,7 @@
 import { defineConfig, loadEnv } from 'vite';
 import vue from '@vitejs/plugin-vue';
 import monkey, { cdn } from 'vite-plugin-monkey';
+import remoteDbBuildConfig from './remote-db.config';
 
 const cssSideEffects = (css: string): void => {
   const globalObj = globalThis as {
@@ -21,16 +22,25 @@ const cssSideEffects = (css: string): void => {
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
+  const fileConfig = remoteDbBuildConfig ?? {};
 
-  const remoteDbEnabled = parseBooleanEnv(env.VITE_XD_REMOTE_DB_ENABLED, 'VITE_XD_REMOTE_DB_ENABLED', false);
-  const remoteDbConfigurable = parseBooleanEnv(env.VITE_XD_REMOTE_DB_CONFIGURABLE, 'VITE_XD_REMOTE_DB_CONFIGURABLE', false);
+  const remoteDbEnabled = resolveBooleanConfig(
+    env.VITE_XD_REMOTE_DB_ENABLED,
+    fileConfig.enabled,
+    'VITE_XD_REMOTE_DB_ENABLED',
+    true,
+  );
+  const remoteDbConfigurable = remoteDbEnabled
+    ? resolveBooleanConfig(
+        env.VITE_XD_REMOTE_DB_CONFIGURABLE,
+        fileConfig.configurable,
+        'VITE_XD_REMOTE_DB_CONFIGURABLE',
+        false,
+      )
+    : false;
   const remoteDbDefaultBaseUrl = remoteDbEnabled
-    ? normalizeConfiguredBaseUrl(env.VITE_XD_REMOTE_DB_BASE_URL, 'VITE_XD_REMOTE_DB_BASE_URL')
+    ? normalizeConfiguredBaseUrl(resolveStringConfig(env.VITE_XD_REMOTE_DB_BASE_URL, fileConfig.baseUrl), 'VITE_XD_REMOTE_DB_BASE_URL')
     : null;
-
-  if (!remoteDbEnabled && remoteDbConfigurable) {
-    throw new Error('VITE_XD_REMOTE_DB_CONFIGURABLE=true requires VITE_XD_REMOTE_DB_ENABLED=true');
-  }
 
   if (remoteDbEnabled && !remoteDbConfigurable && !remoteDbDefaultBaseUrl) {
     throw new Error('VITE_XD_REMOTE_DB_BASE_URL must be a valid absolute http(s) URL when remote database is enabled and not configurable');
@@ -82,6 +92,35 @@ function parseBooleanEnv(raw: string | undefined, key: string, fallback: boolean
   }
 
   throw new Error(`${key} must be a boolean-like value, received "${raw}"`);
+}
+
+function resolveBooleanConfig(
+  rawEnv: string | undefined,
+  fileValue: boolean | undefined,
+  key: string,
+  fallback: boolean,
+): boolean {
+  if (rawEnv != null && rawEnv.trim() !== '') {
+    return parseBooleanEnv(rawEnv, key, fallback);
+  }
+
+  if (typeof fileValue === 'boolean') {
+    return fileValue;
+  }
+
+  return fallback;
+}
+
+function resolveStringConfig(rawEnv: string | undefined, fileValue: string | null | undefined): string | undefined {
+  if (rawEnv != null) {
+    return rawEnv;
+  }
+
+  if (typeof fileValue === 'string') {
+    return fileValue;
+  }
+
+  return undefined;
 }
 
 function normalizeConfiguredBaseUrl(raw: string | undefined, key: string): string | null {
