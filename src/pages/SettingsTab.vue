@@ -133,14 +133,7 @@ const checkButtonText = computed(() => {
   return checkPending.value ? 'Checking...' : 'Check';
 });
 
-const effectiveRemoteDbBaseUrl = computed(() => {
-  return remoteDbState.baseUrl
-    ?? cfg.remoteDbBaseUrl
-    ?? REMOTE_DB_BUILD.defaultBaseUrl
-    ?? '';
-});
-
-const remoteDbAvailabilityText = computed(() => {
+const remoteDbStatusText = computed(() => {
   if (!remoteDbState.enabled || !remoteDbState.runtimeEnabled || remoteDbState.lifecycle === 'paused') {
     return 'Disabled';
   }
@@ -153,7 +146,12 @@ const remoteDbAvailabilityText = computed(() => {
     remoteDbState.lifecycle === 'initializing'
     || remoteDbState.sessionState === 'checking'
   ) {
-    return 'Checking';
+    return 'Checking...';
+  }
+
+  if (remoteDbState.lifecycle === 'ready' && remoteDbState.sessionState === 'authenticated') {
+    const username = remoteDbState.session?.username?.trim();
+    return username ? `Logged in as ${username}` : 'Connected';
   }
 
   if (remoteDbState.sessionState === 'anonymous') {
@@ -161,18 +159,48 @@ const remoteDbAvailabilityText = computed(() => {
   }
 
   if (remoteDbState.sessionState === 'pending_registration') {
-    return 'Registration required';
-  }
-
-  if (remoteDbState.lifecycle === 'ready' && remoteDbState.sessionState === 'authenticated') {
-    return 'Available';
+    return 'Complete account setup';
   }
 
   if (remoteDbState.lifecycle === 'error' || remoteDbState.sessionState === 'error') {
-    return 'Connection failed';
+    return remoteDbState.lastError?.trim() || 'Connection failed';
   }
 
   return 'Not configured';
+});
+
+const remoteDbStatusClass = computed(() => {
+  if (!remoteDbState.enabled || !remoteDbState.runtimeEnabled || remoteDbState.lifecycle === 'paused') {
+    return 'xd-settings-status--muted';
+  }
+
+  if (remoteDbState.lifecycle === 'unconfigured') {
+    return 'xd-settings-status--muted';
+  }
+
+  if (
+    remoteDbState.lifecycle === 'initializing'
+    || remoteDbState.sessionState === 'checking'
+  ) {
+    return 'xd-settings-status--info';
+  }
+
+  if (remoteDbState.lifecycle === 'ready' && remoteDbState.sessionState === 'authenticated') {
+    return 'xd-settings-status--success';
+  }
+
+  if (
+    remoteDbState.sessionState === 'anonymous'
+    || remoteDbState.sessionState === 'pending_registration'
+  ) {
+    return 'xd-settings-status--warning';
+  }
+
+  if (remoteDbState.lifecycle === 'error' || remoteDbState.sessionState === 'error') {
+    return 'xd-settings-status--error';
+  }
+
+  return 'xd-settings-status--muted';
 });
 
 const remoteDbHint = computed(() => {
@@ -261,14 +289,18 @@ async function checkRemoteDbConnection(): Promise<void> {
             <input type="checkbox" :checked="draft.remoteDbEnabled" @change="setDraft('remoteDbEnabled', !draft.remoteDbEnabled)" />
             <span>Enable remote database</span>
           </label>
-          <div class="xd-settings-field">
-            <span class="xd-settings-field-label">Availability</span>
-            <span class="xd-settings-field-value">{{ remoteDbAvailabilityText }}</span>
+
+          <div class="xd-settings-status-row">
+            <span class="xd-settings-status" :class="remoteDbStatusClass">{{ remoteDbStatusText }}</span>
+            <button
+              v-if="shouldShowRemoteAccountAction"
+              class="xd-btn xd-btn--sm xd-btn--accent"
+              @click="openRemoteAccountPage"
+            >
+              Open Account
+            </button>
           </div>
-          <div class="xd-settings-field">
-            <span class="xd-settings-field-label">Current Base URL</span>
-            <span class="xd-settings-field-value">{{ effectiveRemoteDbBaseUrl || 'Not configured' }}</span>
-          </div>
+
           <div v-if="remoteDbConfigurable" class="xd-settings-column">
             <div class="xd-settings-input-row">
               <input
@@ -286,12 +318,6 @@ async function checkRemoteDbConnection(): Promise<void> {
           </div>
           <div v-else class="xd-settings-row">
             <button class="xd-btn xd-btn--sm" :disabled="checkDisabled" @click="checkRemoteDbConnection">{{ checkButtonText }}</button>
-          </div>
-          <div v-if="remoteDbState.lastError" class="xd-settings-error">
-            {{ remoteDbState.lastError }}
-          </div>
-          <div v-if="shouldShowRemoteAccountAction" class="xd-settings-row">
-            <button class="xd-btn xd-btn--sm xd-btn--accent" @click="openRemoteAccountPage">Open Account</button>
           </div>
         </div>
       </SettingsSection>
@@ -317,23 +343,45 @@ async function checkRemoteDbConnection(): Promise<void> {
   gap: 6px;
 }
 
-.xd-settings-field {
+.xd-settings-status-row {
   display: flex;
   align-items: flex-start;
-  justify-content: space-between;
+  flex-wrap: wrap;
   gap: 8px;
+}
+
+.xd-settings-status {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  padding: 2px 8px;
+  border: 1px solid var(--xd-border);
+  border-radius: 999px;
+  background: var(--xd-bg-secondary);
+  color: var(--xd-text-secondary);
   font-size: 11px;
-}
-
-.xd-settings-field-label {
-  color: var(--xd-text-muted);
-  flex-shrink: 0;
-}
-
-.xd-settings-field-value {
-  color: var(--xd-text-primary);
-  text-align: right;
+  line-height: 1.4;
   word-break: break-word;
+}
+
+.xd-settings-status--muted {
+  color: var(--xd-text-muted);
+}
+
+.xd-settings-status--info {
+  color: var(--xd-text-secondary);
+}
+
+.xd-settings-status--success {
+  color: var(--xd-accent);
+}
+
+.xd-settings-status--warning {
+  color: var(--xd-text-primary);
+}
+
+.xd-settings-status--error {
+  color: var(--xd-error);
 }
 
 .xd-settings-column {
