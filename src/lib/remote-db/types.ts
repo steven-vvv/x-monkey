@@ -116,6 +116,16 @@ export interface RemoteDbTransferSummary {
   failed: number;
 }
 
+export interface RemoteDbObservedTimestampPair {
+  lastObservedAt: string;
+  updatedAt: string;
+}
+
+export interface RemoteDbPostTimestamps {
+  post: RemoteDbObservedTimestampPair;
+  metrics: RemoteDbObservedTimestampPair | null;
+}
+
 export interface RemoteDbPostView {
   sourcePostId: string;
   authorSourceActorId: string;
@@ -138,6 +148,7 @@ export interface RemoteDbPostView {
   bookmarkCount: number;
   mediaSourceIds: string[];
   sourceLabel: string;
+  timestamps: RemoteDbPostTimestamps;
 }
 
 export interface RemoteDbActorView {

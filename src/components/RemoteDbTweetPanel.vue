@@ -2,6 +2,7 @@
 import { computed, reactive, watch } from 'vue';
 import type { DbTweet } from '../lib/db-service';
 import { getDbUser, getMediaForTweet } from '../lib/db-service';
+import { formatDateTime } from '../lib/view-format';
 import {
   getRemoteDbClientState,
   queryRemoteDbPostStatus,
@@ -46,6 +47,16 @@ function toErrorMessage(error: unknown, fallback: string): string {
   }
 
   return fallback;
+}
+
+function formatTimestampPair(
+  timestamps: { lastObservedAt: string; updatedAt: string } | null | undefined,
+): string {
+  if (!timestamps) {
+    return '-';
+  }
+
+  return `obs ${formatDateTime(timestamps.lastObservedAt)} / upd ${formatDateTime(timestamps.updatedAt)}`;
 }
 
 async function loadRemoteStatus(): Promise<void> {
@@ -121,6 +132,26 @@ const statusText = computed(() => {
   if (!state.remoteItem || !comparison.value) return '-';
   if (!comparison.value.exists) return 'Not Found';
   return comparison.value.consistent ? 'In Sync' : 'Mismatch';
+});
+
+const postTimesText = computed(() => {
+  if (!state.remoteItem?.post?.timestamps) {
+    return '-';
+  }
+
+  return formatTimestampPair(state.remoteItem.post.timestamps.post);
+});
+
+const metricsTimesText = computed(() => {
+  if (!state.remoteItem?.post?.timestamps) {
+    return '-';
+  }
+
+  if (state.remoteItem.post.timestamps.metrics === null) {
+    return 'No metrics snapshot';
+  }
+
+  return formatTimestampPair(state.remoteItem.post.timestamps.metrics);
 });
 
 const refreshDisabled = computed(() => {
@@ -204,6 +235,14 @@ async function refreshRemoteStatus(): Promise<void> {
         <span class="xd-remote-metric-label">Transfer</span>
         <strong class="xd-remote-metric-value">{{ transferText }}</strong>
       </div>
+      <div class="xd-remote-metric">
+        <span class="xd-remote-metric-label">Post Times</span>
+        <strong class="xd-remote-metric-value">{{ postTimesText }}</strong>
+      </div>
+      <div class="xd-remote-metric">
+        <span class="xd-remote-metric-label">Metrics Times</span>
+        <strong class="xd-remote-metric-value">{{ metricsTimesText }}</strong>
+      </div>
       <div v-if="transferBreakdownText" class="xd-remote-note">
         {{ transferBreakdownText }}
       </div>
@@ -284,6 +323,8 @@ async function refreshRemoteStatus(): Promise<void> {
 
 .xd-remote-metric-value {
   color: var(--xd-text-primary);
+  text-align: right;
+  word-break: break-word;
 }
 
 .xd-remote-note {

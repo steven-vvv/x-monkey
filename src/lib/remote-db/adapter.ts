@@ -20,6 +20,30 @@ export interface RemoteDbStatusComparison {
   transferSummary: RemoteDbTransferSummary;
 }
 
+interface ComparableRemotePost {
+  sourcePostId: string;
+  authorSourceActorId: string;
+  conversationSourcePostId: string;
+  fullText: string;
+  legacyFullText: string;
+  noteText: string | null;
+  lang: string;
+  sourceCreatedAtRaw: string;
+  inReplyToSourcePostId: string | null;
+  inReplyToSourceActorId: string | null;
+  quotedSourcePostId: string | null;
+  retweetedSourcePostId: string | null;
+  viewCount: number | null;
+  possiblySensitive: boolean | null;
+  favoriteCount: number;
+  retweetCount: number;
+  replyCount: number;
+  quoteCount: number;
+  bookmarkCount: number;
+  mediaSourceIds: string[];
+  sourceLabel: string;
+}
+
 interface ComparableRemoteMedia {
   sourceMediaId: string;
   mediaKey: string;
@@ -45,7 +69,7 @@ function isSamePrimitiveArray(left: string[], right: string[]): boolean {
   return left.every((value, index) => value === right[index]);
 }
 
-function toComparablePost(tweet: DbTweet): RemoteDbPostView {
+function toComparablePost(tweet: DbTweet): ComparableRemotePost {
   return {
     sourcePostId: tweet.id,
     authorSourceActorId: tweet.authorId,
@@ -137,7 +161,33 @@ function isSameComparableMedia(left: ComparableRemoteMedia, right: ComparableRem
     && left.durationMs === right.durationMs;
 }
 
-function isSamePost(left: RemoteDbPostView, right: RemoteDbPostView): boolean {
+function toComparableRemotePost(post: RemoteDbPostView): ComparableRemotePost {
+  return {
+    sourcePostId: post.sourcePostId,
+    authorSourceActorId: post.authorSourceActorId,
+    conversationSourcePostId: post.conversationSourcePostId,
+    fullText: post.fullText,
+    legacyFullText: post.legacyFullText,
+    noteText: post.noteText,
+    lang: post.lang,
+    sourceCreatedAtRaw: post.sourceCreatedAtRaw,
+    inReplyToSourcePostId: post.inReplyToSourcePostId,
+    inReplyToSourceActorId: post.inReplyToSourceActorId,
+    quotedSourcePostId: post.quotedSourcePostId,
+    retweetedSourcePostId: post.retweetedSourcePostId,
+    viewCount: post.viewCount,
+    possiblySensitive: post.possiblySensitive,
+    favoriteCount: post.favoriteCount,
+    retweetCount: post.retweetCount,
+    replyCount: post.replyCount,
+    quoteCount: post.quoteCount,
+    bookmarkCount: post.bookmarkCount,
+    mediaSourceIds: normalizeStringArray(post.mediaSourceIds),
+    sourceLabel: post.sourceLabel,
+  };
+}
+
+function isSamePost(left: ComparableRemotePost, right: ComparableRemotePost): boolean {
   return left.sourcePostId === right.sourcePostId
     && left.authorSourceActorId === right.authorSourceActorId
     && left.conversationSourcePostId === right.conversationSourcePostId
@@ -306,10 +356,7 @@ export function compareRemoteDbPostStatus(
   }
 
   const localPost = toComparablePost(tweet);
-  const remotePost: RemoteDbPostView = {
-    ...remoteItem.post,
-    mediaSourceIds: normalizeStringArray(remoteItem.post.mediaSourceIds),
-  };
+  const remotePost = toComparableRemotePost(remoteItem.post);
   if (!isSamePost(localPost, remotePost)) {
     return {
       exists: true,
