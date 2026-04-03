@@ -1,7 +1,21 @@
+import { existsSync, readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { defineConfig, loadEnv } from 'vite';
 import vue from '@vitejs/plugin-vue';
 import monkey, { cdn } from 'vite-plugin-monkey';
-import remoteDbBuildConfig from './remote-db.config';
+
+interface RemoteDbBuildFileConfig {
+  enabled?: boolean;
+  configurable?: boolean;
+  baseUrl?: string | null;
+}
+
+const REMOTE_DB_BUILD_CONFIG_FILE = 'remote-db.config.json';
+const DEFAULT_REMOTE_DB_BUILD_CONFIG: Required<RemoteDbBuildFileConfig> = {
+  enabled: true,
+  configurable: true,
+  baseUrl: '',
+};
 
 const cssSideEffects = (css: string): void => {
   const globalObj = globalThis as {
@@ -22,25 +36,26 @@ const cssSideEffects = (css: string): void => {
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
-  const fileConfig = remoteDbBuildConfig ?? {};
+  const fileConfig = loadRemoteDbBuildConfig();
 
   const remoteDbEnabled = resolveBooleanConfig(
     env.VITE_XD_REMOTE_DB_ENABLED,
     fileConfig.enabled,
     'VITE_XD_REMOTE_DB_ENABLED',
-    true,
+    DEFAULT_REMOTE_DB_BUILD_CONFIG.enabled,
   );
   const remoteDbConfigurable = remoteDbEnabled
     ? resolveBooleanConfig(
         env.VITE_XD_REMOTE_DB_CONFIGURABLE,
         fileConfig.configurable,
         'VITE_XD_REMOTE_DB_CONFIGURABLE',
-        false,
+        DEFAULT_REMOTE_DB_BUILD_CONFIG.configurable,
       )
     : false;
   const remoteDbDefaultBaseUrl = remoteDbEnabled
     ? normalizeConfiguredBaseUrl(resolveStringConfig(env.VITE_XD_REMOTE_DB_BASE_URL, fileConfig.baseUrl), 'VITE_XD_REMOTE_DB_BASE_URL')
     : null;
+  const remoteDbConnect = resolveRemoteDbConnect(remoteDbEnabled, remoteDbConfigurable, remoteDbDefaultBaseUrl);
 
   if (remoteDbEnabled && !remoteDbConfigurable && !remoteDbDefaultBaseUrl) {
     throw new Error('VITE_XD_REMOTE_DB_BASE_URL must be a valid absolute http(s) URL when remote database is enabled and not configurable');
@@ -63,7 +78,7 @@ export default defineConfig(({ mode }) => {
           name: 'X Downloader',
           namespace: 'x-downloader',
           match: ['https://x.com/*'],
-          connect: remoteDbEnabled ? ['*'] : undefined,
+          connect: remoteDbConnect,
           "run-at": 'document-start',
           sandbox: 'JavaScript',
         },
@@ -77,6 +92,52 @@ export default defineConfig(({ mode }) => {
     ],
   };
 });
+
+function loadRemoteDbBuildConfig(): RemoteDbBuildFileConfig {
+  const configPath = resolve(process.cwd(), REMOTE_DB_BUILD_CONFIG_FILE);
+  if (!existsSync(configPath)) {
+    return { ...DEFAULT_REMOTE_DB_BUILD_CONFIG };
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(readFileSync(configPath, 'utf8'));
+  } catch (error) {
+    throw new Error(
+      `Failed to parse ${REMOTE_DB_BUILD_CONFIG_FILE}: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error(`${REMOTE_DB_BUILD_CONFIG_FILE} must contain a JSON object`);
+  }
+
+  const record = parsed as Record<string, unknown>;
+  validateRemoteDbBuildConfigValue(record.enabled, 'enabled');
+  validateRemoteDbBuildConfigValue(record.configurable, 'configurable');
+  validateRemoteDbBuildConfigValue(record.baseUrl, 'baseUrl');
+
+  return {
+    ...DEFAULT_REMOTE_DB_BUILD_CONFIG,
+    enabled: record.enabled as boolean | undefined,
+    configurable: record.configurable as boolean | undefined,
+    baseUrl: record.baseUrl as string | null | undefined,
+  };
+}
+
+function validateRemoteDbBuildConfigValue(value: unknown, key: keyof RemoteDbBuildFileConfig): void {
+  if (value === undefined) {
+    return;
+  }
+
+  if ((key === 'enabled' || key === 'configurable') && typeof value !== 'boolean') {
+    throw new Error(`${REMOTE_DB_BUILD_CONFIG_FILE}.${key} must be a boolean`);
+  }
+
+  if (key === 'baseUrl' && value !== null && typeof value !== 'string') {
+    throw new Error(`${REMOTE_DB_BUILD_CONFIG_FILE}.${key} must be a string or null`);
+  }
+}
 
 function parseBooleanEnv(raw: string | undefined, key: string, fallback: boolean): boolean {
   if (raw == null || raw.trim() === '') {
@@ -144,4 +205,24 @@ function normalizeConfiguredBaseUrl(raw: string | undefined, key: string): strin
   }
 
   return parsed.toString().replace(/\/+$/, '');
+}
+
+function resolveRemoteDbConnect(
+  remoteDbEnabled: boolean,
+  remoteDbConfigurable: boolean,
+  remoteDbDefaultBaseUrl: string | null,
+): string[] | undefined {
+  if (!remoteDbEnabled) {
+    return undefined;
+  }
+
+  const connect = new Set<string>();
+  if (remoteDbConfigurable) {
+    connect.add('*');
+  }
+  if (remoteDbDefaultBaseUrl) {
+    connect.add(new URL(remoteDbDefaultBaseUrl).hostname);
+  }
+
+  return connect.size > 0 ? [...connect] : undefined;
 }

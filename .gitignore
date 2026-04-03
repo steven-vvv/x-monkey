@@ -33,3 +33,4 @@ dist-ssr
 
 /.codex/
 /.codex
+remote-db.config.json

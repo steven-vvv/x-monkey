@@ -38,8 +38,10 @@ Build output is generated in `dist/` as a userscript bundle.
 
 The tweet-db integration can now be configured in two ways:
 
-1. Edit [remote-db.config.ts](/home/steven/code/x-monkey/remote-db.config.ts)
+1. Optionally create `remote-db.config.json` in the project root
 2. Override the same fields with Vite environment variables when needed
+
+A tracked example is available at [remote-db.config.example.json](/home/steven/code/x-monkey/remote-db.config.example.json). The actual `remote-db.config.json` file is optional and gitignored, so it can be used for machine-local build settings.
 
 Default repository configuration:
 
@@ -72,8 +74,14 @@ Equivalent environment variables:
 
 Precedence:
 
-- Environment variables override `remote-db.config.ts`
-- `remote-db.config.ts` supplies the default values used by normal builds
+- Environment variables override `remote-db.config.json`
+- `remote-db.config.json` overrides the built-in defaults used by normal builds
+
+Userscript `@connect` generation:
+
+- When remote mode is configurable, the build keeps `@connect *`.
+- When a compile-time remote Base URL is set, its hostname is also added to `@connect`.
+- When remote mode is fixed to a compile-time Base URL, the build emits that hostname instead of a wildcard.
 
 Rules enforced during build:
 
