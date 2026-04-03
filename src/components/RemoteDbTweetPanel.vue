@@ -10,13 +10,19 @@ import {
 } from '../lib/remote-db';
 import {
   buildRemoteDbSubmission,
+  buildRemoteDbSubmissionBatch,
   compareRemoteDbPostStatus,
 } from '../lib/remote-db';
 
-const props = defineProps<{ tweet: DbTweet }>();
+const props = withDefaults(defineProps<{
+  tweet: DbTweet;
+  batchSyncTweets?: DbTweet[];
+}>(), {
+  batchSyncTweets: () => [],
+});
 
 type QueryState = 'idle' | 'loading' | 'ready' | 'error';
-type SyncState = 'idle' | 'submitting' | 'success' | 'error';
+type SyncState = 'idle' | 'submitting_single' | 'submitting_batch' | 'success' | 'error';
 
 interface RemotePanelState {
   queryState: QueryState;
@@ -38,6 +44,26 @@ const state = reactive<RemotePanelState>({
 
 const author = computed(() => getDbUser(props.tweet.authorId));
 const media = computed(() => getMediaForTweet(props.tweet.id));
+const batchSyncTweets = computed(() => {
+  const source = props.batchSyncTweets.length > 0 ? props.batchSyncTweets : [props.tweet];
+  const uniqueTweets: DbTweet[] = [];
+  const seenTweetIds = new Set<string>();
+
+  for (const tweet of source) {
+    if (seenTweetIds.has(tweet.id)) continue;
+    seenTweetIds.add(tweet.id);
+    uniqueTweets.push(tweet);
+  }
+
+  return uniqueTweets;
+});
+const batchSyncSources = computed(() => {
+  return batchSyncTweets.value.map((tweet) => ({
+    tweet,
+    author: getDbUser(tweet.authorId),
+    media: getMediaForTweet(tweet.id),
+  }));
+});
 
 let queryToken = 0;
 
@@ -125,13 +151,13 @@ const missingMediaText = computed(() => {
     return null;
   }
 
-  return `Missing media: ${state.remoteItem.missingMediaSourceIds.length}`;
+  return `Missing media on remote: ${state.remoteItem.missingMediaSourceIds.length}`;
 });
 
 const statusText = computed(() => {
   if (!state.remoteItem || !comparison.value) return '-';
-  if (!comparison.value.exists) return 'Not Found';
-  return comparison.value.consistent ? 'In Sync' : 'Mismatch';
+  if (!comparison.value.exists) return 'Missing on remote';
+  return comparison.value.consistent ? 'Present, in sync' : 'Present, mismatch';
 });
 
 const postTimesText = computed(() => {
@@ -155,7 +181,9 @@ const metricsTimesText = computed(() => {
 });
 
 const refreshDisabled = computed(() => {
-  return state.queryState === 'loading' || state.syncState === 'submitting';
+  return state.queryState === 'loading'
+    || state.syncState === 'submitting_single'
+    || state.syncState === 'submitting_batch';
 });
 
 const refreshButtonText = computed(() => {
@@ -166,43 +194,110 @@ const refreshButtonText = computed(() => {
   return state.remoteItem ? 'Refreshing...' : 'Loading...';
 });
 
+const singleSyncSubmission = computed(() => {
+  return buildRemoteDbSubmission(props.tweet, author.value, media.value);
+});
+
+const batchSyncBuildResult = computed(() => {
+  return buildRemoteDbSubmissionBatch(batchSyncSources.value);
+});
+
+const hasBatchSync = computed(() => {
+  return batchSyncTweets.value.length > 1;
+});
+
 const syncDisabled = computed(() => {
-  return !author.value || state.syncState === 'submitting' || state.queryState === 'loading';
+  return !singleSyncSubmission.value || refreshDisabled.value;
 });
 
 const syncDisabledText = computed(() => {
-  if (!author.value) {
-    return 'Author data is missing';
+  if (!singleSyncSubmission.value) {
+    return 'Sync unavailable: author data is missing';
   }
 
   return null;
 });
 
 const syncButtonText = computed(() => {
-  return state.syncState === 'submitting' ? 'Syncing...' : 'Sync To Remote';
+  return state.syncState === 'submitting_single' ? 'Syncing...' : 'Sync';
 });
 
+const syncAllDisabled = computed(() => {
+  return !hasBatchSync.value || !batchSyncBuildResult.value.submission || refreshDisabled.value;
+});
+
+const syncAllDisabledText = computed(() => {
+  if (!hasBatchSync.value) {
+    return null;
+  }
+
+  const missingCount = batchSyncBuildResult.value.missingAuthorTweetIds.length;
+  if (missingCount > 0) {
+    if (!singleSyncSubmission.value && missingCount === 1) {
+      return null;
+    }
+    return `Sync All unavailable: author data is missing for ${missingCount} tweet${missingCount > 1 ? 's' : ''}`;
+  }
+
+  return null;
+});
+
+const syncAllButtonText = computed(() => {
+  return state.syncState === 'submitting_batch' ? 'Syncing...' : 'Sync All';
+});
+
+function formatSubmissionMessage(actionLabel: string, acceptedCount: number, transferJobsEnqueued: number, status: string, warnings: string[]): string {
+  const warning = warnings[0] ? ` First warning: ${warnings[0]}` : '';
+  return `${actionLabel} ${status}; accepted ${acceptedCount}; transfer jobs ${transferJobsEnqueued}.${warning}`;
+}
+
+async function submitSubmission(
+  submission: NonNullable<ReturnType<typeof buildRemoteDbSubmission>>,
+  mode: 'single' | 'batch',
+): Promise<void> {
+  state.syncState = mode === 'single' ? 'submitting_single' : 'submitting_batch';
+  state.syncMessage = null;
+
+  try {
+    const result = await submitRemoteDbSubmission(submission);
+    state.syncState = 'success';
+    state.syncMessage = formatSubmissionMessage(
+      mode === 'single' ? 'Sync' : 'Sync All',
+      result.acceptedCount,
+      result.transferJobsEnqueued,
+      result.status,
+      result.warnings,
+    );
+    await loadRemoteStatus();
+  } catch (error) {
+    state.syncState = 'error';
+    state.syncMessage = toErrorMessage(
+      error,
+      mode === 'single'
+        ? 'Failed to sync current tweet to remote database'
+        : 'Failed to sync tweet batch to remote database',
+    );
+  }
+}
+
 async function syncCurrentTweet(): Promise<void> {
-  const submission = buildRemoteDbSubmission(props.tweet, author.value, media.value);
-  if (!submission) {
+  if (!singleSyncSubmission.value) {
     state.syncState = 'error';
     state.syncMessage = 'Author data is missing, unable to submit';
     return;
   }
 
-  state.syncState = 'submitting';
-  state.syncMessage = null;
+  await submitSubmission(singleSyncSubmission.value, 'single');
+}
 
-  try {
-    const result = await submitRemoteDbSubmission(submission);
-    const warning = result.warnings[0] ? ` First warning: ${result.warnings[0]}` : '';
-    state.syncState = 'success';
-    state.syncMessage = `Submission ${result.status}; accepted ${result.acceptedCount}; transfer jobs ${result.transferJobsEnqueued}.${warning}`;
-    await loadRemoteStatus();
-  } catch (error) {
+async function syncTweetBatch(): Promise<void> {
+  if (!batchSyncBuildResult.value.submission) {
     state.syncState = 'error';
-    state.syncMessage = toErrorMessage(error, 'Failed to sync current tweet to remote database');
+    state.syncMessage = syncAllDisabledText.value ?? 'Unable to build the remote batch submission';
+    return;
   }
+
+  await submitSubmission(batchSyncBuildResult.value.submission, 'batch');
 }
 
 async function refreshRemoteStatus(): Promise<void> {
@@ -217,6 +312,14 @@ async function refreshRemoteStatus(): Promise<void> {
       <div class="xd-remote-panel-actions">
         <button class="xd-btn xd-btn--sm" :disabled="refreshDisabled" @click="refreshRemoteStatus">{{ refreshButtonText }}</button>
         <button class="xd-btn xd-btn--sm xd-btn--accent" :disabled="syncDisabled" @click="syncCurrentTweet">{{ syncButtonText }}</button>
+        <button
+          v-if="hasBatchSync"
+          class="xd-btn xd-btn--sm"
+          :disabled="syncAllDisabled"
+          @click="syncTweetBatch"
+        >
+          {{ syncAllButtonText }}
+        </button>
       </div>
     </div>
 
@@ -229,19 +332,19 @@ async function refreshRemoteStatus(): Promise<void> {
     <div v-else-if="state.remoteItem && comparison" class="xd-remote-grid">
       <div class="xd-remote-metric">
         <span class="xd-remote-metric-label">Status</span>
-        <strong class="xd-remote-metric-value">{{ statusText }}</strong>
+        <span class="xd-remote-metric-value">{{ statusText }}</span>
       </div>
       <div class="xd-remote-metric">
         <span class="xd-remote-metric-label">Transfer</span>
-        <strong class="xd-remote-metric-value">{{ transferText }}</strong>
+        <span class="xd-remote-metric-value">{{ transferText }}</span>
       </div>
       <div class="xd-remote-metric">
         <span class="xd-remote-metric-label">Post Times</span>
-        <strong class="xd-remote-metric-value">{{ postTimesText }}</strong>
+        <span class="xd-remote-metric-value">{{ postTimesText }}</span>
       </div>
       <div class="xd-remote-metric">
         <span class="xd-remote-metric-label">Metrics Times</span>
-        <strong class="xd-remote-metric-value">{{ metricsTimesText }}</strong>
+        <span class="xd-remote-metric-value">{{ metricsTimesText }}</span>
       </div>
       <div v-if="transferBreakdownText" class="xd-remote-note">
         {{ transferBreakdownText }}
@@ -259,6 +362,9 @@ async function refreshRemoteStatus(): Promise<void> {
 
     <div v-if="syncDisabledText" class="xd-remote-note xd-remote-note--error">
       {{ syncDisabledText }}
+    </div>
+    <div v-if="syncAllDisabledText" class="xd-remote-note xd-remote-note--error">
+      {{ syncAllDisabledText }}
     </div>
     <div
       v-if="state.syncMessage"
@@ -301,6 +407,8 @@ async function refreshRemoteStatus(): Promise<void> {
 .xd-remote-panel-actions {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 6px;
 }
 
@@ -325,6 +433,7 @@ async function refreshRemoteStatus(): Promise<void> {
   color: var(--xd-text-primary);
   text-align: right;
   word-break: break-word;
+  font-weight: 400;
 }
 
 .xd-remote-note {

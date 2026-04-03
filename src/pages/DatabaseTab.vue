@@ -56,6 +56,11 @@ const detailReplies = computed(() => {
   return getReplies(detailTweet.value.id);
 });
 
+const detailRemoteSyncTweets = computed(() => {
+  if (!detailTweet.value) return [];
+  return [detailTweet.value, ...detailReplies.value];
+});
+
 // User detail computeds
 const detailUser = computed(() => {
   void dbVersion.value;
@@ -95,7 +100,11 @@ const shouldShowRemoteDbPanel = computed(() => {
             @open-tweet="openTweet"
           >
             <template #after-detail>
-              <RemoteDbTweetPanel v-if="shouldShowRemoteDbPanel" :tweet="detailTweet" />
+              <RemoteDbTweetPanel
+                v-if="shouldShowRemoteDbPanel"
+                :tweet="detailTweet"
+                :batch-sync-tweets="detailRemoteSyncTweets"
+              />
             </template>
           </TweetDetailView>
         </template>

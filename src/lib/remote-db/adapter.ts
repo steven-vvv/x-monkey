@@ -20,6 +20,17 @@ export interface RemoteDbStatusComparison {
   transferSummary: RemoteDbTransferSummary;
 }
 
+export interface RemoteDbSubmissionSourceItem {
+  tweet: DbTweet;
+  author: DbUser | undefined;
+  media: DbMedia[];
+}
+
+export interface RemoteDbSubmissionBatchResult {
+  submission: RemoteDbSubmissionEnvelope | null;
+  missingAuthorTweetIds: string[];
+}
+
 interface ComparableRemotePost {
   sourcePostId: string;
   authorSourceActorId: string;
@@ -315,15 +326,52 @@ export function buildRemoteDbSubmission(
   author: DbUser | undefined,
   media: DbMedia[],
 ): RemoteDbSubmissionEnvelope | null {
-  if (!author) {
-    return null;
+  return buildRemoteDbSubmissionBatch([{ tweet, author, media }]).submission;
+}
+
+export function buildRemoteDbSubmissionBatch(
+  items: RemoteDbSubmissionSourceItem[],
+): RemoteDbSubmissionBatchResult {
+  if (items.length === 0) {
+    return {
+      submission: null,
+      missingAuthorTweetIds: [],
+    };
+  }
+
+  const missingAuthorTweetIds = items
+    .filter((item) => !item.author)
+    .map((item) => item.tweet.id);
+
+  if (missingAuthorTweetIds.length > 0) {
+    return {
+      submission: null,
+      missingAuthorTweetIds,
+    };
+  }
+
+  const users = new Map<string, ReturnType<typeof toRemoteDbUserInput>>();
+  const tweets = new Map<string, ReturnType<typeof toRemoteDbTweetInput>>();
+  const media = new Map<string, ReturnType<typeof toRemoteDbMediaInput>>();
+
+  for (const item of items) {
+    const author = item.author as DbUser;
+    users.set(author.id, toRemoteDbUserInput(author));
+    tweets.set(item.tweet.id, toRemoteDbTweetInput(item.tweet));
+
+    for (const mediaItem of item.media) {
+      media.set(mediaItem.id, toRemoteDbMediaInput(mediaItem));
+    }
   }
 
   return {
-    sourceKind: REMOTE_DB_SOURCE_KIND,
-    users: [toRemoteDbUserInput(author)],
-    tweets: [toRemoteDbTweetInput(tweet)],
-    media: media.map(toRemoteDbMediaInput),
+    submission: {
+      sourceKind: REMOTE_DB_SOURCE_KIND,
+      users: Array.from(users.values()),
+      tweets: Array.from(tweets.values()),
+      media: Array.from(media.values()),
+    },
+    missingAuthorTweetIds: [],
   };
 }
 
