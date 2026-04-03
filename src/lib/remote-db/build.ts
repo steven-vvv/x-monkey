@@ -1,4 +1,4 @@
-import type { RemoteDbBuildConfig } from './remote-db-types';
+import type { RemoteDbBuildConfig } from './types';
 
 function trimTrailingSlash(value: string): string {
   return value.replace(/\/+$/, '');

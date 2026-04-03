@@ -6,11 +6,11 @@ import {
   getRemoteDbClientState,
   queryRemoteDbPostStatus,
   submitRemoteDbSubmission,
-} from '../lib/remote-db-client';
+} from '../lib/remote-db';
 import {
   buildRemoteDbSubmission,
   compareRemoteDbPostStatus,
-} from '../lib/remote-db-adapter';
+} from '../lib/remote-db';
 
 const props = defineProps<{ tweet: DbTweet }>();
 

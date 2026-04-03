@@ -12,7 +12,7 @@ import TweetSummaryItem from '../components/TweetSummaryItem.vue';
 import TweetDetailCard from '../components/TweetDetailCard.vue';
 import UserDetailCard from '../components/UserDetailCard.vue';
 import RemoteDbTweetPanel from '../components/RemoteDbTweetPanel.vue';
-import { getRemoteDbClientState } from '../lib/remote-db-client';
+import { getRemoteDbClientState } from '../lib/remote-db';
 
 const route = dbRoute;
 const remoteDbState = getRemoteDbClientState();

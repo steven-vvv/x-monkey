@@ -1,7 +1,7 @@
 import { reactive, watch } from 'vue';
 import { GM_getValue, GM_setValue, GM_addValueChangeListener, GM_removeValueChangeListener } from '$';
 import type { GmValueListenerId } from '$';
-import { REMOTE_DB_BUILD, normalizeRemoteDbBaseUrl } from './remote-db-build';
+import { REMOTE_DB_BUILD, normalizeRemoteDbBaseUrl } from './remote-db';
 
 export type ThemeMode = 'dark' | 'light' | 'page';
 

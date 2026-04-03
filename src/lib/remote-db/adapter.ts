@@ -1,4 +1,4 @@
-import type { DbMedia, DbTweet, DbUser } from './db-service';
+import type { DbMedia, DbTweet, DbUser } from '../db-service';
 import type {
   RemoteDbActorView,
   RemoteDbMediaInput,
@@ -10,7 +10,7 @@ import type {
   RemoteDbTweetInput,
   RemoteDbUserInput,
   RemoteDbVideoVariantInput,
-} from './remote-db-types';
+} from './types';
 
 export interface RemoteDbStatusComparison {
   exists: boolean;

@@ -1,6 +1,6 @@
 import { reactive } from 'vue';
 import { GM_log, GM_xmlhttpRequest } from '$';
-import { REMOTE_DB_BUILD, normalizeRemoteDbBaseUrl } from './remote-db-build';
+import { REMOTE_DB_BUILD, normalizeRemoteDbBaseUrl } from './build';
 import type {
   RemoteDbClientState,
   RemoteDbIngestResponse,
@@ -9,7 +9,7 @@ import type {
   RemoteDbSessionResponse,
   RemoteDbSessionState,
   RemoteDbSubmissionEnvelope,
-} from './remote-db-types';
+} from './types';
 
 const REMOTE_DB_REQUEST_TIMEOUT_MS = 15000;
 

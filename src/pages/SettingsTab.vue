@@ -7,8 +7,7 @@ import {
 import { GM_openInTab, unsafeWindow } from '$';
 import SettingsSection from '../components/SettingsSection.vue';
 import SettingsNumberPairRow from '../components/SettingsNumberPairRow.vue';
-import { REMOTE_DB_BUILD, normalizeRemoteDbBaseUrl } from '../lib/remote-db-build';
-import { getRemoteDbClientState } from '../lib/remote-db-client';
+import { REMOTE_DB_BUILD, normalizeRemoteDbBaseUrl, getRemoteDbClientState } from '../lib/remote-db';
 
 const cfg = getConfig();
 const remoteDbState = getRemoteDbClientState();
