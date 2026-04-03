@@ -29,6 +29,8 @@ export interface RemoteDbSubmissionSourceItem {
 export interface RemoteDbSubmissionBatchResult {
   submission: RemoteDbSubmissionEnvelope | null;
   missingAuthorTweetIds: string[];
+  invalidUserCreatedAtIds: string[];
+  invalidTweetCreatedAtIds: string[];
 }
 
 interface ComparableRemotePost {
@@ -39,7 +41,7 @@ interface ComparableRemotePost {
   legacyFullText: string;
   noteText: string | null;
   lang: string;
-  sourceCreatedAtRaw: string;
+  sourceCreatedAt: string | null;
   inReplyToSourcePostId: string | null;
   inReplyToSourceActorId: string | null;
   quotedSourcePostId: string | null;
@@ -80,6 +82,24 @@ function isSamePrimitiveArray(left: string[], right: string[]): boolean {
   return left.every((value, index) => value === right[index]);
 }
 
+export function normalizeRemoteDbCreatedAt(value: string | null | undefined): string | null {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  const parsed = new Date(trimmed);
+  if (Number.isNaN(parsed.getTime())) {
+    return null;
+  }
+
+  return parsed.toISOString().replace('.000Z', 'Z');
+}
+
 function toComparablePost(tweet: DbTweet): ComparableRemotePost {
   return {
     sourcePostId: tweet.id,
@@ -89,7 +109,7 @@ function toComparablePost(tweet: DbTweet): ComparableRemotePost {
     legacyFullText: tweet.legacyFullText,
     noteText: tweet.noteText,
     lang: tweet.lang,
-    sourceCreatedAtRaw: tweet.createdAt,
+    sourceCreatedAt: normalizeRemoteDbCreatedAt(tweet.createdAt),
     inReplyToSourcePostId: tweet.inReplyToTweetId,
     inReplyToSourceActorId: tweet.inReplyToUserId,
     quotedSourcePostId: tweet.quotedTweetId,
@@ -181,7 +201,7 @@ function toComparableRemotePost(post: RemoteDbPostView): ComparableRemotePost {
     legacyFullText: post.legacyFullText,
     noteText: post.noteText,
     lang: post.lang,
-    sourceCreatedAtRaw: post.sourceCreatedAtRaw,
+    sourceCreatedAt: normalizeRemoteDbCreatedAt(post.sourceCreatedAt),
     inReplyToSourcePostId: post.inReplyToSourcePostId,
     inReplyToSourceActorId: post.inReplyToSourceActorId,
     quotedSourcePostId: post.quotedSourcePostId,
@@ -198,6 +218,14 @@ function toComparableRemotePost(post: RemoteDbPostView): ComparableRemotePost {
   };
 }
 
+function isSameOptionalTimestamp(left: string | null, right: string | null): boolean {
+  if (left === null || right === null) {
+    return true;
+  }
+
+  return left === right;
+}
+
 function isSamePost(left: ComparableRemotePost, right: ComparableRemotePost): boolean {
   return left.sourcePostId === right.sourcePostId
     && left.authorSourceActorId === right.authorSourceActorId
@@ -206,7 +234,7 @@ function isSamePost(left: ComparableRemotePost, right: ComparableRemotePost): bo
     && left.legacyFullText === right.legacyFullText
     && left.noteText === right.noteText
     && left.lang === right.lang
-    && left.sourceCreatedAtRaw === right.sourceCreatedAtRaw
+    && isSameOptionalTimestamp(left.sourceCreatedAt, right.sourceCreatedAt)
     && left.inReplyToSourcePostId === right.inReplyToSourcePostId
     && left.inReplyToSourceActorId === right.inReplyToSourceActorId
     && left.quotedSourcePostId === right.quotedSourcePostId
@@ -242,6 +270,11 @@ function isSameMediaSet(left: ComparableRemoteMedia[], right: ComparableRemoteMe
 }
 
 export function toRemoteDbUserInput(user: DbUser): RemoteDbUserInput {
+  const createdAt = normalizeRemoteDbCreatedAt(user.createdAt);
+  if (!createdAt) {
+    throw new Error(`Invalid user createdAt for ${user.id}`);
+  }
+
   return {
     id: user.id,
     name: user.name,
@@ -263,11 +296,16 @@ export function toRemoteDbUserInput(user: DbUser): RemoteDbUserInput {
     mediaCount: user.mediaCount,
     listedCount: user.listedCount,
     pinnedTweetIds: [...user.pinnedTweetIds],
-    createdAt: user.createdAt,
+    createdAt,
   };
 }
 
 export function toRemoteDbTweetInput(tweet: DbTweet): RemoteDbTweetInput {
+  const createdAt = normalizeRemoteDbCreatedAt(tweet.createdAt);
+  if (!createdAt) {
+    throw new Error(`Invalid tweet createdAt for ${tweet.id}`);
+  }
+
   return {
     id: tweet.id,
     authorId: tweet.authorId,
@@ -276,7 +314,7 @@ export function toRemoteDbTweetInput(tweet: DbTweet): RemoteDbTweetInput {
     legacyFullText: tweet.legacyFullText,
     noteText: tweet.noteText,
     lang: tweet.lang,
-    createdAt: tweet.createdAt,
+    createdAt,
     inReplyToTweetId: tweet.inReplyToTweetId,
     inReplyToUserId: tweet.inReplyToUserId,
     quotedTweetId: tweet.quotedTweetId,
@@ -336,6 +374,8 @@ export function buildRemoteDbSubmissionBatch(
     return {
       submission: null,
       missingAuthorTweetIds: [],
+      invalidUserCreatedAtIds: [],
+      invalidTweetCreatedAtIds: [],
     };
   }
 
@@ -347,21 +387,51 @@ export function buildRemoteDbSubmissionBatch(
     return {
       submission: null,
       missingAuthorTweetIds,
+      invalidUserCreatedAtIds: [],
+      invalidTweetCreatedAtIds: [],
     };
   }
 
   const users = new Map<string, ReturnType<typeof toRemoteDbUserInput>>();
   const tweets = new Map<string, ReturnType<typeof toRemoteDbTweetInput>>();
   const media = new Map<string, ReturnType<typeof toRemoteDbMediaInput>>();
+  const invalidUserCreatedAtIds = new Set<string>();
+  const invalidTweetCreatedAtIds = new Set<string>();
 
   for (const item of items) {
     const author = item.author as DbUser;
-    users.set(author.id, toRemoteDbUserInput(author));
-    tweets.set(item.tweet.id, toRemoteDbTweetInput(item.tweet));
+    const normalizedUserCreatedAt = normalizeRemoteDbCreatedAt(author.createdAt);
+    if (!normalizedUserCreatedAt) {
+      invalidUserCreatedAtIds.add(author.id);
+    } else if (!users.has(author.id)) {
+      users.set(author.id, {
+        ...toRemoteDbUserInput(author),
+        createdAt: normalizedUserCreatedAt,
+      });
+    }
+
+    const normalizedTweetCreatedAt = normalizeRemoteDbCreatedAt(item.tweet.createdAt);
+    if (!normalizedTweetCreatedAt) {
+      invalidTweetCreatedAtIds.add(item.tweet.id);
+    } else {
+      tweets.set(item.tweet.id, {
+        ...toRemoteDbTweetInput(item.tweet),
+        createdAt: normalizedTweetCreatedAt,
+      });
+    }
 
     for (const mediaItem of item.media) {
       media.set(mediaItem.id, toRemoteDbMediaInput(mediaItem));
     }
+  }
+
+  if (invalidUserCreatedAtIds.size > 0 || invalidTweetCreatedAtIds.size > 0) {
+    return {
+      submission: null,
+      missingAuthorTweetIds: [],
+      invalidUserCreatedAtIds: Array.from(invalidUserCreatedAtIds),
+      invalidTweetCreatedAtIds: Array.from(invalidTweetCreatedAtIds),
+    };
   }
 
   return {
@@ -372,6 +442,8 @@ export function buildRemoteDbSubmissionBatch(
       media: Array.from(media.values()),
     },
     missingAuthorTweetIds: [],
+    invalidUserCreatedAtIds: [],
+    invalidTweetCreatedAtIds: [],
   };
 }
 

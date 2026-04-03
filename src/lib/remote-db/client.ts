@@ -8,6 +8,7 @@ import type {
   RemoteDbPostStatusItem,
   RemoteDbPostStatusQueryResponse,
   RemoteDbSessionResponse,
+  RemoteDbSessionResponseWire,
   RemoteDbSessionState,
   RemoteDbSubmissionEnvelope,
 } from './types';
@@ -159,6 +160,16 @@ function extractApiErrorMessage(payload: unknown, fallback: string): string {
   return fallback;
 }
 
+function normalizeSessionResponse(payload: RemoteDbSessionResponseWire): RemoteDbSessionResponse {
+  return {
+    authenticated: payload.authenticated,
+    registered: payload.registered,
+    username: payload.username,
+    expiresAt: payload.expires_at ?? payload.expiresAt ?? null,
+    accountUrl: payload.account_url ?? payload.accountUrl ?? null,
+  };
+}
+
 function toErrorMessage(error: unknown, fallback: string): string {
   if (error instanceof Error && error.message.trim()) {
     return error.message;
@@ -251,17 +262,18 @@ async function refreshSessionInternal(baseUrl: string, token: number): Promise<R
   });
 
   try {
-    const { data } = await requestJson<RemoteDbSessionResponse>({
+    const { data } = await requestJson<RemoteDbSessionResponseWire>({
       method: 'GET',
       path: '/api/v1/session',
     });
+    const session = normalizeSessionResponse(data);
 
     if (token !== sessionRequestToken) {
       return null;
     }
 
-    applySessionResult(baseUrl, data);
-    return data;
+    applySessionResult(baseUrl, session);
+    return session;
   } catch (error) {
     if (token !== sessionRequestToken) {
       return null;

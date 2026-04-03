@@ -9,10 +9,10 @@ import {
   submitRemoteDbSubmission,
 } from '../lib/remote-db';
 import {
-  buildRemoteDbSubmission,
   buildRemoteDbSubmissionBatch,
   compareRemoteDbPostStatus,
 } from '../lib/remote-db';
+import type { RemoteDbSubmissionEnvelope } from '../lib/remote-db';
 
 const props = withDefaults(defineProps<{
   tweet: DbTweet;
@@ -194,8 +194,12 @@ const refreshButtonText = computed(() => {
   return state.remoteItem ? 'Refreshing...' : 'Loading...';
 });
 
-const singleSyncSubmission = computed(() => {
-  return buildRemoteDbSubmission(props.tweet, author.value, media.value);
+const singleSyncBuildResult = computed(() => {
+  return buildRemoteDbSubmissionBatch([{
+    tweet: props.tweet,
+    author: author.value,
+    media: media.value,
+  }]);
 });
 
 const batchSyncBuildResult = computed(() => {
@@ -206,13 +210,25 @@ const hasBatchSync = computed(() => {
   return batchSyncTweets.value.length > 1;
 });
 
+const singleSyncSubmission = computed(() => {
+  return singleSyncBuildResult.value.submission;
+});
+
 const syncDisabled = computed(() => {
   return !singleSyncSubmission.value || refreshDisabled.value;
 });
 
 const syncDisabledText = computed(() => {
-  if (!singleSyncSubmission.value) {
+  if (singleSyncBuildResult.value.missingAuthorTweetIds.length > 0) {
     return 'Sync unavailable: author data is missing';
+  }
+
+  if (singleSyncBuildResult.value.invalidUserCreatedAtIds.length > 0) {
+    return 'Sync unavailable: author createdAt is invalid for the remote API';
+  }
+
+  if (singleSyncBuildResult.value.invalidTweetCreatedAtIds.length > 0) {
+    return 'Sync unavailable: tweet createdAt is invalid for the remote API';
   }
 
   return null;
@@ -239,6 +255,16 @@ const syncAllDisabledText = computed(() => {
     return `Sync All unavailable: author data is missing for ${missingCount} tweet${missingCount > 1 ? 's' : ''}`;
   }
 
+  const invalidUserCount = batchSyncBuildResult.value.invalidUserCreatedAtIds.length;
+  if (invalidUserCount > 0) {
+    return `Sync All unavailable: invalid author createdAt for ${invalidUserCount} user${invalidUserCount > 1 ? 's' : ''}`;
+  }
+
+  const invalidTweetCount = batchSyncBuildResult.value.invalidTweetCreatedAtIds.length;
+  if (invalidTweetCount > 0) {
+    return `Sync All unavailable: invalid tweet createdAt for ${invalidTweetCount} tweet${invalidTweetCount > 1 ? 's' : ''}`;
+  }
+
   return null;
 });
 
@@ -252,7 +278,7 @@ function formatSubmissionMessage(actionLabel: string, acceptedCount: number, tra
 }
 
 async function submitSubmission(
-  submission: NonNullable<ReturnType<typeof buildRemoteDbSubmission>>,
+  submission: RemoteDbSubmissionEnvelope,
   mode: 'single' | 'batch',
 ): Promise<void> {
   state.syncState = mode === 'single' ? 'submitting_single' : 'submitting_batch';

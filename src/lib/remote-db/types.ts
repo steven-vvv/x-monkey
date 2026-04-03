@@ -9,6 +9,16 @@ export interface RemoteDbClientConfig {
   baseUrl: string | null | undefined;
 }
 
+export interface RemoteDbSessionResponseWire {
+  authenticated: boolean;
+  registered: boolean;
+  username: string | null;
+  expires_at?: string | null;
+  account_url?: string | null;
+  expiresAt?: string | null;
+  accountUrl?: string | null;
+}
+
 export interface RemoteDbSessionResponse {
   authenticated: boolean;
   registered: boolean;
@@ -134,7 +144,7 @@ export interface RemoteDbPostView {
   legacyFullText: string;
   noteText: string | null;
   lang: string;
-  sourceCreatedAtRaw: string;
+  sourceCreatedAt: string | null;
   inReplyToSourcePostId: string | null;
   inReplyToSourceActorId: string | null;
   quotedSourcePostId: string | null;
@@ -175,9 +185,9 @@ export interface RemoteDbMediaStatusView {
   altText: string | null;
   allowDownload: boolean;
   durationMs: number | null;
-  transferStatus: string | null;
-  storageObjectKey: string | null;
-  lastError: string | null;
+  transferStatus?: string | null;
+  storageObjectKey?: string | null;
+  lastError?: string | null;
 }
 
 export interface RemoteDbPostStatusItem {
