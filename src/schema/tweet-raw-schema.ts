@@ -889,87 +889,6 @@ export const PlaceSchema = strictObject({
 });
 export type Place = z.infer<typeof PlaceSchema>;
 
-/**
- * 递归结果容器。
- *
- * quoted / retweeted 结构都会包装成 `result` 字段，因此统一复用这一层容器。
- */
-export interface TweetResultEnvelope extends Record<string, unknown> {
-  result: TweetResult;
-}
-
-export interface OptionalTweetResultEnvelope extends Record<string, unknown> {
-  result?: TweetResult;
-}
-
-export interface TweetLegacy extends Record<string, unknown> {
-  bookmark_count?: number;
-  bookmarked?: boolean;
-  conversation_control?: ConversationControl;
-  conversation_id_str: string;
-  created_at: string;
-  display_text_range?: number[];
-  entities: TweetEntities;
-  extended_entities?: {
-    media: Media[];
-    [key: string]: unknown;
-  };
-  favorite_count?: number;
-  favorited?: boolean;
-  full_text: string;
-  id_str: string;
-  in_reply_to_screen_name?: string | null;
-  in_reply_to_status_id_str?: string | null;
-  in_reply_to_user_id_str?: string | null;
-  is_quote_status: boolean;
-  lang?: string;
-  place?: Place;
-  possibly_sensitive?: boolean;
-  possibly_sensitive_editable?: boolean;
-  quote_count?: number;
-  quoted_status_id_str?: string;
-  quoted_status_permalink?: QuotedStatusPermalink;
-  reply_count?: number;
-  retweet_count?: number;
-  retweeted?: boolean;
-  retweeted_status_result?: TweetResultEnvelope;
-  scopes?: {
-    followers?: boolean;
-    [key: string]: unknown;
-  };
-  user_id_str: string;
-}
-
-export interface Tweet extends Record<string, unknown> {
-  __typename: 'Tweet';
-  article?: Article;
-  birdwatch_pivot?: BirdwatchPivot;
-  card?: Card;
-  content_disclosure?: ContentDisclosure;
-  core: TweetCore;
-  edit_control?: EditControl;
-  grok_analysis_button?: boolean;
-  grok_annotations?: GrokAnnotations;
-  grok_translated_post_with_availability?: GrokTranslatedPostAvailability;
-  has_birdwatch_notes?: boolean;
-  is_translatable?: boolean;
-  legacy: TweetLegacy;
-  limitedActionResults?: LimitedActionResults;
-  mediaVisibilityResults?: MediaVisibilityResults;
-  note_tweet?: NoteTweet;
-  previous_counts?: PreviousCounts;
-  quotedRefResult?: TweetReferenceEnvelope;
-  quick_promote_eligibility?: QuickPromoteEligibility;
-  quoted_status_result?: OptionalTweetResultEnvelope;
-  rest_id: string;
-  retweeted_status_result?: TweetResultEnvelope;
-  source?: string;
-  unmention_data?: UnmentionData;
-  views?: Views;
-}
-
-export type TweetResult = Tweet | TweetTombstone;
-
 export const TweetResultEnvelopeSchema: z.ZodType<TweetResultEnvelope> = z.lazy(() => strictObject({
   result: TweetResultSchema,
 }));
@@ -1067,7 +986,95 @@ export const TweetResultSchema = z.preprocess(
   z.discriminatedUnion('__typename', [TweetSchema, TweetTombstoneSchema]),
 );
 
+//#region
+
+/**
+ * 递归结果容器。
+ *
+ * quoted / retweeted 结构都会包装成 `result` 字段，因此统一复用这一层容器。
+ */
+export interface TweetResultEnvelope extends Record<string, unknown> {
+  result: TweetResult;
+}
+
+export interface OptionalTweetResultEnvelope extends Record<string, unknown> {
+  result?: TweetResult;
+}
+
+/** 归一化后的帖子 legacy 结构。 */
+export interface TweetLegacy extends Record<string, unknown> {
+  bookmark_count?: number;
+  bookmarked?: boolean;
+  conversation_control?: ConversationControl;
+  conversation_id_str: string;
+  created_at: string;
+  display_text_range?: number[];
+  entities: TweetEntities;
+  extended_entities?: {
+    media: Media[];
+    [key: string]: unknown;
+  };
+  favorite_count?: number;
+  favorited?: boolean;
+  full_text: string;
+  id_str: string;
+  in_reply_to_screen_name?: string | null;
+  in_reply_to_status_id_str?: string | null;
+  in_reply_to_user_id_str?: string | null;
+  is_quote_status: boolean;
+  lang?: string;
+  place?: Place;
+  possibly_sensitive?: boolean;
+  possibly_sensitive_editable?: boolean;
+  quote_count?: number;
+  quoted_status_id_str?: string;
+  quoted_status_permalink?: QuotedStatusPermalink;
+  reply_count?: number;
+  retweet_count?: number;
+  retweeted?: boolean;
+  retweeted_status_result?: TweetResultEnvelope;
+  scopes?: {
+    followers?: boolean;
+    [key: string]: unknown;
+  };
+  user_id_str: string;
+}
+
+/** 归一化后的完整帖子对象。 */
+export interface Tweet extends Record<string, unknown> {
+  __typename: 'Tweet';
+  article?: Article;
+  birdwatch_pivot?: BirdwatchPivot;
+  card?: Card;
+  content_disclosure?: ContentDisclosure;
+  core: TweetCore;
+  edit_control?: EditControl;
+  grok_analysis_button?: boolean;
+  grok_annotations?: GrokAnnotations;
+  grok_translated_post_with_availability?: GrokTranslatedPostAvailability;
+  has_birdwatch_notes?: boolean;
+  is_translatable?: boolean;
+  legacy: TweetLegacy;
+  limitedActionResults?: LimitedActionResults;
+  mediaVisibilityResults?: MediaVisibilityResults;
+  note_tweet?: NoteTweet;
+  previous_counts?: PreviousCounts;
+  quotedRefResult?: TweetReferenceEnvelope;
+  quick_promote_eligibility?: QuickPromoteEligibility;
+  quoted_status_result?: OptionalTweetResultEnvelope;
+  rest_id: string;
+  retweeted_status_result?: TweetResultEnvelope;
+  source?: string;
+  unmention_data?: UnmentionData;
+  views?: Views;
+}
+
+/** `tweet_results.result` 最终可能返回的联合结果。 */
+export type TweetResult = Tweet | TweetTombstone;
+
 /** 便于直接解析单个 `tweet_results.result` 节点。 */
 export function parseTweetResult(input: unknown): TweetResult {
   return TweetResultSchema.parse(input);
 }
+
+//#endregion
