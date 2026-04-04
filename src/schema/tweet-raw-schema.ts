@@ -5,12 +5,12 @@ import { z } from 'zod';
  *
  * 设计原则：
  * 1. 将 `TweetWithVisibilityResults` 预处理为最终 `Tweet` 对象，避免调用方在解析前手动分支。
- * 2. 对核心且稳定的字段做显式建模，对实验性或高频变动字段保留 `passthrough()` 兼容。
+ * 2. 对核心且稳定的字段做显式建模，对实验性或高频变动字段保留宽松对象兼容。
  * 3. 对 quoted / retweeted 等帖子递归引用继续使用同一套归一化模型。
  */
 
 function looseObject<T extends z.ZodRawShape>(shape: T) {
-  return z.object(shape).passthrough();
+  return z.looseObject(shape);
 }
 
 /**
