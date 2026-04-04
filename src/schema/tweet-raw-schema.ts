@@ -5,12 +5,12 @@ import { z } from 'zod';
  *
  * 设计原则：
  * 1. 将 `TweetWithVisibilityResults` 预处理为最终 `Tweet` 对象，避免调用方在解析前手动分支。
- * 2. 对核心且稳定的字段做显式建模，对实验性或高频变动字段保留宽松对象兼容。
+ * 2. 对核心且稳定的字段做显式建模，并通过严格对象校验感知未覆盖字段。
  * 3. 对 quoted / retweeted 等帖子递归引用继续使用同一套归一化模型。
  */
 
-function looseObject<T extends z.ZodRawShape>(shape: T) {
-  return z.looseObject(shape);
+function strictObject<T extends z.ZodRawShape>(shape: T) {
+  return z.strictObject(shape);
 }
 
 /**
@@ -40,20 +40,39 @@ export function normalizeTweetResultInput(input: unknown): unknown {
   const { tweet: _tweet, __typename: _typename, ...wrapperRest } = value;
 
   return {
+    __typename: (tweet as Record<string, unknown>).__typename ?? 'Tweet',
     ...wrapperRest,
     ...tweet,
     limitedActionResults: wrapperRest.limitedActionResults ?? (tweet as Record<string, unknown>).limitedActionResults,
   };
 }
 
-/** 通用的宽松 GraphQL 节点，用于承接少量未完全覆盖的结果类型。 */
-export const UnknownGraphqlNodeSchema = looseObject({
+/** 最小 GraphQL 节点占位，仅承接当前只识别 `__typename` 的结果类型。 */
+export const UnknownGraphqlNodeSchema = strictObject({
   __typename: z.string().optional(),
 });
 export type UnknownGraphqlNode = z.infer<typeof UnknownGraphqlNodeSchema>;
 
+/** 富文本 @ 提及里引用的最小用户节点。 */
+export const TimelineMentionUserSchema = strictObject({
+  __typename: z.literal('User'),
+  core: strictObject({
+    screen_name: z.string().optional(),
+  }).optional(),
+  rest_id: z.string().optional(),
+});
+export type TimelineMentionUser = z.infer<typeof TimelineMentionUserSchema>;
+
+/** 富文本 @ 提及结果容器。 */
+export const TimelineMentionResultsSchema = strictObject({
+  result: TimelineMentionUserSchema.optional(),
+});
+export type TimelineMentionResults = z.infer<typeof TimelineMentionResultsSchema>;
+
 /** 富文本中的 URL / 深链引用。 */
-export const TimelineRefSchema = looseObject({
+export const TimelineRefSchema = strictObject({
+  mention_results: TimelineMentionResultsSchema.optional(),
+  screen_name: z.string().optional(),
   type: z.string(),
   url: z.string().optional(),
   urlType: z.string().optional(),
@@ -61,7 +80,7 @@ export const TimelineRefSchema = looseObject({
 export type TimelineRef = z.infer<typeof TimelineRefSchema>;
 
 /** 富文本中的实体区间。 */
-export const TimelineTextEntitySchema = looseObject({
+export const TimelineTextEntitySchema = strictObject({
   fromIndex: z.number(),
   toIndex: z.number(),
   ref: TimelineRefSchema.optional(),
@@ -69,7 +88,7 @@ export const TimelineTextEntitySchema = looseObject({
 export type TimelineTextEntity = z.infer<typeof TimelineTextEntitySchema>;
 
 /** 一段可携带实体引用的文本。 */
-export const TimelineTextSchema = looseObject({
+export const TimelineTextSchema = strictObject({
   text: z.string(),
   entities: z.array(TimelineTextEntitySchema).optional(),
   rtl: z.boolean().optional(),
@@ -77,7 +96,7 @@ export const TimelineTextSchema = looseObject({
 export type TimelineText = z.infer<typeof TimelineTextSchema>;
 
 /** 社区注释 / Birdwatch 的简短调用按钮。 */
-export const CallToActionSchema = looseObject({
+export const CallToActionSchema = strictObject({
   destinationUrl: z.string(),
   prompt: z.string(),
   title: z.string(),
@@ -85,7 +104,7 @@ export const CallToActionSchema = looseObject({
 export type CallToAction = z.infer<typeof CallToActionSchema>;
 
 /** 社区注释元信息。 */
-export const BirdwatchNoteSchema = looseObject({
+export const BirdwatchNoteSchema = strictObject({
   is_community_note_translatable: z.boolean().optional(),
   language: z.string().optional(),
   rest_id: z.string().optional(),
@@ -93,7 +112,7 @@ export const BirdwatchNoteSchema = looseObject({
 export type BirdwatchNote = z.infer<typeof BirdwatchNoteSchema>;
 
 /** 帖子上的社区注释提示。 */
-export const BirdwatchPivotSchema = looseObject({
+export const BirdwatchPivotSchema = strictObject({
   callToAction: CallToActionSchema.optional(),
   destinationUrl: z.string().optional(),
   footer: TimelineTextSchema.optional(),
@@ -108,9 +127,9 @@ export const BirdwatchPivotSchema = looseObject({
 export type BirdwatchPivot = z.infer<typeof BirdwatchPivotSchema>;
 
 /** 墓碑节点，用于表示已删除或不可查看的帖子。 */
-export const TweetTombstoneSchema = looseObject({
+export const TweetTombstoneSchema = strictObject({
   __typename: z.literal('TweetTombstone'),
-  tombstone: looseObject({
+  tombstone: strictObject({
     __typename: z.string().optional(),
     text: TimelineTextSchema.optional(),
   }),
@@ -118,7 +137,7 @@ export const TweetTombstoneSchema = looseObject({
 export type TweetTombstone = z.infer<typeof TweetTombstoneSchema>;
 
 /** 基础颜色值。 */
-export const RgbSchema = looseObject({
+export const RgbSchema = strictObject({
   red: z.number(),
   green: z.number(),
   blue: z.number(),
@@ -126,14 +145,15 @@ export const RgbSchema = looseObject({
 export type Rgb = z.infer<typeof RgbSchema>;
 
 /** 调色板中的一个颜色采样点。 */
-export const PaletteColorSchema = looseObject({
+export const PaletteColorSchema = strictObject({
   percentage: z.number(),
   rgb: RgbSchema,
 });
 export type PaletteColor = z.infer<typeof PaletteColorSchema>;
 
 /** 卡片图片值。 */
-export const ImageValueSchema = looseObject({
+export const ImageValueSchema = strictObject({
+  alt: z.string().optional(),
   height: z.number(),
   width: z.number(),
   url: z.string(),
@@ -141,20 +161,21 @@ export const ImageValueSchema = looseObject({
 export type ImageValue = z.infer<typeof ImageValueSchema>;
 
 /** 卡片中的图片颜色信息。 */
-export const ImageColorValueSchema = looseObject({
+export const ImageColorValueSchema = strictObject({
   palette: z.array(PaletteColorSchema).optional(),
 });
 export type ImageColorValue = z.infer<typeof ImageColorValueSchema>;
 
 /** 卡片中的用户引用值。 */
-export const CardUserValueSchema = looseObject({
+export const CardUserValueSchema = strictObject({
   id_str: z.string(),
   path: z.array(z.unknown()).optional(),
 });
 export type CardUserValue = z.infer<typeof CardUserValueSchema>;
 
 /** 卡片绑定值的载荷。 */
-export const CardBindingPayloadSchema = looseObject({
+export const CardBindingPayloadSchema = strictObject({
+  boolean_value: z.boolean().optional(),
   type: z.string(),
   scribe_key: z.string().optional(),
   string_value: z.string().optional(),
@@ -165,14 +186,14 @@ export const CardBindingPayloadSchema = looseObject({
 export type CardBindingPayload = z.infer<typeof CardBindingPayloadSchema>;
 
 /** 卡片中的一个键值绑定。 */
-export const CardBindingValueSchema = looseObject({
+export const CardBindingValueSchema = strictObject({
   key: z.string(),
   value: CardBindingPayloadSchema,
 });
 export type CardBindingValue = z.infer<typeof CardBindingValueSchema>;
 
 /** 用户资料链接。 */
-export const UrlEntitySchema = looseObject({
+export const UrlEntitySchema = strictObject({
   display_url: z.string(),
   expanded_url: z.string(),
   url: z.string(),
@@ -181,20 +202,20 @@ export const UrlEntitySchema = looseObject({
 export type UrlEntity = z.infer<typeof UrlEntitySchema>;
 
 /** 用户资料中的 URL 集合。 */
-export const UrlContainerSchema = looseObject({
+export const UrlContainerSchema = strictObject({
   urls: z.array(UrlEntitySchema),
 });
 export type UrlContainer = z.infer<typeof UrlContainerSchema>;
 
 /** 认证信息。 */
-export const UserVerificationSchema = looseObject({
+export const UserVerificationSchema = strictObject({
   verified: z.boolean().optional(),
   verified_type: z.string().optional(),
 });
 export type UserVerification = z.infer<typeof UserVerificationSchema>;
 
 /** 职业账号分类。 */
-export const ProfessionalCategorySchema = looseObject({
+export const ProfessionalCategorySchema = strictObject({
   id: z.number(),
   name: z.string(),
   icon_name: z.string(),
@@ -202,7 +223,7 @@ export const ProfessionalCategorySchema = looseObject({
 export type ProfessionalCategory = z.infer<typeof ProfessionalCategorySchema>;
 
 /** 职业账号信息。 */
-export const ProfessionalProfileSchema = looseObject({
+export const ProfessionalProfileSchema = strictObject({
   rest_id: z.string().optional(),
   professional_type: z.string().optional(),
   category: z.array(ProfessionalCategorySchema).optional(),
@@ -210,12 +231,13 @@ export const ProfessionalProfileSchema = looseObject({
 export type ProfessionalProfile = z.infer<typeof ProfessionalProfileSchema>;
 
 /** 账号标签信息。 */
-export const UserLabelSchema = looseObject({
-  badge: looseObject({
+export const UserLabelSchema = strictObject({
+  badge: strictObject({
     url: z.string().optional(),
   }).optional(),
   description: z.string().optional(),
-  url: looseObject({
+  longDescription: TimelineTextSchema.optional(),
+  url: strictObject({
     url: z.string().optional(),
     urlType: z.string().optional(),
   }).optional(),
@@ -225,20 +247,20 @@ export const UserLabelSchema = looseObject({
 export type UserLabel = z.infer<typeof UserLabelSchema>;
 
 /** 商业或组织标签。 */
-export const AffiliatesHighlightedLabelSchema = looseObject({
+export const AffiliatesHighlightedLabelSchema = strictObject({
   label: UserLabelSchema.optional(),
 });
 export type AffiliatesHighlightedLabel = z.infer<typeof AffiliatesHighlightedLabelSchema>;
 
 /** 用户 legacy 实体。 */
-export const UserLegacyEntitiesSchema = looseObject({
+export const UserLegacyEntitiesSchema = strictObject({
   description: UrlContainerSchema.optional(),
   url: UrlContainerSchema.optional(),
 });
 export type UserLegacyEntities = z.infer<typeof UserLegacyEntitiesSchema>;
 
 /** 用户 legacy 主体。 */
-export const UserLegacySchema = looseObject({
+export const UserLegacySchema = strictObject({
   default_profile: z.boolean().optional(),
   default_profile_image: z.boolean().optional(),
   description: z.string().optional(),
@@ -267,43 +289,43 @@ export const UserLegacySchema = looseObject({
 export type UserLegacy = z.infer<typeof UserLegacySchema>;
 
 /** 用户节点。 */
-export const UserSchema = looseObject({
+export const UserSchema = strictObject({
   __typename: z.literal('User'),
   id: z.string().optional(),
   rest_id: z.string().optional(),
   affiliates_highlighted_label: AffiliatesHighlightedLabelSchema.optional(),
-  avatar: looseObject({
+  avatar: strictObject({
     image_url: z.string(),
   }).optional(),
-  core: looseObject({
+  core: strictObject({
     created_at: z.string().optional(),
     name: z.string().optional(),
     screen_name: z.string().optional(),
   }).optional(),
-  dm_permissions: looseObject({
+  dm_permissions: strictObject({
     can_dm: z.boolean(),
   }).optional(),
   follow_request_sent: z.boolean().optional(),
   has_graduated_access: z.boolean().optional(),
   is_blue_verified: z.boolean().optional(),
   legacy: UserLegacySchema.optional(),
-  location: looseObject({
+  location: strictObject({
     location: z.string(),
   }).optional(),
-  media_permissions: looseObject({
+  media_permissions: strictObject({
     can_media_tag: z.boolean(),
   }).optional(),
   parody_commentary_fan_label: z.string().optional(),
-  privacy: looseObject({
+  privacy: strictObject({
     protected: z.boolean(),
   }).optional(),
   professional: ProfessionalProfileSchema.optional(),
-  profile_bio: looseObject({
+  profile_bio: strictObject({
     description: z.string(),
   }).optional(),
   profile_description_language: z.string().optional(),
   profile_image_shape: z.string().optional(),
-  relationship_perspectives: looseObject({
+  relationship_perspectives: strictObject({
     blocked_by: z.boolean().optional(),
     blocking: z.boolean().optional(),
     followed_by: z.boolean().optional(),
@@ -318,20 +340,20 @@ export const UserSchema = looseObject({
 export type User = z.infer<typeof UserSchema>;
 
 /** 用户结果容器。 */
-export const UserResultContainerSchema = looseObject({
-  result: z.union([UserSchema, UnknownGraphqlNodeSchema]),
+export const UserResultContainerSchema = strictObject({
+  result: UserSchema,
 });
 export type UserResultContainer = z.infer<typeof UserResultContainerSchema>;
 
 /** 帖子内哈希标签。 */
-export const HashtagEntitySchema = looseObject({
+export const HashtagEntitySchema = strictObject({
   indices: z.array(z.number()),
   text: z.string(),
 });
 export type HashtagEntity = z.infer<typeof HashtagEntitySchema>;
 
 /** 帖子内提及用户。 */
-export const UserMentionSchema = looseObject({
+export const UserMentionSchema = strictObject({
   id_str: z.string(),
   indices: z.array(z.number()),
   name: z.string(),
@@ -340,7 +362,7 @@ export const UserMentionSchema = looseObject({
 export type UserMention = z.infer<typeof UserMentionSchema>;
 
 /** 媒体上的人脸框。 */
-export const MediaFaceSchema = looseObject({
+export const MediaFaceSchema = strictObject({
   x: z.number(),
   y: z.number(),
   h: z.number(),
@@ -348,14 +370,25 @@ export const MediaFaceSchema = looseObject({
 });
 export type MediaFace = z.infer<typeof MediaFaceSchema>;
 
+/** 媒体特征中的人物标注。 */
+export const MediaTagSchema = strictObject({
+  name: z.string().optional(),
+  screen_name: z.string().optional(),
+  type: z.string().optional(),
+  user_id: z.string().optional(),
+});
+export type MediaTag = z.infer<typeof MediaTagSchema>;
+
 /** 媒体特征集合。 */
-export const MediaFeatureBucketSchema = looseObject({
+export const MediaFeatureBucketSchema = strictObject({
   faces: z.array(MediaFaceSchema).optional(),
+  tags: z.array(MediaTagSchema).optional(),
 });
 export type MediaFeatureBucket = z.infer<typeof MediaFeatureBucketSchema>;
 
 /** 媒体特征。 */
-export const MediaFeaturesSchema = looseObject({
+export const MediaFeaturesSchema = strictObject({
+  all: MediaFeatureBucketSchema.optional(),
   large: MediaFeatureBucketSchema.optional(),
   medium: MediaFeatureBucketSchema.optional(),
   small: MediaFeatureBucketSchema.optional(),
@@ -364,7 +397,7 @@ export const MediaFeaturesSchema = looseObject({
 export type MediaFeatures = z.infer<typeof MediaFeaturesSchema>;
 
 /** 媒体焦点框。 */
-export const FocusRectSchema = looseObject({
+export const FocusRectSchema = strictObject({
   x: z.number(),
   y: z.number(),
   h: z.number(),
@@ -373,7 +406,7 @@ export const FocusRectSchema = looseObject({
 export type FocusRect = z.infer<typeof FocusRectSchema>;
 
 /** 媒体尺寸。 */
-export const MediaSizeSchema = looseObject({
+export const MediaSizeSchema = strictObject({
   h: z.number(),
   w: z.number(),
   resize: z.string(),
@@ -381,7 +414,7 @@ export const MediaSizeSchema = looseObject({
 export type MediaSize = z.infer<typeof MediaSizeSchema>;
 
 /** 媒体尺寸集合。 */
-export const MediaSizesSchema = looseObject({
+export const MediaSizesSchema = strictObject({
   large: MediaSizeSchema.optional(),
   medium: MediaSizeSchema.optional(),
   small: MediaSizeSchema.optional(),
@@ -390,7 +423,7 @@ export const MediaSizesSchema = looseObject({
 export type MediaSizes = z.infer<typeof MediaSizesSchema>;
 
 /** 原图信息。 */
-export const OriginalInfoSchema = looseObject({
+export const OriginalInfoSchema = strictObject({
   height: z.number(),
   width: z.number(),
   focus_rects: z.array(FocusRectSchema).optional(),
@@ -398,13 +431,13 @@ export const OriginalInfoSchema = looseObject({
 export type OriginalInfo = z.infer<typeof OriginalInfoSchema>;
 
 /** 媒体结果的轻量引用。 */
-export const MediaResultSchema = looseObject({
+export const MediaResultSchema = strictObject({
   media_key: z.string().optional(),
 });
 export type MediaResult = z.infer<typeof MediaResultSchema>;
 
 /** 视频码率变体。 */
-export const VideoVariantSchema = looseObject({
+export const VideoVariantSchema = strictObject({
   bitrate: z.number().optional(),
   content_type: z.string(),
   url: z.string(),
@@ -412,7 +445,7 @@ export const VideoVariantSchema = looseObject({
 export type VideoVariant = z.infer<typeof VideoVariantSchema>;
 
 /** 视频信息。 */
-export const VideoInfoSchema = looseObject({
+export const VideoInfoSchema = strictObject({
   aspect_ratio: z.array(z.number()).optional(),
   duration_millis: z.number().optional(),
   variants: z.array(VideoVariantSchema).optional(),
@@ -420,10 +453,10 @@ export const VideoInfoSchema = looseObject({
 export type VideoInfo = z.infer<typeof VideoInfoSchema>;
 
 /** 媒体颜色扩展。 */
-export const MediaColorExtSchema = looseObject({
-  mediaColor: looseObject({
-    r: looseObject({
-      ok: looseObject({
+export const MediaColorExtSchema = strictObject({
+  mediaColor: strictObject({
+    r: strictObject({
+      ok: strictObject({
         palette: z.array(PaletteColorSchema).optional(),
       }).optional(),
     }).optional(),
@@ -432,24 +465,40 @@ export const MediaColorExtSchema = looseObject({
 });
 export type MediaColorExt = z.infer<typeof MediaColorExtSchema>;
 
+/** 媒体附加信息中的站点跳转动作。 */
+export const MediaVisitSiteSchema = strictObject({
+  url: z.string().optional(),
+});
+export type MediaVisitSite = z.infer<typeof MediaVisitSiteSchema>;
+
+/** 媒体附加信息中的调用动作集合。 */
+export const MediaCallToActionsSchema = strictObject({
+  visit_site: MediaVisitSiteSchema.optional(),
+});
+export type MediaCallToActions = z.infer<typeof MediaCallToActionsSchema>;
+
 /** 扩展媒体信息。 */
-export const AdditionalMediaInfoSchema = looseObject({
+export const AdditionalMediaInfoSchema = strictObject({
+  call_to_actions: MediaCallToActionsSchema.optional(),
+  description: z.string().optional(),
+  embeddable: z.boolean().optional(),
   monetizable: z.boolean().optional(),
-  source_user: looseObject({
+  source_user: strictObject({
     user_results: UserResultContainerSchema.optional(),
   }).optional(),
+  title: z.string().optional(),
 });
 export type AdditionalMediaInfo = z.infer<typeof AdditionalMediaInfoSchema>;
 
 /** 帖子媒体。 */
-export const MediaSchema = looseObject({
+export const MediaSchema = strictObject({
   id: z.number().optional(),
   id_str: z.string(),
   indices: z.array(z.number()).optional(),
   display_url: z.string().optional(),
   expanded_url: z.string().optional(),
   media_key: z.string().optional(),
-  media_results: looseObject({
+  media_results: strictObject({
     result: MediaResultSchema.optional(),
   }).optional(),
   media_url: z.string().optional(),
@@ -462,12 +511,12 @@ export const MediaSchema = looseObject({
   type: z.string(),
   url: z.string().optional(),
   ext_alt_text: z.string().optional(),
-  ext_media_availability: looseObject({
+  ext_media_availability: strictObject({
     status: z.string().optional(),
   }).optional(),
   features: MediaFeaturesSchema.optional(),
   additional_media_info: AdditionalMediaInfoSchema.optional(),
-  allow_download_status: looseObject({
+  allow_download_status: strictObject({
     allow_download: z.boolean().optional(),
   }).optional(),
   video_info: VideoInfoSchema.optional(),
@@ -476,7 +525,7 @@ export const MediaSchema = looseObject({
 export type Media = z.infer<typeof MediaSchema>;
 
 /** 图片 / 视频 URL 的引用信息。 */
-export const QuotedStatusPermalinkSchema = looseObject({
+export const QuotedStatusPermalinkSchema = strictObject({
   display: z.string(),
   expanded: z.string(),
   url: z.string(),
@@ -484,9 +533,10 @@ export const QuotedStatusPermalinkSchema = looseObject({
 export type QuotedStatusPermalink = z.infer<typeof QuotedStatusPermalinkSchema>;
 
 /** 帖子实体集合。 */
-export const TweetEntitiesSchema = looseObject({
+export const TweetEntitiesSchema = strictObject({
   hashtags: z.array(HashtagEntitySchema).optional(),
   media: z.array(MediaSchema).optional(),
+  smarttags: z.array(z.unknown()).optional(),
   symbols: z.array(z.unknown()).optional(),
   timestamps: z.array(z.unknown()).optional(),
   urls: z.array(UrlEntitySchema).optional(),
@@ -494,64 +544,127 @@ export const TweetEntitiesSchema = looseObject({
 });
 export type TweetEntities = z.infer<typeof TweetEntitiesSchema>;
 
+/** Note Tweet 富文本中的样式区间。 */
+export const NoteTweetRichTextTagSchema = strictObject({
+  from_index: z.number(),
+  richtext_types: z.array(z.string()),
+  to_index: z.number(),
+});
+export type NoteTweetRichTextTag = z.infer<typeof NoteTweetRichTextTagSchema>;
+
+/** Note Tweet 富文本。 */
+export const NoteTweetRichTextSchema = strictObject({
+  richtext_tags: z.array(NoteTweetRichTextTagSchema).optional(),
+  text: z.string().optional(),
+});
+export type NoteTweetRichText = z.infer<typeof NoteTweetRichTextSchema>;
+
+/** Note Tweet 中复用的实体集合。 */
+export const NoteTweetEntitySetSchema = strictObject({
+  hashtags: z.array(HashtagEntitySchema).optional(),
+  symbols: z.array(z.unknown()).optional(),
+  timestamps: z.array(z.unknown()).optional(),
+  urls: z.array(UrlEntitySchema).optional(),
+  user_mentions: z.array(UserMentionSchema).optional(),
+});
+export type NoteTweetEntitySet = z.infer<typeof NoteTweetEntitySetSchema>;
+
+/** Note Tweet 中的内联媒体。当前抓包仅观察到空数组。 */
+export const NoteTweetMediaSchema = strictObject({
+  inline_media: z.array(z.unknown()).optional(),
+});
+export type NoteTweetMedia = z.infer<typeof NoteTweetMediaSchema>;
+
 /** Note Tweet 的正文结果。 */
-export const NoteTweetResultSchema = looseObject({
-  entity_set: looseObject({
-    hashtags: z.array(z.unknown()).optional(),
-    symbols: z.array(z.unknown()).optional(),
-    urls: z.array(z.unknown()).optional(),
-    user_mentions: z.array(z.unknown()).optional(),
-  }).optional(),
-  richtext: TimelineTextSchema.optional(),
+export const NoteTweetResultSchema = strictObject({
+  entity_set: NoteTweetEntitySetSchema.optional(),
+  id: z.string().optional(),
+  media: NoteTweetMediaSchema.optional(),
+  richtext: NoteTweetRichTextSchema.optional(),
   text: z.string(),
 });
 export type NoteTweetResult = z.infer<typeof NoteTweetResultSchema>;
 
 /** Note Tweet 容器。 */
-export const NoteTweetSchema = looseObject({
+export const NoteTweetSchema = strictObject({
   is_expandable: z.boolean().optional(),
-  note_tweet_results: looseObject({
+  note_tweet_results: strictObject({
     result: NoteTweetResultSchema,
   }),
 });
 export type NoteTweet = z.infer<typeof NoteTweetSchema>;
 
 /** 浏览量。 */
-export const ViewsSchema = looseObject({
+export const ViewsSchema = strictObject({
   count: z.string().optional(),
   state: z.string().optional(),
 });
 export type Views = z.infer<typeof ViewsSchema>;
 
-/** 编辑权限。 */
-export const EditControlSchema = looseObject({
+/** 编辑权限基础字段。 */
+export const EditControlBaseSchema = strictObject({
   edit_tweet_ids: z.array(z.string()),
   editable_until_msecs: z.string().optional(),
   edits_remaining: z.string().optional(),
   is_edit_eligible: z.boolean().optional(),
 });
+export type EditControlBase = z.infer<typeof EditControlBaseSchema>;
+
+/** 编辑权限。存在直接形态与 `edit_control_initial` 包裹形态。 */
+export const EditControlSchema = z.union([
+  EditControlBaseSchema,
+  strictObject({
+    edit_control_initial: EditControlBaseSchema,
+    initial_tweet_id: z.string(),
+  }),
+]);
 export type EditControl = z.infer<typeof EditControlSchema>;
 
 /** 推广相关资格。 */
-export const QuickPromoteEligibilitySchema = looseObject({
+export const QuickPromoteEligibilitySchema = strictObject({
   eligibility: z.string().optional(),
 });
 export type QuickPromoteEligibility = z.infer<typeof QuickPromoteEligibilitySchema>;
 
 /** Grok 相关扩展。 */
-export const GrokAnnotationsSchema = looseObject({
+export const GrokAnnotationsSchema = strictObject({
   is_image_editable_by_grok: z.boolean().optional(),
 });
 export type GrokAnnotations = z.infer<typeof GrokAnnotationsSchema>;
 
+/** 自动翻译附带的数据内容。 */
+export const GrokTranslatedPostDataSchema = strictObject({
+  associated_data: strictObject({}).optional(),
+  destination_language: z.string().optional(),
+  entities: TweetEntitiesSchema.optional(),
+  source_language: z.string().optional(),
+  translation: z.string().optional(),
+});
+export type GrokTranslatedPostData = z.infer<typeof GrokTranslatedPostDataSchema>;
+
 /** 自动翻译可用性。 */
-export const GrokTranslatedPostAvailabilitySchema = looseObject({
+export const GrokTranslatedPostAvailabilitySchema = strictObject({
+  data: GrokTranslatedPostDataSchema.optional(),
   is_available: z.boolean().optional(),
 });
 export type GrokTranslatedPostAvailability = z.infer<typeof GrokTranslatedPostAvailabilitySchema>;
 
+/** 媒体可见性遮罩中的提示内容。 */
+export const MediaVisibilityInterstitialSchema = strictObject({
+  opacity: z.number().optional(),
+  text: TimelineTextSchema.optional(),
+  title: TimelineTextSchema.optional(),
+});
+export type MediaVisibilityInterstitial = z.infer<typeof MediaVisibilityInterstitialSchema>;
+
+/** 媒体可见性结果。 */
+export const MediaVisibilityResultsSchema = strictObject({
+  blurred_image_interstitial: MediaVisibilityInterstitialSchema.optional(),
+});
+export type MediaVisibilityResults = z.infer<typeof MediaVisibilityResultsSchema>;
+
 /** 旧计数，用于展示修订前后的互动数。 */
-export const PreviousCountsSchema = looseObject({
+export const PreviousCountsSchema = strictObject({
   bookmark_count: z.number().optional(),
   favorite_count: z.number().optional(),
   quote_count: z.number().optional(),
@@ -561,19 +674,19 @@ export const PreviousCountsSchema = looseObject({
 export type PreviousCounts = z.infer<typeof PreviousCountsSchema>;
 
 /** 广告披露。 */
-export const ContentDisclosureSchema = looseObject({
-  advertising_disclosure: looseObject({
+export const ContentDisclosureSchema = strictObject({
+  advertising_disclosure: strictObject({
     is_paid_promotion: z.boolean().optional(),
   }).optional(),
 });
 export type ContentDisclosure = z.infer<typeof ContentDisclosureSchema>;
 
 /** 仅用于容纳当前抓包中基本为空的 unmention_data。 */
-export const UnmentionDataSchema = looseObject({});
+export const UnmentionDataSchema = strictObject({});
 export type UnmentionData = z.infer<typeof UnmentionDataSchema>;
 
 /** 谁可以回复等限制动作。 */
-export const LimitedActionPromptSchema = looseObject({
+export const LimitedActionPromptSchema = strictObject({
   __typename: z.string().optional(),
   cta_type: z.string().optional(),
   headline: TimelineTextSchema.optional(),
@@ -582,29 +695,29 @@ export const LimitedActionPromptSchema = looseObject({
 export type LimitedActionPrompt = z.infer<typeof LimitedActionPromptSchema>;
 
 /** 一条限制动作。 */
-export const LimitedActionSchema = looseObject({
+export const LimitedActionSchema = strictObject({
   action: z.string(),
   prompt: LimitedActionPromptSchema.optional(),
 });
 export type LimitedAction = z.infer<typeof LimitedActionSchema>;
 
 /** 限制动作集合。 */
-export const LimitedActionResultsSchema = looseObject({
+export const LimitedActionResultsSchema = strictObject({
   limited_actions: z.array(LimitedActionSchema),
 });
 export type LimitedActionResults = z.infer<typeof LimitedActionResultsSchema>;
 
 /** 会话控制（谁可以回复）。 */
-export const ConversationControlSchema = looseObject({
-  conversation_owner_results: looseObject({
-    result: z.union([UserSchema, UnknownGraphqlNodeSchema]).optional(),
+export const ConversationControlSchema = strictObject({
+  conversation_owner_results: strictObject({
+    result: UserSchema.optional(),
   }).optional(),
   policy: z.string().optional(),
 });
 export type ConversationControl = z.infer<typeof ConversationControlSchema>;
 
 /** 文章实体中的 media item。 */
-export const ArticleMediaItemSchema = looseObject({
+export const ArticleMediaItemSchema = strictObject({
   localMediaId: z.string().optional(),
   mediaCategory: z.string().optional(),
   mediaId: z.string().optional(),
@@ -612,7 +725,7 @@ export const ArticleMediaItemSchema = looseObject({
 export type ArticleMediaItem = z.infer<typeof ArticleMediaItemSchema>;
 
 /** 文章实体中的 entity range。 */
-export const ArticleEntityRangeSchema = looseObject({
+export const ArticleEntityRangeSchema = strictObject({
   key: z.number(),
   length: z.number(),
   offset: z.number(),
@@ -620,7 +733,7 @@ export const ArticleEntityRangeSchema = looseObject({
 export type ArticleEntityRange = z.infer<typeof ArticleEntityRangeSchema>;
 
 /** 文章实体中的样式区间。 */
-export const ArticleInlineStyleRangeSchema = looseObject({
+export const ArticleInlineStyleRangeSchema = strictObject({
   length: z.number(),
   offset: z.number(),
   style: z.string(),
@@ -628,8 +741,8 @@ export const ArticleInlineStyleRangeSchema = looseObject({
 export type ArticleInlineStyleRange = z.infer<typeof ArticleInlineStyleRangeSchema>;
 
 /** 文章正文中的 block。 */
-export const ArticleContentBlockSchema = looseObject({
-  data: looseObject({}).optional(),
+export const ArticleContentBlockSchema = strictObject({
+  data: strictObject({}).optional(),
   entityRanges: z.array(ArticleEntityRangeSchema).optional(),
   inlineStyleRanges: z.array(ArticleInlineStyleRangeSchema).optional(),
   key: z.string().optional(),
@@ -639,10 +752,10 @@ export const ArticleContentBlockSchema = looseObject({
 export type ArticleContentBlock = z.infer<typeof ArticleContentBlockSchema>;
 
 /** 文章实体映射项。 */
-export const ArticleEntityMapItemSchema = looseObject({
+export const ArticleEntityMapItemSchema = strictObject({
   key: z.string(),
-  value: looseObject({
-    data: looseObject({
+  value: strictObject({
+    data: strictObject({
       caption: z.string().optional(),
       entityKey: z.string().optional(),
       markdown: z.string().optional(),
@@ -657,16 +770,16 @@ export const ArticleEntityMapItemSchema = looseObject({
 export type ArticleEntityMapItem = z.infer<typeof ArticleEntityMapItemSchema>;
 
 /** 文章正文内容。 */
-export const ArticleContentStateSchema = looseObject({
+export const ArticleContentStateSchema = strictObject({
   blocks: z.array(ArticleContentBlockSchema).optional(),
   entityMap: z.array(ArticleEntityMapItemSchema).optional(),
 });
 export type ArticleContentState = z.infer<typeof ArticleContentStateSchema>;
 
 /** 文章封面图。 */
-export const ApiImageSchema = looseObject({
+export const ApiImageSchema = strictObject({
   __typename: z.string().optional(),
-  color_info: looseObject({
+  color_info: strictObject({
     palette: z.array(PaletteColorSchema).optional(),
   }).optional(),
   original_img_height: z.number().optional(),
@@ -676,7 +789,7 @@ export const ApiImageSchema = looseObject({
 export type ApiImage = z.infer<typeof ApiImageSchema>;
 
 /** 文章使用的媒体引用。 */
-export const ArticleMediaSchema = looseObject({
+export const ArticleMediaSchema = strictObject({
   id: z.string().optional(),
   media_id: z.string().optional(),
   media_info: ApiImageSchema.optional(),
@@ -685,16 +798,16 @@ export const ArticleMediaSchema = looseObject({
 export type ArticleMedia = z.infer<typeof ArticleMediaSchema>;
 
 /** 文章结果。 */
-export const ArticleResultSchema = looseObject({
+export const ArticleResultSchema = strictObject({
   content_state: ArticleContentStateSchema.optional(),
   cover_media: ArticleMediaSchema.optional(),
   id: z.string().optional(),
   is_grok_summary_eligible: z.boolean().optional(),
-  lifecycle_state: looseObject({
+  lifecycle_state: strictObject({
     modified_at_secs: z.number().optional(),
   }).optional(),
   media_entities: z.array(ArticleMediaSchema).optional(),
-  metadata: looseObject({
+  metadata: strictObject({
     first_published_at_secs: z.number().optional(),
   }).optional(),
   preview_text: z.string().optional(),
@@ -705,20 +818,20 @@ export const ArticleResultSchema = looseObject({
 export type ArticleResult = z.infer<typeof ArticleResultSchema>;
 
 /** 文章对象。 */
-export const ArticleSchema = looseObject({
-  article_results: looseObject({
+export const ArticleSchema = strictObject({
+  article_results: strictObject({
     result: ArticleResultSchema.optional(),
   }),
 });
 export type Article = z.infer<typeof ArticleSchema>;
 
 /** 卡片平台设备信息。 */
-export const CardPlatformSchema = looseObject({
-  platform: looseObject({
-    audience: looseObject({
+export const CardPlatformSchema = strictObject({
+  platform: strictObject({
+    audience: strictObject({
       name: z.string().optional(),
     }).optional(),
-    device: looseObject({
+    device: strictObject({
       name: z.string().optional(),
       version: z.string().optional(),
     }).optional(),
@@ -727,7 +840,7 @@ export const CardPlatformSchema = looseObject({
 export type CardPlatform = z.infer<typeof CardPlatformSchema>;
 
 /** 卡片 legacy。 */
-export const CardLegacySchema = looseObject({
+export const CardLegacySchema = strictObject({
   binding_values: z.array(CardBindingValueSchema).optional(),
   card_platform: CardPlatformSchema.optional(),
   name: z.string().optional(),
@@ -737,11 +850,44 @@ export const CardLegacySchema = looseObject({
 export type CardLegacy = z.infer<typeof CardLegacySchema>;
 
 /** 帖子卡片。 */
-export const CardSchema = looseObject({
+export const CardSchema = strictObject({
   legacy: CardLegacySchema,
   rest_id: z.string(),
 });
 export type Card = z.infer<typeof CardSchema>;
+
+/** 轻量帖子引用。常见于 `quotedRefResult`。 */
+export const TweetReferenceSchema = strictObject({
+  __typename: z.literal('Tweet'),
+  rest_id: z.string(),
+});
+export type TweetReference = z.infer<typeof TweetReferenceSchema>;
+
+/** 轻量帖子引用容器。 */
+export const TweetReferenceEnvelopeSchema = strictObject({
+  result: TweetReferenceSchema,
+});
+export type TweetReferenceEnvelope = z.infer<typeof TweetReferenceEnvelopeSchema>;
+
+/** 地点边界框。 */
+export const PlaceBoundingBoxSchema = strictObject({
+  coordinates: z.array(z.array(z.array(z.number()))).optional(),
+  type: z.string().optional(),
+});
+export type PlaceBoundingBox = z.infer<typeof PlaceBoundingBoxSchema>;
+
+/** 地点对象。 */
+export const PlaceSchema = strictObject({
+  bounding_box: PlaceBoundingBoxSchema.optional(),
+  country: z.string().optional(),
+  country_code: z.string().optional(),
+  full_name: z.string().optional(),
+  id: z.string().optional(),
+  name: z.string().optional(),
+  place_type: z.string().optional(),
+  url: z.string().optional(),
+});
+export type Place = z.infer<typeof PlaceSchema>;
 
 /**
  * 递归结果容器。
@@ -750,6 +896,10 @@ export type Card = z.infer<typeof CardSchema>;
  */
 export interface TweetResultEnvelope extends Record<string, unknown> {
   result: TweetResult;
+}
+
+export interface OptionalTweetResultEnvelope extends Record<string, unknown> {
+  result?: TweetResult;
 }
 
 export interface TweetLegacy extends Record<string, unknown> {
@@ -773,7 +923,7 @@ export interface TweetLegacy extends Record<string, unknown> {
   in_reply_to_user_id_str?: string | null;
   is_quote_status: boolean;
   lang?: string;
-  place?: Record<string, unknown>;
+  place?: Place;
   possibly_sensitive?: boolean;
   possibly_sensitive_editable?: boolean;
   quote_count?: number;
@@ -805,10 +955,12 @@ export interface Tweet extends Record<string, unknown> {
   is_translatable?: boolean;
   legacy: TweetLegacy;
   limitedActionResults?: LimitedActionResults;
+  mediaVisibilityResults?: MediaVisibilityResults;
   note_tweet?: NoteTweet;
   previous_counts?: PreviousCounts;
+  quotedRefResult?: TweetReferenceEnvelope;
   quick_promote_eligibility?: QuickPromoteEligibility;
-  quoted_status_result?: TweetResultEnvelope;
+  quoted_status_result?: OptionalTweetResultEnvelope;
   rest_id: string;
   retweeted_status_result?: TweetResultEnvelope;
   source?: string;
@@ -816,20 +968,24 @@ export interface Tweet extends Record<string, unknown> {
   views?: Views;
 }
 
-export type TweetResult = Tweet | TweetTombstone | UnknownGraphqlNode;
+export type TweetResult = Tweet | TweetTombstone;
 
-export const TweetResultEnvelopeSchema: z.ZodType<TweetResultEnvelope> = z.lazy(() => looseObject({
+export const TweetResultEnvelopeSchema: z.ZodType<TweetResultEnvelope> = z.lazy(() => strictObject({
   result: TweetResultSchema,
 }));
 
+export const OptionalTweetResultEnvelopeSchema: z.ZodType<OptionalTweetResultEnvelope> = z.lazy(() => strictObject({
+  result: TweetResultSchema.optional(),
+}));
+
 /** 帖子 core，目前核心是作者用户结果。 */
-export const TweetCoreSchema = looseObject({
+export const TweetCoreSchema = strictObject({
   user_results: UserResultContainerSchema,
 });
 export type TweetCore = z.infer<typeof TweetCoreSchema>;
 
 /** 帖子 legacy 载荷。 */
-export const TweetLegacySchema: z.ZodType<TweetLegacy> = z.lazy(() => looseObject({
+export const TweetLegacySchema: z.ZodType<TweetLegacy> = z.lazy(() => strictObject({
   bookmark_count: z.number().optional(),
   bookmarked: z.boolean().optional(),
   conversation_control: ConversationControlSchema.optional(),
@@ -837,7 +993,7 @@ export const TweetLegacySchema: z.ZodType<TweetLegacy> = z.lazy(() => looseObjec
   created_at: z.string(),
   display_text_range: z.array(z.number()).optional(),
   entities: TweetEntitiesSchema,
-  extended_entities: looseObject({
+  extended_entities: strictObject({
     media: z.array(MediaSchema),
   }).optional(),
   favorite_count: z.number().optional(),
@@ -849,7 +1005,7 @@ export const TweetLegacySchema: z.ZodType<TweetLegacy> = z.lazy(() => looseObjec
   in_reply_to_user_id_str: z.string().nullable().optional(),
   is_quote_status: z.boolean(),
   lang: z.string().optional(),
-  place: looseObject({}).optional(),
+  place: PlaceSchema.optional(),
   possibly_sensitive: z.boolean().optional(),
   possibly_sensitive_editable: z.boolean().optional(),
   quote_count: z.number().optional(),
@@ -859,7 +1015,7 @@ export const TweetLegacySchema: z.ZodType<TweetLegacy> = z.lazy(() => looseObjec
   retweet_count: z.number().optional(),
   retweeted: z.boolean().optional(),
   retweeted_status_result: TweetResultEnvelopeSchema.optional(),
-  scopes: looseObject({
+  scopes: strictObject({
     followers: z.boolean().optional(),
   }).optional(),
   user_id_str: z.string(),
@@ -872,7 +1028,7 @@ export const TweetLegacySchema: z.ZodType<TweetLegacy> = z.lazy(() => looseObjec
  * - 这里的 `__typename` 固定视为 `Tweet`
  * - 输入若为 `TweetWithVisibilityResults`，会先经由 `normalizeTweetResultInput()` 拆包后再校验
  */
-export const TweetSchema: z.ZodType<Tweet> = z.lazy(() => looseObject({
+export const TweetSchema = z.lazy(() => strictObject({
   __typename: z.literal('Tweet'),
   article: ArticleSchema.optional(),
   birdwatch_pivot: BirdwatchPivotSchema.optional(),
@@ -887,10 +1043,12 @@ export const TweetSchema: z.ZodType<Tweet> = z.lazy(() => looseObject({
   is_translatable: z.boolean().optional(),
   legacy: TweetLegacySchema,
   limitedActionResults: LimitedActionResultsSchema.optional(),
+  mediaVisibilityResults: MediaVisibilityResultsSchema.optional(),
   note_tweet: NoteTweetSchema.optional(),
   previous_counts: PreviousCountsSchema.optional(),
+  quotedRefResult: TweetReferenceEnvelopeSchema.optional(),
   quick_promote_eligibility: QuickPromoteEligibilitySchema.optional(),
-  quoted_status_result: TweetResultEnvelopeSchema.optional(),
+  quoted_status_result: OptionalTweetResultEnvelopeSchema.optional(),
   rest_id: z.string(),
   retweeted_status_result: TweetResultEnvelopeSchema.optional(),
   source: z.string().optional(),
@@ -904,10 +1062,10 @@ export const TweetSchema: z.ZodType<Tweet> = z.lazy(() => looseObject({
  * - 允许直接传入 `TweetWithVisibilityResults`
  * - 允许传入 `TweetTombstone`
  */
-export const TweetResultSchema: z.ZodType<TweetResult> = z.lazy(() => z.preprocess(
+export const TweetResultSchema = z.preprocess(
   normalizeTweetResultInput,
-  z.union([TweetSchema, TweetTombstoneSchema, UnknownGraphqlNodeSchema]),
-));
+  z.discriminatedUnion('__typename', [TweetSchema, TweetTombstoneSchema]),
+);
 
 /** 便于直接解析单个 `tweet_results.result` 节点。 */
 export function parseTweetResult(input: unknown): TweetResult {
