@@ -167,6 +167,29 @@ export const UrlEntitySchema = strictObject({
 });
 export type UrlEntity = z.infer<typeof UrlEntitySchema>;
 
+/** 金融/符号实体中的标的信息。 */
+export const SymbolInfoSchema = strictObject({
+  name: z.string().optional(),
+  ticker: z.string().optional(),
+});
+export type SymbolInfo = z.infer<typeof SymbolInfoSchema>;
+
+/** 金融/符号实体中的标签包装层。 */
+export const SymbolTagSchema = strictObject({
+  info: strictObject({
+    info: SymbolInfoSchema.optional(),
+  }).optional(),
+});
+export type SymbolTag = z.infer<typeof SymbolTagSchema>;
+
+/** 帖子中的金融/符号实体。 */
+export const SymbolEntitySchema = strictObject({
+  indices: z.array(z.number()).optional(),
+  tag: SymbolTagSchema.optional(),
+  text: z.string().optional(),
+});
+export type SymbolEntity = z.infer<typeof SymbolEntitySchema>;
+
 /** 用户资料中的 URL 集合。 */
 export const UrlContainerSchema = strictObject({
   urls: z.array(UrlEntitySchema),
@@ -449,6 +472,7 @@ export const MediaSchema = strictObject({
   indices: z.array(z.number()).optional(),
   display_url: z.string().optional(),
   expanded_url: z.string().optional(),
+  grok_post_id: z.string().optional(),
   media_key: z.string().optional(),
   media_results: strictObject({
     result: MediaResultSchema.optional(),
@@ -486,7 +510,7 @@ export const TweetEntitiesSchema = strictObject({
   hashtags: z.array(HashtagEntitySchema).optional(),
   media: z.array(MediaSchema).optional(),
   smarttags: z.array(z.unknown()).optional(),
-  symbols: z.array(z.unknown()).optional(),
+  symbols: z.array(SymbolEntitySchema).optional(),
   timestamps: z.array(z.unknown()).optional(),
   urls: z.array(UrlEntitySchema).optional(),
   user_mentions: z.array(UserMentionSchema).optional(),
