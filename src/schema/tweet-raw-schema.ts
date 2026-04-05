@@ -4,47 +4,13 @@ import { z } from 'zod';
  * 统一的帖子原始数据模型。
  *
  * 设计原则：
- * 1. 将 `TweetWithVisibilityResults` 预处理为最终 `Tweet` 对象，避免调用方在解析前手动分支。
+ * 1. 保持 `Tweet` 与 `TweetWithVisibilityResults` 的原始层级，不再把包装层打平并入帖子对象。
  * 2. 对核心且稳定的字段做显式建模，并通过严格对象校验感知未覆盖字段。
- * 3. 对 quoted / retweeted 等帖子递归引用继续使用同一套归一化模型。
+ * 3. quoted / retweeted 等帖子递归引用继续使用同一套原始联合模型。
  */
 
 function strictObject<T extends z.ZodRawShape>(shape: T) {
   return z.strictObject(shape);
-}
-
-/**
- * 将 GraphQL `tweet_results.result` 统一整理为“最终帖子对象”。
- *
- * 当前抓包中主要存在两种形态：
- * - `Tweet`
- * - `TweetWithVisibilityResults`
- *
- * 对于包装形态，会把包装层的附加字段（如 `limitedActionResults`）并入帖子对象本身。
- */
-export function normalizeTweetResultInput(input: unknown): unknown {
-  if (!input || typeof input !== 'object' || Array.isArray(input)) {
-    return input;
-  }
-
-  const value = input as Record<string, unknown>;
-  if (value.__typename !== 'TweetWithVisibilityResults') {
-    return input;
-  }
-
-  const tweet = value.tweet;
-  if (!tweet || typeof tweet !== 'object' || Array.isArray(tweet)) {
-    return input;
-  }
-
-  const { tweet: _tweet, __typename: _typename, ...wrapperRest } = value;
-
-  return {
-    __typename: (tweet as Record<string, unknown>).__typename ?? 'Tweet',
-    ...wrapperRest,
-    ...tweet,
-    limitedActionResults: wrapperRest.limitedActionResults ?? (tweet as Record<string, unknown>).limitedActionResults,
-  };
 }
 
 /** 最小 GraphQL 节点占位，仅承接当前只识别 `__typename` 的结果类型。 */
@@ -452,19 +418,6 @@ export const VideoInfoSchema = strictObject({
 });
 export type VideoInfo = z.infer<typeof VideoInfoSchema>;
 
-/** 媒体颜色扩展。 */
-export const MediaColorExtSchema = strictObject({
-  mediaColor: strictObject({
-    r: strictObject({
-      ok: strictObject({
-        palette: z.array(PaletteColorSchema).optional(),
-      }).optional(),
-    }).optional(),
-  }).optional(),
-  ttl: z.number().optional(),
-});
-export type MediaColorExt = z.infer<typeof MediaColorExtSchema>;
-
 /** 媒体附加信息中的站点跳转动作。 */
 export const MediaVisitSiteSchema = strictObject({
   url: z.string().optional(),
@@ -492,7 +445,6 @@ export type AdditionalMediaInfo = z.infer<typeof AdditionalMediaInfoSchema>;
 
 /** 帖子媒体。 */
 export const MediaSchema = strictObject({
-  id: z.number().optional(),
   id_str: z.string(),
   indices: z.array(z.number()).optional(),
   display_url: z.string().optional(),
@@ -501,12 +453,10 @@ export const MediaSchema = strictObject({
   media_results: strictObject({
     result: MediaResultSchema.optional(),
   }).optional(),
-  media_url: z.string().optional(),
   media_url_https: z.string().optional(),
   original_info: OriginalInfoSchema.optional(),
   sizes: MediaSizesSchema.optional(),
   source_status_id_str: z.string().optional(),
-  source_user_id: z.number().optional(),
   source_user_id_str: z.string().optional(),
   type: z.string(),
   url: z.string().optional(),
@@ -520,7 +470,6 @@ export const MediaSchema = strictObject({
     allow_download: z.boolean().optional(),
   }).optional(),
   video_info: VideoInfoSchema.optional(),
-  ext: MediaColorExtSchema.optional(),
 });
 export type Media = z.infer<typeof MediaSchema>;
 
@@ -555,7 +504,6 @@ export type NoteTweetRichTextTag = z.infer<typeof NoteTweetRichTextTagSchema>;
 /** Note Tweet 富文本。 */
 export const NoteTweetRichTextSchema = strictObject({
   richtext_tags: z.array(NoteTweetRichTextTagSchema).optional(),
-  text: z.string().optional(),
 });
 export type NoteTweetRichText = z.infer<typeof NoteTweetRichTextSchema>;
 
@@ -940,15 +888,8 @@ export const TweetLegacySchema: z.ZodType<TweetLegacy> = z.lazy(() => strictObje
   user_id_str: z.string(),
 }));
 
-/**
- * 统一后的最终帖子对象。
- *
- * 注意：
- * - 这里的 `__typename` 固定视为 `Tweet`
- * - 输入若为 `TweetWithVisibilityResults`，会先经由 `normalizeTweetResultInput()` 拆包后再校验
- */
-export const TweetSchema = z.lazy(() => strictObject({
-  __typename: z.literal('Tweet'),
+function createTweetDataShape() {
+  return {
   article: ArticleSchema.optional(),
   birdwatch_pivot: BirdwatchPivotSchema.optional(),
   card: CardSchema.optional(),
@@ -961,30 +902,54 @@ export const TweetSchema = z.lazy(() => strictObject({
   has_birdwatch_notes: z.boolean().optional(),
   is_translatable: z.boolean().optional(),
   legacy: TweetLegacySchema,
-  limitedActionResults: LimitedActionResultsSchema.optional(),
-  mediaVisibilityResults: MediaVisibilityResultsSchema.optional(),
   note_tweet: NoteTweetSchema.optional(),
   previous_counts: PreviousCountsSchema.optional(),
   quotedRefResult: TweetReferenceEnvelopeSchema.optional(),
   quick_promote_eligibility: QuickPromoteEligibilitySchema.optional(),
   quoted_status_result: OptionalTweetResultEnvelopeSchema.optional(),
   rest_id: z.string(),
-  retweeted_status_result: TweetResultEnvelopeSchema.optional(),
   source: z.string().optional(),
   unmention_data: UnmentionDataSchema.optional(),
   views: ViewsSchema.optional(),
+  };
+}
+
+/**
+ * 原始帖子载荷。
+ *
+ * 注意：在 `TweetWithVisibilityResults.tweet` 中，当前样本未出现 `__typename`。
+ */
+export const TweetDataSchema = z.lazy(() => strictObject(createTweetDataShape()));
+
+/** 原始 `Tweet` 对象。 */
+export const TweetSchema = z.lazy(() => strictObject({
+  __typename: z.literal('Tweet'),
+  ...createTweetDataShape(),
 }));
 
 /**
- * `tweet_results.result` 的统一入口：
+ * `TweetWithVisibilityResults` 包装对象。
+ *
+ * 当前样本中，包装层额外字段位于与 `tweet` 同级的位置。
+ */
+export const TweetWithVisibilityResultsSchema: z.ZodType<TweetWithVisibilityResults> = z.lazy(() => strictObject({
+  __typename: z.literal('TweetWithVisibilityResults'),
+  limitedActionResults: LimitedActionResultsSchema.optional(),
+  mediaVisibilityResults: MediaVisibilityResultsSchema.optional(),
+  tweet: TweetDataSchema,
+}));
+
+/**
+ * `tweet_results.result` 的原始联合入口：
  * - 允许直接传入 `Tweet`
  * - 允许直接传入 `TweetWithVisibilityResults`
  * - 允许传入 `TweetTombstone`
  */
-export const TweetResultSchema = z.preprocess(
-  normalizeTweetResultInput,
-  z.discriminatedUnion('__typename', [TweetSchema, TweetTombstoneSchema]),
-);
+export const TweetResultSchema: z.ZodType<TweetResult> = z.lazy(() => z.union([
+  TweetSchema,
+  TweetWithVisibilityResultsSchema,
+  TweetTombstoneSchema,
+]));
 
 //#region
 
@@ -1001,7 +966,7 @@ export interface OptionalTweetResultEnvelope {
   result?: TweetResult;
 }
 
-/** 归一化后的帖子 legacy 结构。 */
+/** 原始帖子 legacy 结构。 */
 export interface TweetLegacy {
   bookmark_count?: number;
   bookmarked?: boolean;
@@ -1038,9 +1003,8 @@ export interface TweetLegacy {
   user_id_str: string;
 }
 
-/** 归一化后的完整帖子对象。 */
-export interface Tweet {
-  __typename: 'Tweet';
+/** 原始帖子载荷。 */
+export interface TweetData {
   article?: Article;
   birdwatch_pivot?: BirdwatchPivot;
   card?: Card;
@@ -1053,22 +1017,39 @@ export interface Tweet {
   has_birdwatch_notes?: boolean;
   is_translatable?: boolean;
   legacy: TweetLegacy;
-  limitedActionResults?: LimitedActionResults;
-  mediaVisibilityResults?: MediaVisibilityResults;
   note_tweet?: NoteTweet;
   previous_counts?: PreviousCounts;
   quotedRefResult?: TweetReferenceEnvelope;
   quick_promote_eligibility?: QuickPromoteEligibility;
   quoted_status_result?: OptionalTweetResultEnvelope;
   rest_id: string;
-  retweeted_status_result?: TweetResultEnvelope;
   source?: string;
   unmention_data?: UnmentionData;
   views?: Views;
 }
 
+/** 原始 `Tweet` 对象。 */
+export interface Tweet extends TweetData {
+  __typename: 'Tweet';
+}
+
+/** 原始 `TweetWithVisibilityResults` 包装对象。 */
+export interface TweetWithVisibilityResults {
+  __typename: 'TweetWithVisibilityResults';
+  limitedActionResults?: LimitedActionResults;
+  mediaVisibilityResults?: MediaVisibilityResults;
+  tweet: TweetData;
+}
+
 /** `tweet_results.result` 最终可能返回的联合结果。 */
-export type TweetResult = Tweet | TweetTombstone;
+export type TweetResult = Tweet | TweetWithVisibilityResults | TweetTombstone;
+
+/** 从原始联合结果中提取最终帖子对象；墓碑结果返回 `null`。 */
+export function getTweetFromResult(result: TweetResult): TweetData | null {
+  if (result.__typename === 'Tweet') return result;
+  if (result.__typename === 'TweetWithVisibilityResults') return result.tweet;
+  return null;
+}
 
 /** 便于直接解析单个 `tweet_results.result` 节点。 */
 export function parseTweetResult(input: unknown): TweetResult {
