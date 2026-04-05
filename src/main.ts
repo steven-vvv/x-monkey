@@ -3,7 +3,6 @@ import { initConfig, getConfig, resetLayout, updateConfig } from './lib/config-s
 import { initTheme } from './lib/theme-service';
 import { currentUrl, syncFeatureRoute } from './lib/store';
 import { clearCaptureState } from './lib/capture-state-service';
-import { configureRemoteDbClient } from './lib/remote-db';
 import { watch } from 'vue';
 import { unsafeWindow, GM_log, GM_registerMenuCommand, GM_unregisterMenuCommand } from '$';
 import './style.css';
@@ -88,14 +87,6 @@ function initShadowCssBridge(shadow: ShadowRoot, doc: Document): void {
 async function mount() {
   await initConfig();
   const cfg = getConfig();
-
-  watch(
-    () => [cfg.remoteDbEnabled, cfg.remoteDbBaseUrl] as const,
-    ([runtimeEnabled, baseUrl]) => {
-      void configureRemoteDbClient({ runtimeEnabled, baseUrl });
-    },
-    { immediate: true },
-  );
 
   const win = unsafeWindow;
   const doc = win.document;

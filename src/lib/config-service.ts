@@ -1,7 +1,6 @@
 import { reactive, watch } from 'vue';
 import { GM_getValue, GM_setValue, GM_addValueChangeListener, GM_removeValueChangeListener } from '$';
 import type { GmValueListenerId } from '$';
-import { REMOTE_DB_BUILD, normalizeRemoteDbBaseUrl } from './remote-db';
 
 export type ThemeMode = 'dark' | 'light' | 'page';
 
@@ -31,10 +30,8 @@ export const DEFAULT_CONFIG: AppConfig = {
   uiScale: 100,
   autoClearOnNavigate: false,
   theme: 'page',
-  remoteDbEnabled: REMOTE_DB_BUILD.enabled,
-  remoteDbBaseUrl: REMOTE_DB_BUILD.enabled
-    ? (REMOTE_DB_BUILD.defaultBaseUrl ?? '')
-    : '',
+  remoteDbEnabled: false,
+  remoteDbBaseUrl: '',
 };
 
 const CONFIG_KEY = 'xd_config';
@@ -47,31 +44,11 @@ let listenerId: GmValueListenerId | undefined;
 let persistencePaused = false;
 
 function resolvePersistedRemoteDbBaseUrl(savedValue: unknown): string {
-  if (!REMOTE_DB_BUILD.enabled) {
-    return '';
-  }
-
-  if (!REMOTE_DB_BUILD.configurable) {
-    return REMOTE_DB_BUILD.defaultBaseUrl ?? '';
-  }
-
-  if (typeof savedValue !== 'string') {
-    return DEFAULT_CONFIG.remoteDbBaseUrl;
-  }
-
-  return normalizeRemoteDbBaseUrl(savedValue) ?? DEFAULT_CONFIG.remoteDbBaseUrl;
+  return typeof savedValue === 'string' ? savedValue : DEFAULT_CONFIG.remoteDbBaseUrl;
 }
 
 function resolvePersistedRemoteDbEnabled(savedValue: unknown): boolean {
-  if (!REMOTE_DB_BUILD.enabled) {
-    return false;
-  }
-
-  if (typeof savedValue !== 'boolean') {
-    return DEFAULT_CONFIG.remoteDbEnabled;
-  }
-
-  return savedValue;
+  return typeof savedValue === 'boolean' ? savedValue : DEFAULT_CONFIG.remoteDbEnabled;
 }
 
 function normalizePersistedConfig(saved: PersistedAppConfig): AppConfig {

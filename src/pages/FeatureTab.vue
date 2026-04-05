@@ -8,10 +8,8 @@ import { getTimelineTweetIdsByAlias, getTimelineVersionByAlias } from '../lib/ti
 import { featureNavigateTo, featureRoute, type FeatureRoute } from '../lib/store';
 import { GM_openInTab } from '$';
 import TweetDetailView from '../components/TweetDetailView.vue';
-import RemoteDbTweetPanel from '../components/RemoteDbTweetPanel.vue';
 import UserDetailCard from '../components/UserDetailCard.vue';
 import TimelineTweetCard from '../components/TimelineTweetCard.vue';
-import { isRemoteDbPostApiReady } from '../lib/remote-db';
 
 interface TimelineCardItem {
   tweet: DbTweet;
@@ -162,20 +160,6 @@ const focalReplies = computed(() => {
   if (!focalTweet.value) return [];
   return getReplies(focalTweet.value.id);
 });
-
-const focalRemoteSyncTweets = computed(() => {
-  if (!focalTweet.value) return [];
-  return [focalTweet.value, ...focalReplies.value];
-});
-
-const detailRemoteSyncTweets = computed(() => {
-  if (!detailTweet.value) return [];
-  return [detailTweet.value, ...detailReplies.value];
-});
-
-const shouldShowRemoteDbPanel = computed(() => {
-  return isRemoteDbPostApiReady();
-});
 </script>
 
 <template>
@@ -205,15 +189,7 @@ const shouldShowRemoteDbPanel = computed(() => {
           @open-original="openOriginal"
           @open-media="openMediaUrl"
           @open-tweet="openTweet"
-        >
-          <template #after-detail>
-            <RemoteDbTweetPanel
-              v-if="shouldShowRemoteDbPanel"
-              :tweet="focalTweet"
-              :batch-sync-tweets="focalRemoteSyncTweets"
-            />
-          </template>
-        </TweetDetailView>
+        />
       </template>
     </template>
 
@@ -239,15 +215,7 @@ const shouldShowRemoteDbPanel = computed(() => {
           @open-original="openOriginal"
           @open-media="openMediaUrl"
           @open-tweet="openTweet"
-        >
-          <template #after-detail>
-            <RemoteDbTweetPanel
-              v-if="shouldShowRemoteDbPanel"
-              :tweet="detailTweet"
-              :batch-sync-tweets="detailRemoteSyncTweets"
-            />
-          </template>
-        </TweetDetailView>
+        />
       </template>
     </template>
 

@@ -1,15 +1,7 @@
-import type { DbMedia, DbTweet, DbUser } from '../db-service';
 import type {
-  RemoteDbActorView,
-  RemoteDbMediaInput,
-  RemoteDbMediaStatusView,
   RemoteDbPostStatusItem,
-  RemoteDbPostView,
   RemoteDbSubmissionEnvelope,
   RemoteDbTransferSummary,
-  RemoteDbTweetInput,
-  RemoteDbUserInput,
-  RemoteDbVideoVariantInput,
 } from './types';
 
 export interface RemoteDbStatusComparison {
@@ -21,9 +13,9 @@ export interface RemoteDbStatusComparison {
 }
 
 export interface RemoteDbSubmissionSourceItem {
-  tweet: DbTweet;
-  author: DbUser | undefined;
-  media: DbMedia[];
+  tweet: { id: string };
+  author: { id: string } | undefined;
+  media: Array<{ id: string }>;
 }
 
 export interface RemoteDbSubmissionBatchResult {
@@ -31,55 +23,6 @@ export interface RemoteDbSubmissionBatchResult {
   missingAuthorTweetIds: string[];
   invalidUserCreatedAtIds: string[];
   invalidTweetCreatedAtIds: string[];
-}
-
-interface ComparableRemotePost {
-  sourcePostId: string;
-  authorSourceActorId: string;
-  conversationSourcePostId: string;
-  fullText: string;
-  legacyFullText: string;
-  noteText: string | null;
-  lang: string;
-  sourceCreatedAt: string | null;
-  inReplyToSourcePostId: string | null;
-  inReplyToSourceActorId: string | null;
-  quotedSourcePostId: string | null;
-  retweetedSourcePostId: string | null;
-  viewCount: number | null;
-  possiblySensitive: boolean | null;
-  favoriteCount: number;
-  retweetCount: number;
-  replyCount: number;
-  quoteCount: number;
-  bookmarkCount: number;
-  mediaSourceIds: string[];
-  sourceLabel: string;
-}
-
-interface ComparableRemoteMedia {
-  sourceMediaId: string;
-  mediaKey: string;
-  sourcePostId: string;
-  mediaType: string;
-  sourceUrl: string;
-  thumbUrl: string;
-  width: number;
-  height: number;
-  altText: string | null;
-  allowDownload: boolean;
-  durationMs: number | null;
-}
-
-const REMOTE_DB_SOURCE_KIND = 'x';
-
-function normalizeStringArray(values: string[]): string[] {
-  return [...new Set(values)].sort();
-}
-
-function isSamePrimitiveArray(left: string[], right: string[]): boolean {
-  if (left.length !== right.length) return false;
-  return left.every((value, index) => value === right[index]);
 }
 
 export function normalizeRemoteDbCreatedAt(value: string | null | undefined): string | null {
@@ -100,347 +43,22 @@ export function normalizeRemoteDbCreatedAt(value: string | null | undefined): st
   return parsed.toISOString().replace('.000Z', 'Z');
 }
 
-function toComparablePost(tweet: DbTweet): ComparableRemotePost {
-  return {
-    sourcePostId: tweet.id,
-    authorSourceActorId: tweet.authorId,
-    conversationSourcePostId: tweet.conversationId,
-    fullText: tweet.fullText,
-    legacyFullText: tweet.legacyFullText,
-    noteText: tweet.noteText,
-    lang: tweet.lang,
-    sourceCreatedAt: normalizeRemoteDbCreatedAt(tweet.createdAt),
-    inReplyToSourcePostId: tweet.inReplyToTweetId,
-    inReplyToSourceActorId: tweet.inReplyToUserId,
-    quotedSourcePostId: tweet.quotedTweetId,
-    retweetedSourcePostId: tweet.retweetedTweetId,
-    viewCount: tweet.viewCount,
-    possiblySensitive: tweet.possiblySensitive,
-    favoriteCount: tweet.favoriteCount,
-    retweetCount: tweet.retweetCount,
-    replyCount: tweet.replyCount,
-    quoteCount: tweet.quoteCount,
-    bookmarkCount: tweet.bookmarkCount,
-    mediaSourceIds: normalizeStringArray(tweet.mediaIds),
-    sourceLabel: tweet.source,
-  };
-}
-
-function toComparableAuthor(user: DbUser | undefined): RemoteDbActorView | null {
-  if (!user) return null;
-
-  return {
-    sourceActorId: user.id,
-    name: user.name,
-    screenName: user.screenName,
-    description: user.description,
-    location: user.location,
-    avatarUrl: user.avatarUrl,
-    profileUrl: user.profileUrl,
-    bannerUrl: user.bannerUrl,
-    verifiedType: user.verifiedType,
-  };
-}
-
-function toComparableMedia(media: DbMedia): ComparableRemoteMedia {
-  return {
-    sourceMediaId: media.id,
-    mediaKey: media.mediaKey,
-    sourcePostId: media.tweetId,
-    mediaType: media.type,
-    sourceUrl: media.sourceUrl,
-    thumbUrl: media.thumbUrl,
-    width: media.width,
-    height: media.height,
-    altText: media.altText,
-    allowDownload: media.allowDownload,
-    durationMs: media.durationMs,
-  };
-}
-
-function toComparableRemoteMedia(media: RemoteDbMediaStatusView): ComparableRemoteMedia {
-  return {
-    sourceMediaId: media.sourceMediaId,
-    mediaKey: media.mediaKey,
-    sourcePostId: media.sourcePostId,
-    mediaType: media.mediaType,
-    sourceUrl: media.sourceUrl,
-    thumbUrl: media.thumbUrl,
-    width: media.width,
-    height: media.height,
-    altText: media.altText,
-    allowDownload: media.allowDownload,
-    durationMs: media.durationMs,
-  };
-}
-
-function sortComparableMedia(values: ComparableRemoteMedia[]): ComparableRemoteMedia[] {
-  return [...values].sort((left, right) => left.sourceMediaId.localeCompare(right.sourceMediaId));
-}
-
-function isSameComparableMedia(left: ComparableRemoteMedia, right: ComparableRemoteMedia): boolean {
-  return left.sourceMediaId === right.sourceMediaId
-    && left.mediaKey === right.mediaKey
-    && left.sourcePostId === right.sourcePostId
-    && left.mediaType === right.mediaType
-    && left.sourceUrl === right.sourceUrl
-    && left.thumbUrl === right.thumbUrl
-    && left.width === right.width
-    && left.height === right.height
-    && left.altText === right.altText
-    && left.allowDownload === right.allowDownload
-    && left.durationMs === right.durationMs;
-}
-
-function toComparableRemotePost(post: RemoteDbPostView): ComparableRemotePost {
-  return {
-    sourcePostId: post.sourcePostId,
-    authorSourceActorId: post.authorSourceActorId,
-    conversationSourcePostId: post.conversationSourcePostId,
-    fullText: post.fullText,
-    legacyFullText: post.legacyFullText,
-    noteText: post.noteText,
-    lang: post.lang,
-    sourceCreatedAt: normalizeRemoteDbCreatedAt(post.sourceCreatedAt),
-    inReplyToSourcePostId: post.inReplyToSourcePostId,
-    inReplyToSourceActorId: post.inReplyToSourceActorId,
-    quotedSourcePostId: post.quotedSourcePostId,
-    retweetedSourcePostId: post.retweetedSourcePostId,
-    viewCount: post.viewCount,
-    possiblySensitive: post.possiblySensitive,
-    favoriteCount: post.favoriteCount,
-    retweetCount: post.retweetCount,
-    replyCount: post.replyCount,
-    quoteCount: post.quoteCount,
-    bookmarkCount: post.bookmarkCount,
-    mediaSourceIds: normalizeStringArray(post.mediaSourceIds),
-    sourceLabel: post.sourceLabel,
-  };
-}
-
-function isSameOptionalTimestamp(left: string | null, right: string | null): boolean {
-  if (left === null || right === null) {
-    return true;
-  }
-
-  return left === right;
-}
-
-function isSamePost(left: ComparableRemotePost, right: ComparableRemotePost): boolean {
-  return left.sourcePostId === right.sourcePostId
-    && left.authorSourceActorId === right.authorSourceActorId
-    && left.conversationSourcePostId === right.conversationSourcePostId
-    && left.fullText === right.fullText
-    && left.legacyFullText === right.legacyFullText
-    && left.noteText === right.noteText
-    && left.lang === right.lang
-    && isSameOptionalTimestamp(left.sourceCreatedAt, right.sourceCreatedAt)
-    && left.inReplyToSourcePostId === right.inReplyToSourcePostId
-    && left.inReplyToSourceActorId === right.inReplyToSourceActorId
-    && left.quotedSourcePostId === right.quotedSourcePostId
-    && left.retweetedSourcePostId === right.retweetedSourcePostId
-    && left.viewCount === right.viewCount
-    && left.possiblySensitive === right.possiblySensitive
-    && left.favoriteCount === right.favoriteCount
-    && left.retweetCount === right.retweetCount
-    && left.replyCount === right.replyCount
-    && left.quoteCount === right.quoteCount
-    && left.bookmarkCount === right.bookmarkCount
-    && left.sourceLabel === right.sourceLabel
-    && isSamePrimitiveArray(left.mediaSourceIds, right.mediaSourceIds);
-}
-
-function isSameAuthor(left: RemoteDbActorView | null, right: RemoteDbActorView | null): boolean {
-  if (!left || !right) return left === right;
-
-  return left.sourceActorId === right.sourceActorId
-    && left.name === right.name
-    && left.screenName === right.screenName
-    && left.description === right.description
-    && left.location === right.location
-    && left.avatarUrl === right.avatarUrl
-    && left.profileUrl === right.profileUrl
-    && left.bannerUrl === right.bannerUrl
-    && left.verifiedType === right.verifiedType;
-}
-
-function isSameMediaSet(left: ComparableRemoteMedia[], right: ComparableRemoteMedia[]): boolean {
-  if (left.length !== right.length) return false;
-  return left.every((value, index) => isSameComparableMedia(value, right[index]));
-}
-
-export function toRemoteDbUserInput(user: DbUser): RemoteDbUserInput {
-  const createdAt = normalizeRemoteDbCreatedAt(user.createdAt);
-  if (!createdAt) {
-    throw new Error(`Invalid user createdAt for ${user.id}`);
-  }
-
-  return {
-    id: user.id,
-    name: user.name,
-    screenName: user.screenName,
-    description: user.description,
-    location: user.location,
-    avatarUrl: user.avatarUrl,
-    profileUrl: user.profileUrl,
-    bannerUrl: user.bannerUrl,
-    isBlueVerified: user.isBlueVerified,
-    verifiedType: user.verifiedType,
-    isProtected: user.isProtected,
-    profileImageShape: user.profileImageShape,
-    professionalType: user.professionalType,
-    followersCount: user.followersCount,
-    friendsCount: user.friendsCount,
-    favouritesCount: user.favouritesCount,
-    statusesCount: user.statusesCount,
-    mediaCount: user.mediaCount,
-    listedCount: user.listedCount,
-    pinnedTweetIds: [...user.pinnedTweetIds],
-    createdAt,
-  };
-}
-
-export function toRemoteDbTweetInput(tweet: DbTweet): RemoteDbTweetInput {
-  const createdAt = normalizeRemoteDbCreatedAt(tweet.createdAt);
-  if (!createdAt) {
-    throw new Error(`Invalid tweet createdAt for ${tweet.id}`);
-  }
-
-  return {
-    id: tweet.id,
-    authorId: tweet.authorId,
-    conversationId: tweet.conversationId,
-    fullText: tweet.fullText,
-    legacyFullText: tweet.legacyFullText,
-    noteText: tweet.noteText,
-    lang: tweet.lang,
-    createdAt,
-    inReplyToTweetId: tweet.inReplyToTweetId,
-    inReplyToUserId: tweet.inReplyToUserId,
-    quotedTweetId: tweet.quotedTweetId,
-    retweetedTweetId: tweet.retweetedTweetId,
-    viewCount: tweet.viewCount,
-    possiblySensitive: tweet.possiblySensitive,
-    favoriteCount: tweet.favoriteCount,
-    retweetCount: tweet.retweetCount,
-    replyCount: tweet.replyCount,
-    quoteCount: tweet.quoteCount,
-    bookmarkCount: tweet.bookmarkCount,
-    mediaIds: [...tweet.mediaIds],
-    source: tweet.source,
-  };
-}
-
-export function toRemoteDbVideoVariantInput(variant: DbMedia['videoVariants'][number]): RemoteDbVideoVariantInput {
-  return {
-    bitrate: variant.bitrate,
-    contentType: variant.contentType,
-    url: variant.url,
-  };
-}
-
-export function toRemoteDbMediaInput(media: DbMedia): RemoteDbMediaInput {
-  return {
-    id: media.id,
-    mediaKey: media.mediaKey,
-    tweetId: media.tweetId,
-    type: media.type,
-    mediaUrl: media.mediaUrl,
-    thumbUrl: media.thumbUrl,
-    sourceUrl: media.sourceUrl,
-    width: media.width,
-    height: media.height,
-    altText: media.altText,
-    allowDownload: media.allowDownload,
-    sourceStatusId: media.sourceStatusId,
-    sourceUserId: media.sourceUserId,
-    durationMs: media.durationMs,
-    videoVariants: media.videoVariants.map(toRemoteDbVideoVariantInput),
-  };
-}
-
 export function buildRemoteDbSubmission(
-  tweet: DbTweet,
-  author: DbUser | undefined,
-  media: DbMedia[],
+  tweet: RemoteDbSubmissionSourceItem['tweet'],
+  author: RemoteDbSubmissionSourceItem['author'],
+  media: RemoteDbSubmissionSourceItem['media'],
 ): RemoteDbSubmissionEnvelope | null {
-  return buildRemoteDbSubmissionBatch([{ tweet, author, media }]).submission;
+  void tweet;
+  void author;
+  void media;
+  return null;
 }
 
 export function buildRemoteDbSubmissionBatch(
-  items: RemoteDbSubmissionSourceItem[],
+  _items: RemoteDbSubmissionSourceItem[],
 ): RemoteDbSubmissionBatchResult {
-  if (items.length === 0) {
-    return {
-      submission: null,
-      missingAuthorTweetIds: [],
-      invalidUserCreatedAtIds: [],
-      invalidTweetCreatedAtIds: [],
-    };
-  }
-
-  const missingAuthorTweetIds = items
-    .filter((item) => !item.author)
-    .map((item) => item.tweet.id);
-
-  if (missingAuthorTweetIds.length > 0) {
-    return {
-      submission: null,
-      missingAuthorTweetIds,
-      invalidUserCreatedAtIds: [],
-      invalidTweetCreatedAtIds: [],
-    };
-  }
-
-  const users = new Map<string, ReturnType<typeof toRemoteDbUserInput>>();
-  const tweets = new Map<string, ReturnType<typeof toRemoteDbTweetInput>>();
-  const media = new Map<string, ReturnType<typeof toRemoteDbMediaInput>>();
-  const invalidUserCreatedAtIds = new Set<string>();
-  const invalidTweetCreatedAtIds = new Set<string>();
-
-  for (const item of items) {
-    const author = item.author as DbUser;
-    const normalizedUserCreatedAt = normalizeRemoteDbCreatedAt(author.createdAt);
-    if (!normalizedUserCreatedAt) {
-      invalidUserCreatedAtIds.add(author.id);
-    } else if (!users.has(author.id)) {
-      users.set(author.id, {
-        ...toRemoteDbUserInput(author),
-        createdAt: normalizedUserCreatedAt,
-      });
-    }
-
-    const normalizedTweetCreatedAt = normalizeRemoteDbCreatedAt(item.tweet.createdAt);
-    if (!normalizedTweetCreatedAt) {
-      invalidTweetCreatedAtIds.add(item.tweet.id);
-    } else {
-      tweets.set(item.tweet.id, {
-        ...toRemoteDbTweetInput(item.tweet),
-        createdAt: normalizedTweetCreatedAt,
-      });
-    }
-
-    for (const mediaItem of item.media) {
-      media.set(mediaItem.id, toRemoteDbMediaInput(mediaItem));
-    }
-  }
-
-  if (invalidUserCreatedAtIds.size > 0 || invalidTweetCreatedAtIds.size > 0) {
-    return {
-      submission: null,
-      missingAuthorTweetIds: [],
-      invalidUserCreatedAtIds: Array.from(invalidUserCreatedAtIds),
-      invalidTweetCreatedAtIds: Array.from(invalidTweetCreatedAtIds),
-    };
-  }
-
   return {
-    submission: {
-      sourceKind: REMOTE_DB_SOURCE_KIND,
-      users: Array.from(users.values()),
-      tweets: Array.from(tweets.values()),
-      media: Array.from(media.values()),
-    },
+    submission: null,
     missingAuthorTweetIds: [],
     invalidUserCreatedAtIds: [],
     invalidTweetCreatedAtIds: [],
@@ -448,85 +66,16 @@ export function buildRemoteDbSubmissionBatch(
 }
 
 export function compareRemoteDbPostStatus(
-  tweet: DbTweet,
-  author: DbUser | undefined,
-  media: DbMedia[],
+  _tweet: RemoteDbSubmissionSourceItem['tweet'],
+  _author: RemoteDbSubmissionSourceItem['author'],
+  _media: RemoteDbSubmissionSourceItem['media'],
   remoteItem: RemoteDbPostStatusItem,
 ): RemoteDbStatusComparison {
-  const expectedMediaCount = tweet.mediaIds.length;
-
-  if (!remoteItem.found) {
-    return {
-      exists: false,
-      consistent: false,
-      mismatchReason: null,
-      expectedMediaCount,
-      transferSummary: remoteItem.transferSummary,
-    };
-  }
-
-  if (!remoteItem.post) {
-    return {
-      exists: true,
-      consistent: false,
-      mismatchReason: 'Remote post payload is missing',
-      expectedMediaCount,
-      transferSummary: remoteItem.transferSummary,
-    };
-  }
-
-  const localPost = toComparablePost(tweet);
-  const remotePost = toComparableRemotePost(remoteItem.post);
-  if (!isSamePost(localPost, remotePost)) {
-    return {
-      exists: true,
-      consistent: false,
-      mismatchReason: 'Remote post data differs from the local record',
-      expectedMediaCount,
-      transferSummary: remoteItem.transferSummary,
-    };
-  }
-
-  const localAuthor = toComparableAuthor(author);
-  if (!isSameAuthor(localAuthor, remoteItem.author)) {
-    return {
-      exists: true,
-      consistent: false,
-      mismatchReason: author
-        ? 'Remote author data differs from the local record'
-        : 'Local author data is missing',
-      expectedMediaCount,
-      transferSummary: remoteItem.transferSummary,
-    };
-  }
-
-  const localMedia = sortComparableMedia(media.map(toComparableMedia));
-  const remoteMedia = sortComparableMedia(remoteItem.media.map(toComparableRemoteMedia));
-  if (!isSameMediaSet(localMedia, remoteMedia)) {
-    return {
-      exists: true,
-      consistent: false,
-      mismatchReason: 'Remote media data differs from the local record',
-      expectedMediaCount,
-      transferSummary: remoteItem.transferSummary,
-    };
-  }
-
-  if (remoteItem.missingMediaSourceIds.length > 0) {
-    return {
-      exists: true,
-      consistent: false,
-      mismatchReason: `Remote media is incomplete (${remoteItem.missingMediaSourceIds.length} missing)`,
-      expectedMediaCount,
-      transferSummary: remoteItem.transferSummary,
-    };
-  }
-
   return {
-    exists: true,
-    consistent: true,
-    mismatchReason: null,
-    expectedMediaCount,
+    exists: remoteItem.found,
+    consistent: false,
+    mismatchReason: 'Remote database integration is disabled',
+    expectedMediaCount: 0,
     transferSummary: remoteItem.transferSummary,
   };
 }
