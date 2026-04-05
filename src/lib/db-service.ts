@@ -1,16 +1,16 @@
 import { reactive, computed } from 'vue';
-import type { XUser, XTweet, XMedia } from './types';
+import type { DbMediaRecord, DbTweetRecord, DbUserRecord } from './types';
 import { mergeEntity } from './entity-merge';
 
-export interface DbTweet extends XTweet {
+export interface DbTweet extends DbTweetRecord {
   _ts: number;
 }
 
-export interface DbUser extends XUser {
+export interface DbUser extends DbUserRecord {
   _ts: number;
 }
 
-export interface DbMedia extends XMedia {
+export interface DbMedia extends DbMediaRecord {
   _ts: number;
 }
 
@@ -26,12 +26,12 @@ const db = reactive<Db>({
   media: new Map(),
 });
 
-let changeCounter = reactive({ value: 0 });
+const changeCounter = reactive({ value: 0 });
 let batchDepth = 0;
 let batchDirty = false;
 
 function bump() {
-  changeCounter.value++;
+  changeCounter.value += 1;
 }
 
 function markDirty() {
@@ -42,12 +42,33 @@ function markDirty() {
   bump();
 }
 
+function upsertEntity<T extends { id: string; _ts: number }>(
+  map: Map<string, T>,
+  entity: Omit<T, '_ts'>,
+): void {
+  const now = Date.now();
+  const existing = map.get(entity.id);
+
+  if (existing) {
+    const previousTs = existing._ts;
+    const changed = mergeEntity(existing as Record<string, unknown>, entity as Record<string, unknown>);
+    existing._ts = now;
+    if (changed || previousTs !== existing._ts) {
+      markDirty();
+    }
+    return;
+  }
+
+  map.set(entity.id, { ...entity, _ts: now } as T);
+  markDirty();
+}
+
 export function runDbBatch(fn: () => void): void {
-  batchDepth++;
+  batchDepth += 1;
   try {
     fn();
   } finally {
-    batchDepth--;
+    batchDepth -= 1;
     if (batchDepth === 0 && batchDirty) {
       batchDirty = false;
       bump();
@@ -55,54 +76,16 @@ export function runDbBatch(fn: () => void): void {
   }
 }
 
-export function upsertTweet(tweet: XTweet): void {
-  const now = Date.now();
-  const existing = db.tweets.get(tweet.id);
-
-  if (existing) {
-    const previousTs = existing._ts;
-    const changed = mergeEntity(existing, tweet);
-    existing._ts = now;
-    if (changed || previousTs !== existing._ts) {
-      markDirty();
-    }
-  } else {
-    db.tweets.set(tweet.id, { ...tweet, _ts: now });
-    markDirty();
-  }
+export function upsertTweet(tweet: DbTweetRecord): void {
+  upsertEntity(db.tweets, tweet);
 }
 
-export function upsertUser(user: XUser): void {
-  const now = Date.now();
-  const existing = db.users.get(user.id);
-  if (existing) {
-    const previousTs = existing._ts;
-    const changed = mergeEntity(existing, user);
-    existing._ts = now;
-    if (changed || previousTs !== existing._ts) {
-      markDirty();
-    }
-  } else {
-    db.users.set(user.id, { ...user, _ts: now });
-    markDirty();
-  }
+export function upsertUser(user: DbUserRecord): void {
+  upsertEntity(db.users, user);
 }
 
-export function upsertMedia(media: XMedia): void {
-  const now = Date.now();
-  const existing = db.media.get(media.id);
-
-  if (existing) {
-    const previousTs = existing._ts;
-    const changed = mergeEntity(existing, media);
-    existing._ts = now;
-    if (changed || previousTs !== existing._ts) {
-      markDirty();
-    }
-  } else {
-    db.media.set(media.id, { ...media, _ts: now });
-    markDirty();
-  }
+export function upsertMedia(media: DbMediaRecord): void {
+  upsertEntity(db.media, media);
 }
 
 export function clearDb(): void {
@@ -141,19 +124,23 @@ export function getTweetCount(): number {
 export function getParentChain(tweetId: string): DbTweet[] {
   const chain: DbTweet[] = [];
   let current = db.tweets.get(tweetId);
-  while (current?.inReplyToTweetId) {
-    const parent = db.tweets.get(current.inReplyToTweetId);
+
+  while (current?.replyToTweetId) {
+    const parent = db.tweets.get(current.replyToTweetId);
     if (!parent) break;
     chain.unshift(parent);
     current = parent;
   }
+
   return chain;
 }
 
 export function getReplies(tweetId: string): DbTweet[] {
   const result: DbTweet[] = [];
   for (const tweet of db.tweets.values()) {
-    if (tweet.inReplyToTweetId === tweetId) result.push(tweet);
+    if (tweet.replyToTweetId === tweetId) {
+      result.push(tweet);
+    }
   }
   return result;
 }

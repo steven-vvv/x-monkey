@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import type { XMedia } from '../lib/types';
+import type { DbMediaRecord } from '../lib/types';
+import { getMediaOpenUrl, getMediaThumbUrl } from '../lib/tweet-selectors';
 
-const props = defineProps<{ media: XMedia[] }>();
+const props = defineProps<{ media: DbMediaRecord[] }>();
 
 const emit = defineEmits<{
   (e: 'open', url: string): void;
@@ -11,33 +12,33 @@ const emit = defineEmits<{
 <template>
   <div v-if="props.media.length > 0" class="xd-detail-media">
     <div
-      v-for="m in props.media"
-      :key="m.id"
+      v-for="mediaItem in props.media"
+      :key="mediaItem.id"
       class="xd-thumb"
-      @click="emit('open', m.sourceUrl)"
+      @click="emit('open', getMediaOpenUrl(mediaItem))"
     >
-      <img :src="m.thumbUrl" loading="lazy" />
-      <span v-if="m.type !== 'photo'" class="xd-thumb-badge">{{ m.type === 'video' ? 'VID' : 'GIF' }}</span>
+      <img :src="getMediaThumbUrl(mediaItem)" loading="lazy" />
+      <span v-if="mediaItem.type !== 'photo'" class="xd-thumb-badge">{{ mediaItem.type === 'video' ? 'VID' : 'GIF' }}</span>
     </div>
   </div>
 </template>
 
 <style scoped>
 .xd-detail-media {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  margin-bottom: 8px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(88px, 1fr));
+  gap: 6px;
+  margin-bottom: 10px;
 }
 
 .xd-thumb {
   position: relative;
-  width: 72px;
-  height: 72px;
+  aspect-ratio: 1;
   border-radius: var(--xd-radius);
   overflow: hidden;
   cursor: pointer;
   border: 1px solid var(--xd-border);
+  background: var(--xd-bg-secondary);
 }
 
 .xd-thumb:hover {
@@ -53,11 +54,11 @@ const emit = defineEmits<{
 
 .xd-thumb-badge {
   position: absolute;
-  bottom: 2px;
-  right: 2px;
-  padding: 1px 4px;
-  border-radius: 2px;
-  background: rgba(0, 0, 0, 0.7);
+  right: 4px;
+  bottom: 4px;
+  padding: 1px 5px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.72);
   color: #fff;
   font-size: 9px;
   font-weight: 600;

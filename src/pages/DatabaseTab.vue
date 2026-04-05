@@ -8,6 +8,7 @@ import {
 import { clearCaptureState } from '../lib/capture-state-service';
 import type { DbTweet } from '../lib/db-service';
 import { GM_openInTab } from '$';
+import { getTweetOpenUrl, getUserOpenUrl } from '../lib/tweet-selectors';
 import TweetSummaryItem from '../components/TweetSummaryItem.vue';
 import TweetDetailView from '../components/TweetDetailView.vue';
 import UserDetailCard from '../components/UserDetailCard.vue';
@@ -29,7 +30,8 @@ function openUser(id: string) {
 
 function openOriginal(t: DbTweet) {
   const u = getDbUser(t.authorId);
-  if (u) GM_openInTab(`https://x.com/${u.screenName}/status/${t.id}`, { active: true });
+  const url = getTweetOpenUrl(t, u);
+  if (url) GM_openInTab(url, { active: true });
 }
 
 function openMediaUrl(url: string) {
@@ -38,7 +40,7 @@ function openMediaUrl(url: string) {
 
 function openProfile(userId: string) {
   const u = getDbUser(userId);
-  if (u) GM_openInTab(`https://x.com/${u.screenName}`, { active: true });
+  if (u) GM_openInTab(getUserOpenUrl(u), { active: true });
 }
 
 // Detail tweet computeds

@@ -62,12 +62,83 @@ function isTimelineParsedResponse(parsed: ParsedResponse | TimelineParsedRespons
 function assertTweetShape(tweet: XTweet, caseName: string) {
   if (!tweet.id) fail(`[${caseName}] empty tweet id`);
   if (!tweet.authorId) fail(`[${caseName}] tweet ${tweet.id} missing authorId`);
-  if (tweet.noteText && tweet.fullText !== tweet.noteText) {
-    fail(`[${caseName}] tweet ${tweet.id} noteText was not promoted to fullText`);
+  if (!tweet.conversationId) fail(`[${caseName}] tweet ${tweet.id} missing conversationId`);
+  if (!tweet.note?.text.text && !tweet.body.text) {
+    fail(`[${caseName}] tweet ${tweet.id} is missing both body and note text`);
   }
-  if (!tweet.noteText && tweet.fullText !== tweet.legacyFullText) {
-    fail(`[${caseName}] tweet ${tweet.id} fullText diverged from legacyFullText without noteText`);
-  }
+}
+
+function createEmptyTextEntities() {
+  return {
+    hashtags: [],
+    symbols: [],
+    urls: [],
+    mentions: [],
+  };
+}
+
+function buildStoredUser(id: string): XUser {
+  return {
+    id,
+    displayName: 'User',
+    userName: 'user',
+    createdAt: 'Tue Jan 01 00:00:00 +0000 2030',
+    profile: {
+      avatarUrl: '',
+      avatarShape: 'Circle',
+      profileLinks: [],
+    },
+    pinnedTweetIds: [],
+    stats: {
+      followers: 1,
+      following: 1,
+      likes: 1,
+      mediaPosts: 1,
+      tweets: 1,
+      listed: 1,
+    },
+    features: {
+      isProtected: false,
+    },
+  };
+}
+
+function buildStoredTweet(id: string, authorId: string, mediaIds: string[] = []): XTweet {
+  return {
+    id,
+    createdAt: 'Tue Jan 01 00:00:00 +0000 2030',
+    source: 'Web',
+    authorId,
+    body: {
+      text: 'db tweet',
+      entities: createEmptyTextEntities(),
+    },
+    mediaIds,
+    conversationId: id,
+    stats: {
+      views: '10',
+      replies: 1,
+      reposts: 1,
+      quotes: 1,
+      likes: 1,
+      bookmarks: 1,
+    },
+  };
+}
+
+function buildStoredMedia(id: string, tweetId: string): XMedia {
+  return {
+    id,
+    tweetId,
+    type: 'photo',
+    mediaUrl: 'https://pbs.twimg.com/media/m-db.jpg',
+    geometry: {
+      width: 1200,
+      height: 800,
+      focusRects: [],
+    },
+    taggedUsers: [],
+  };
 }
 
 function buildUser(id: string): Record<string, any> {
@@ -132,11 +203,13 @@ function buildTweet(id: string, userId: string, overrides: Record<string, any> =
       },
     },
     legacy: {
+      id_str: id,
       user_id_str: userId,
       conversation_id_str: id,
       full_text: overrides.fullText ?? `tweet-${id}`,
       lang: overrides.lang ?? 'en',
       created_at: overrides.createdAt ?? 'Tue Jan 01 00:00:00 +0000 2030',
+      is_quote_status: overrides.isQuoteStatus ?? false,
       favorite_count: overrides.favoriteCount ?? 1,
       retweet_count: overrides.retweetCount ?? 2,
       reply_count: overrides.replyCount ?? 3,
@@ -292,7 +365,7 @@ function assertInlineParserScenarios() {
   const duplicateParsed = parseHomeTimelineResponse(duplicateFixture);
   const mergedTweet = duplicateParsed.tweets.get('t-merge');
   if (!mergedTweet) fail('[inline] duplicate merge tweet missing');
-  if (mergedTweet.fullText !== 'kept text') fail('[inline] duplicate merge lost fullText');
+  if (mergedTweet.body.text !== 'kept text') fail('[inline] duplicate merge lost body text');
   if (mergedTweet.source !== 'Rich Web') fail('[inline] duplicate merge lost source');
   if (mergedTweet.mediaIds.join(',') !== 'm-merge') fail('[inline] duplicate merge lost media ids');
 
@@ -304,71 +377,9 @@ function assertDbBatchScenario() {
   clearDb();
   const startVersion = dbVersion.value;
 
-  const user: XUser = {
-    id: 'u-db',
-    name: 'User',
-    screenName: 'user',
-    description: '',
-    location: '',
-    avatarUrl: '',
-    profileUrl: null,
-    bannerUrl: null,
-    isBlueVerified: false,
-    verifiedType: null,
-    isProtected: false,
-    profileImageShape: 'Circle',
-    professionalType: null,
-    followersCount: 1,
-    friendsCount: 1,
-    favouritesCount: 1,
-    statusesCount: 1,
-    mediaCount: 1,
-    listedCount: 1,
-    pinnedTweetIds: [],
-    createdAt: 'Tue Jan 01 00:00:00 +0000 2030',
-  };
-
-  const tweet: XTweet = {
-    id: 't-db',
-    authorId: 'u-db',
-    conversationId: 't-db',
-    fullText: 'db tweet',
-    legacyFullText: 'db tweet',
-    noteText: null,
-    lang: 'en',
-    createdAt: 'Tue Jan 01 00:00:00 +0000 2030',
-    inReplyToTweetId: null,
-    inReplyToUserId: null,
-    quotedTweetId: null,
-    retweetedTweetId: null,
-    viewCount: 10,
-    possiblySensitive: false,
-    favoriteCount: 1,
-    retweetCount: 1,
-    replyCount: 1,
-    quoteCount: 1,
-    bookmarkCount: 1,
-    mediaIds: ['m-db'],
-    source: 'Web',
-  };
-
-  const media: XMedia = {
-    id: 'm-db',
-    mediaKey: '3_m-db',
-    tweetId: 't-db',
-    type: 'photo',
-    mediaUrl: 'https://pbs.twimg.com/media/m-db.jpg',
-    thumbUrl: 'https://pbs.twimg.com/media/m-db?format=jpg&name=small',
-    sourceUrl: 'https://pbs.twimg.com/media/m-db?format=jpg&name=orig',
-    width: 1200,
-    height: 800,
-    altText: null,
-    allowDownload: true,
-    sourceStatusId: null,
-    sourceUserId: null,
-    durationMs: null,
-    videoVariants: [],
-  };
+  const user = buildStoredUser('u-db');
+  const tweet = buildStoredTweet('t-db', 'u-db', ['m-db']);
+  const media = buildStoredMedia('m-db', 't-db');
 
   runDbBatch(() => {
     upsertUser(user);
@@ -464,50 +475,30 @@ function assertCaptureStateClearScenario() {
 
   runDbBatch(() => {
     upsertUser({
-      id: 'u-clear',
-      name: 'User',
-      screenName: 'user',
-      description: '',
-      location: '',
-      avatarUrl: '',
-      profileUrl: null,
-      bannerUrl: null,
-      isBlueVerified: false,
-      verifiedType: null,
-      isProtected: false,
-      profileImageShape: 'Circle',
-      professionalType: null,
-      followersCount: 0,
-      friendsCount: 0,
-      favouritesCount: 0,
-      statusesCount: 0,
-      mediaCount: 0,
-      listedCount: 0,
-      pinnedTweetIds: [],
-      createdAt: 'Tue Jan 01 00:00:00 +0000 2030',
+      ...buildStoredUser('u-clear'),
+      stats: {
+        followers: 0,
+        following: 0,
+        likes: 0,
+        mediaPosts: 0,
+        tweets: 0,
+        listed: 0,
+      },
     });
     upsertTweet({
-      id: 't-clear',
-      authorId: 'u-clear',
-      conversationId: 't-clear',
-      fullText: 'clear',
-      legacyFullText: 'clear',
-      noteText: null,
-      lang: 'en',
-      createdAt: 'Tue Jan 01 00:00:00 +0000 2030',
-      inReplyToTweetId: null,
-      inReplyToUserId: null,
-      quotedTweetId: null,
-      retweetedTweetId: null,
-      viewCount: null,
-      possiblySensitive: null,
-      favoriteCount: 0,
-      retweetCount: 0,
-      replyCount: 0,
-      quoteCount: 0,
-      bookmarkCount: 0,
-      mediaIds: [],
-      source: 'Web',
+      ...buildStoredTweet('t-clear', 'u-clear'),
+      body: {
+        text: 'clear',
+        entities: createEmptyTextEntities(),
+      },
+      stats: {
+        views: undefined,
+        replies: 0,
+        reposts: 0,
+        quotes: 0,
+        likes: 0,
+        bookmarks: 0,
+      },
     });
   });
 

@@ -1,20 +1,21 @@
 <script setup lang="ts">
 import { computed } from 'vue';
-import type { XMedia, XUser } from '../lib/types';
+import type { DbMediaRecord, DbUserRecord } from '../lib/types';
 import type { DbTweet } from '../lib/db-service';
 import { dbVersion, getDbTweet, getDbUser, getMediaForTweet, getParentChain, getReplies } from '../lib/db-service';
 import { HOME_FEATURE_TIMELINE_SOURCES, getFeatureTimelineLabel, getFeatureTimelineOperation, type FeatureTimelineSource } from '../lib/feature-timeline';
 import { getTimelineTweetIdsByAlias, getTimelineVersionByAlias } from '../lib/timeline-store';
 import { featureNavigateTo, featureRoute, type FeatureRoute } from '../lib/store';
 import { GM_openInTab } from '$';
+import { getTweetOpenUrl, getUserOpenUrl } from '../lib/tweet-selectors';
 import TweetDetailView from '../components/TweetDetailView.vue';
 import UserDetailCard from '../components/UserDetailCard.vue';
 import TimelineTweetCard from '../components/TimelineTweetCard.vue';
 
 interface TimelineCardItem {
   tweet: DbTweet;
-  author: XUser | undefined;
-  media: XMedia[];
+  author: DbUserRecord | undefined;
+  media: DbMediaRecord[];
 }
 
 interface FeatureTimelineContext {
@@ -133,8 +134,9 @@ function openHomeTimeline(source: FeatureTimelineSource) {
 
 function openOriginal(tweet: DbTweet) {
   const user = getDbUser(tweet.authorId);
-  if (user) {
-    GM_openInTab(`https://x.com/${user.screenName}/status/${tweet.id}`, { active: true });
+  const url = getTweetOpenUrl(tweet, user);
+  if (url) {
+    GM_openInTab(url, { active: true });
   }
 }
 
@@ -145,7 +147,7 @@ function openMediaUrl(url: string) {
 function openProfile(userId: string) {
   const user = getDbUser(userId);
   if (user) {
-    GM_openInTab(`https://x.com/${user.screenName}`, { active: true });
+    GM_openInTab(getUserOpenUrl(user), { active: true });
   }
 }
 

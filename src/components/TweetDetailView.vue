@@ -24,7 +24,7 @@ const emit = defineEmits<{
 
 <template>
   <template v-if="showParents && props.parents.length > 0">
-    <div class="xd-context-label">Thread above</div>
+    <div class="xd-context-label">Thread Above</div>
     <TweetSummaryItem
       v-for="item in props.parents"
       :key="item.id"
@@ -40,6 +40,7 @@ const emit = defineEmits<{
     @open-user="(userId) => emit('open-user', userId)"
     @open-original="(tweet) => emit('open-original', tweet)"
     @open-media="(url) => emit('open-media', url)"
+    @open-tweet="(tweetId) => emit('open-tweet', tweetId)"
   />
 
   <slot name="after-detail" :tweet="props.tweet" :replies="props.replies" />

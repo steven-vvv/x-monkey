@@ -1,12 +1,8 @@
-import type { XTweet, XUser } from './types';
+import type { DbTweetRecord, DbUserRecord } from './types';
 
 export interface StatItem {
   label: string;
   value: string;
-}
-
-export function tweetText(tweet: Pick<XTweet, 'fullText'>): string {
-  return tweet.fullText.replace(/https:\/\/t\.co\/\S+/g, '').trim();
 }
 
 export function formatTweetDate(createdAt: string): string {
@@ -31,38 +27,49 @@ export function formatDateTime(value: string): string {
   return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
 }
 
-export function formatCount(n: number): string {
-  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
-  if (n >= 1_000) return (n / 1_000).toFixed(1) + 'K';
-  return String(n);
+export function formatCount(value: number): string {
+  if (value >= 1_000_000) return (value / 1_000_000).toFixed(1) + 'M';
+  if (value >= 1_000) return (value / 1_000).toFixed(1) + 'K';
+  return String(value);
+}
+
+function formatOptionalCount(value: number | string | undefined): string {
+  if (typeof value === 'number') {
+    return formatCount(value);
+  }
+
+  if (typeof value === 'string') {
+    const parsed = Number.parseInt(value, 10);
+    return Number.isNaN(parsed) ? value : formatCount(parsed);
+  }
+
+  return '-';
 }
 
 export function avatarFull(url: string): string {
   return url.replace('_normal.', '_400x400.');
 }
 
-export function toTweetStats(
-  tweet: Pick<XTweet, 'viewCount' | 'favoriteCount' | 'retweetCount' | 'replyCount' | 'quoteCount' | 'bookmarkCount'>,
-): StatItem[] {
+export function toTweetStats(tweet: Pick<DbTweetRecord, 'stats'>): StatItem[] {
   return [
-    { label: 'Views', value: tweet.viewCount != null ? formatCount(tweet.viewCount) : '-' },
-    { label: 'Likes', value: formatCount(tweet.favoriteCount) },
-    { label: 'RT', value: formatCount(tweet.retweetCount) },
-    { label: 'Replies', value: formatCount(tweet.replyCount) },
-    { label: 'Quotes', value: formatCount(tweet.quoteCount) },
-    { label: 'Bookmarks', value: formatCount(tweet.bookmarkCount) },
+    { label: 'Views', value: formatOptionalCount(tweet.stats.views) },
+    { label: 'Likes', value: formatOptionalCount(tweet.stats.likes) },
+    { label: 'Reposts', value: formatOptionalCount(tweet.stats.reposts) },
+    { label: 'Replies', value: formatOptionalCount(tweet.stats.replies) },
+    { label: 'Quotes', value: formatOptionalCount(tweet.stats.quotes) },
+    { label: 'Bookmarks', value: formatOptionalCount(tweet.stats.bookmarks) },
   ];
 }
 
-export function toUserStats(
-  user: Pick<XUser, 'followersCount' | 'friendsCount' | 'statusesCount' | 'favouritesCount' | 'mediaCount' | 'listedCount'>,
-): StatItem[] {
+export function toUserStats(user: Pick<DbUserRecord, 'stats'>): StatItem[] {
+  const stats = user.stats;
+
   return [
-    { label: 'Followers', value: formatCount(user.followersCount) },
-    { label: 'Following', value: formatCount(user.friendsCount) },
-    { label: 'Tweets', value: formatCount(user.statusesCount) },
-    { label: 'Likes', value: formatCount(user.favouritesCount) },
-    { label: 'Media', value: formatCount(user.mediaCount) },
-    { label: 'Listed', value: formatCount(user.listedCount) },
+    { label: 'Followers', value: formatOptionalCount(stats?.followers) },
+    { label: 'Following', value: formatOptionalCount(stats?.following) },
+    { label: 'Tweets', value: formatOptionalCount(stats?.tweets) },
+    { label: 'Likes', value: formatOptionalCount(stats?.likes) },
+    { label: 'Media', value: formatOptionalCount(stats?.mediaPosts) },
+    { label: 'Listed', value: formatOptionalCount(stats?.listed) },
   ];
 }
