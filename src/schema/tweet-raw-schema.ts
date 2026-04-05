@@ -993,16 +993,16 @@ export const TweetResultSchema = z.preprocess(
  *
  * quoted / retweeted 结构都会包装成 `result` 字段，因此统一复用这一层容器。
  */
-export interface TweetResultEnvelope extends Record<string, unknown> {
+export interface TweetResultEnvelope {
   result: TweetResult;
 }
 
-export interface OptionalTweetResultEnvelope extends Record<string, unknown> {
+export interface OptionalTweetResultEnvelope {
   result?: TweetResult;
 }
 
 /** 归一化后的帖子 legacy 结构。 */
-export interface TweetLegacy extends Record<string, unknown> {
+export interface TweetLegacy {
   bookmark_count?: number;
   bookmarked?: boolean;
   conversation_control?: ConversationControl;
@@ -1012,7 +1012,6 @@ export interface TweetLegacy extends Record<string, unknown> {
   entities: TweetEntities;
   extended_entities?: {
     media: Media[];
-    [key: string]: unknown;
   };
   favorite_count?: number;
   favorited?: boolean;
@@ -1035,13 +1034,12 @@ export interface TweetLegacy extends Record<string, unknown> {
   retweeted_status_result?: TweetResultEnvelope;
   scopes?: {
     followers?: boolean;
-    [key: string]: unknown;
   };
   user_id_str: string;
 }
 
 /** 归一化后的完整帖子对象。 */
-export interface Tweet extends Record<string, unknown> {
+export interface Tweet {
   __typename: 'Tweet';
   article?: Article;
   birdwatch_pivot?: BirdwatchPivot;
