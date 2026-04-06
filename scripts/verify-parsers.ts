@@ -63,8 +63,8 @@ function assertTweetShape(tweet: XTweet, caseName: string) {
   if (!tweet.id) fail(`[${caseName}] empty tweet id`);
   if (!tweet.authorId) fail(`[${caseName}] tweet ${tweet.id} missing authorId`);
   if (!tweet.conversationId) fail(`[${caseName}] tweet ${tweet.id} missing conversationId`);
-  if (!tweet.note?.text.text && !tweet.body.text) {
-    fail(`[${caseName}] tweet ${tweet.id} is missing both body and note text`);
+  if (!tweet.note?.text.text && !tweet.legacyText.text) {
+    fail(`[${caseName}] tweet ${tweet.id} is missing both legacyText and note text`);
   }
 }
 
@@ -109,7 +109,7 @@ function buildStoredTweet(id: string, authorId: string, mediaIds: string[] = [])
     createdAt: 'Tue Jan 01 00:00:00 +0000 2030',
     source: 'Web',
     authorId,
-    body: {
+    legacyText: {
       text: 'db tweet',
       entities: createEmptyTextEntities(),
     },
@@ -365,7 +365,7 @@ function assertInlineParserScenarios() {
   const duplicateParsed = parseHomeTimelineResponse(duplicateFixture);
   const mergedTweet = duplicateParsed.tweets.get('t-merge');
   if (!mergedTweet) fail('[inline] duplicate merge tweet missing');
-  if (mergedTweet.body.text !== 'kept text') fail('[inline] duplicate merge lost body text');
+  if (mergedTweet.legacyText.text !== 'kept text') fail('[inline] duplicate merge lost legacyText');
   if (mergedTweet.source !== 'Rich Web') fail('[inline] duplicate merge lost source');
   if (mergedTweet.mediaIds.join(',') !== 'm-merge') fail('[inline] duplicate merge lost media ids');
 
@@ -487,7 +487,7 @@ function assertCaptureStateClearScenario() {
     });
     upsertTweet({
       ...buildStoredTweet('t-clear', 'u-clear'),
-      body: {
+      legacyText: {
         text: 'clear',
         entities: createEmptyTextEntities(),
       },

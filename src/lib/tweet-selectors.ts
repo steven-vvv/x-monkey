@@ -24,8 +24,8 @@ function getBestVideoVariant(media: Pick<DbMediaRecord, 'video'>): string | null
   return stripQuery(mp4Variants[0].url);
 }
 
-export function getTweetDisplayText(tweet: Pick<DbTweetRecord, 'body' | 'note'>): string {
-  return (tweet.note?.text.text ?? tweet.body.text).replace(/https:\/\/t\.co\/\S+/g, '').trim();
+export function getTweetDisplayText(tweet: Pick<DbTweetRecord, 'legacyText' | 'note'>): string {
+  return (tweet.note?.text.text ?? tweet.legacyText.text).replace(/https:\/\/t\.co\/\S+/g, '').trim();
 }
 
 export function getUserBioText(user: Pick<DbUserRecord, 'profile'>): string {

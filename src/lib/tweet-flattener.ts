@@ -64,7 +64,7 @@ function toDbTweet(tweet: normalized.Tweet): DbTweetRecord {
     source: tweet.source,
     place: tweet.place,
     authorId: tweet.author.id,
-    body: tweet.content.body,
+    legacyText: tweet.content.legacyText,
     note: tweet.content.note,
     language: tweet.content.language,
     mediaIds: tweet.content.media.map((media) => media.id),

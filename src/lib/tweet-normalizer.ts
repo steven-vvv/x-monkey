@@ -405,10 +405,13 @@ function normalizeMedia(rawMedia: raw.Media): normalized.TweetMedia {
 function normalizePlace(place: raw.Place | undefined): normalized.TweetPlace | undefined {
   if (!place) return undefined;
 
-  const boundaryPoints = place.bounding_box?.coordinates?.[0]?.map((point) => ({
-    longitude: point[0],
-    latitude: point[1],
-  }));
+  const boundaryPoints = place.bounding_box?.coordinates?.[0]
+    ?.map((point) => {
+      const [longitude, latitude] = point;
+      if (longitude === undefined || latitude === undefined) return null;
+      return { longitude, latitude };
+    })
+    .filter(Boolean) as normalized.TweetPlaceBoundary | undefined;
 
   return toOptionalObject({
     id: place.id,
@@ -417,7 +420,7 @@ function normalizePlace(place: raw.Place | undefined): normalized.TweetPlace | u
     country: place.country,
     countryCode: place.country_code,
     kind: place.place_type,
-    boundary: boundaryPoints && boundaryPoints.length > 0 ? { points: boundaryPoints } : undefined,
+    boundary: boundaryPoints && boundaryPoints.length > 0 ? boundaryPoints : undefined,
   });
 }
 
@@ -553,7 +556,7 @@ function normalizeTweetData(
     place: normalizePlace(data.legacy.place),
     author,
     content: {
-      body: normalizeAnnotatedTextFromTweetEntities(
+      legacyText: normalizeAnnotatedTextFromTweetEntities(
         data.legacy.full_text,
         data.legacy.entities,
         data.legacy.display_text_range,

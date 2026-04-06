@@ -52,7 +52,7 @@ export interface DbTweetRecord {
   source?: string;
   place?: normalized.TweetPlace;
   authorId: string;
-  body: normalized.AnnotatedText;
+  legacyText: normalized.AnnotatedText;
   note?: normalized.TweetNote;
   language?: string;
   mediaIds: string[];

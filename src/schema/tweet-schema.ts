@@ -479,9 +479,7 @@ export type GeoPoint = z.infer<typeof GeoPointSchema>;
 /**
  * 地点边界。
  */
-export const TweetPlaceBoundarySchema = strictObject({
-  points: z.array(GeoPointSchema),
-});
+export const TweetPlaceBoundarySchema = z.array(GeoPointSchema);
 
 export type TweetPlaceBoundary = z.infer<typeof TweetPlaceBoundarySchema>;
 
@@ -494,7 +492,7 @@ export type TweetPlaceBoundary = z.infer<typeof TweetPlaceBoundarySchema>;
  * - `country`: `legacy.place.country`
  * - `countryCode`: `legacy.place.country_code`
  * - `kind`: `legacy.place.place_type`
- * - `boundary.points`: `legacy.place.bounding_box.coordinates[0][]`
+ * - `boundary`: `legacy.place.bounding_box.coordinates[0][]`
  */
 export const TweetPlaceSchema = strictObject({
   id: z.string().optional(),
@@ -526,13 +524,13 @@ export type TweetNote = z.infer<typeof TweetNoteSchema>;
 /**
  * 帖子正文内容。
  * 来源汇总:
- * - `body`: `legacy.full_text` + `legacy.entities`
+ * - `legacyText`: `legacy.full_text` + `legacy.entities`
  * - `note`: `note_tweet.note_tweet_results.result`
  * - `media`: `legacy.extended_entities.media`
  * - `language`: `legacy.lang`
  */
 export const TweetContentSchema = strictObject({
-  body: AnnotatedTextSchema,
+  legacyText: AnnotatedTextSchema,
   note: TweetNoteSchema.optional(),
   media: z.array(TweetMediaSchema),
   language: z.string().optional(),
