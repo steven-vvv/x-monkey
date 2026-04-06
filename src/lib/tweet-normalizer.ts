@@ -37,6 +37,29 @@ function stripHtmlSource(html: string | undefined): string | undefined {
   return text || undefined;
 }
 
+function normalizeIsoDateTime(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+
+  let timestamp = Number.NaN;
+  if (/^-?\d+$/.test(trimmed)) {
+    const numeric = Number.parseInt(trimmed, 10);
+    if (Number.isFinite(numeric)) {
+      timestamp = trimmed.length <= 10 ? numeric * 1000 : numeric;
+    }
+  } else {
+    timestamp = Date.parse(trimmed);
+  }
+
+  if (!Number.isFinite(timestamp)) return undefined;
+
+  const parsed = new Date(timestamp);
+  if (Number.isNaN(parsed.getTime())) return undefined;
+  return parsed.toISOString();
+}
+
 function normalizeResolvedUrls(urls: raw.UrlEntity[] | undefined): normalized.ResolvedUrl[] {
   return (urls ?? []).map((item) => ({
     url: item.url,
@@ -389,7 +412,7 @@ function normalizeUser(rawUser: raw.User): normalized.TweetUser {
 
   return {
     id: rawUser.rest_id ?? rawUser.id ?? '',
-    createdAt: rawUser.core?.created_at,
+    createdAt: normalizeIsoDateTime(rawUser.core?.created_at),
     profile,
     pinnedTweetIds: rawUser.legacy?.pinned_tweet_ids_str ?? [],
     identity,
@@ -539,7 +562,7 @@ function normalizeEditInfo(editControl: raw.EditControl | undefined): normalized
 
   return {
     versionIds: base.edit_tweet_ids,
-    editableUntilMs: base.editable_until_msecs,
+    editableUntilAt: normalizeIsoDateTime(base.editable_until_msecs),
     remainingEdits: base.edits_remaining,
   };
 }
@@ -572,6 +595,7 @@ function normalizeTweetData(
   }
 
   const author = normalizeUser(data.core.user_results.result);
+  const createdAt = normalizeIsoDateTime(data.legacy.created_at);
   const note = normalizeNote(data.note_tweet);
   const quotedTweet = data.quoted_status_result?.result
     ? normalizeParsedTweetResultInternal(data.quoted_status_result.result, stack)
@@ -583,9 +607,13 @@ function normalizeTweetData(
     ? normalizeParsedTweetResultInternal(data.legacy.retweeted_status_result.result, stack)
     : null;
 
+  if (!createdAt) {
+    throw new Error(`Unable to normalize tweet created_at: ${data.rest_id}`);
+  }
+
   return {
     id: data.rest_id,
-    createdAt: data.legacy.created_at,
+    createdAt,
     source: stripHtmlSource(data.source),
     place: normalizePlace(data.legacy.place),
     author,

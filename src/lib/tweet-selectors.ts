@@ -56,10 +56,36 @@ function getBestVideoVariant(media: Pick<DbMediaRecord, 'video'>): string | null
   return stripQuery(mp4Variants[0].url);
 }
 
+function decodeHtmlEntities(text: string): string {
+  return text
+    .replace(/&gt;/g, '>')
+    .replace(/&lt;/g, '<')
+    .replace(/&amp;/g, '&')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, '\'')
+    .replace(/&nbsp;/g, ' ');
+}
+
+function decodeBackslashEscapes(text: string): string {
+  return text
+    .replace(/\\r\\n/g, '\n')
+    .replace(/\\n/g, '\n')
+    .replace(/\\r/g, '\r')
+    .replace(/\\t/g, '\t')
+    .replace(/\\"/g, '"')
+    .replace(/\\'/g, '\'')
+    .replace(/\\\//g, '/')
+    .replace(/\\\\/g, '\\');
+}
+
 export function getTweetDisplayText(tweet: TweetFieldAccess): string {
   return (getTweetNote(tweet)?.text.text ?? getTweetLegacyText(tweet).text)
     .replace(/https:\/\/t\.co\/\S+/g, '')
     .trim();
+}
+
+export function getTweetSummaryText(tweet: TweetFieldAccess): string {
+  return decodeBackslashEscapes(decodeHtmlEntities(getTweetLegacyText(tweet).text));
 }
 
 export function getUserBioText(user: Pick<DbUserRecord, 'profile'>): string {

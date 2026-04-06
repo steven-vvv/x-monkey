@@ -62,6 +62,11 @@ function fail(message: string): never {
   throw new Error(message);
 }
 
+function isIsoDateTime(value: string | undefined | null): boolean {
+  return typeof value === 'string'
+    && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(value);
+}
+
 function isTimelineParsedResponse(parsed: ParsedResponse | TimelineParsedResponse): parsed is TimelineParsedResponse {
   return Array.isArray((parsed as TimelineParsedResponse).tweetIds);
 }
@@ -69,9 +74,20 @@ function isTimelineParsedResponse(parsed: ParsedResponse | TimelineParsedRespons
 function assertTweetShape(tweet: XTweet, caseName: string) {
   if (!tweet.id) fail(`[${caseName}] empty tweet id`);
   if (!tweet.authorId) fail(`[${caseName}] tweet ${tweet.id} missing authorId`);
+  if (!isIsoDateTime(tweet.createdAt)) fail(`[${caseName}] tweet ${tweet.id} createdAt was not normalized to ISO`);
   if (!tweet.conversation.conversationId) fail(`[${caseName}] tweet ${tweet.id} missing conversationId`);
   if (!getTweetNote(tweet)?.text.text && !getTweetLegacyText(tweet).text) {
     fail(`[${caseName}] tweet ${tweet.id} is missing both legacyText and note text`);
+  }
+  if (tweet.edit?.editableUntilAt && !isIsoDateTime(tweet.edit.editableUntilAt)) {
+    fail(`[${caseName}] tweet ${tweet.id} editableUntilAt was not normalized to ISO`);
+  }
+}
+
+function assertUserShape(user: XUser, caseName: string) {
+  if (!user.id) fail(`[${caseName}] empty user id`);
+  if (user.createdAt && !isIsoDateTime(user.createdAt)) {
+    fail(`[${caseName}] user ${user.id} createdAt was not normalized to ISO`);
   }
 }
 
@@ -88,7 +104,7 @@ function createEmptyTextEntities() {
 function buildStoredUser(id: string): XUser {
   return {
     id,
-    createdAt: 'Tue Jan 01 00:00:00 +0000 2030',
+    createdAt: '2030-01-01T00:00:00.000Z',
     profile: {
       displayName: 'User',
       userName: 'user',
@@ -117,7 +133,7 @@ function buildStoredUser(id: string): XUser {
 function buildStoredTweet(id: string, authorId: string, mediaIds: string[] = []): XTweet {
   return {
     id,
-    createdAt: 'Tue Jan 01 00:00:00 +0000 2030',
+    createdAt: '2030-01-01T00:00:00.000Z',
     source: 'Web',
     authorId,
     content: {
@@ -660,6 +676,10 @@ function main() {
 
       for (const tweet of parsed.tweets.values()) {
         assertTweetShape(tweet, `${testCase.name}/${file}`);
+      }
+
+      for (const user of parsed.users.values()) {
+        assertUserShape(user, `${testCase.name}/${file}`);
       }
 
       for (const tweet of parsed.tweets.values()) {

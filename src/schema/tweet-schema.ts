@@ -671,12 +671,12 @@ export type TweetStats = z.infer<typeof TweetStatsSchema>;
  * 编辑信息。
  * 来源汇总:
  * - `versionIds`: `edit_control.edit_tweet_ids`
- * - `editableUntilMs`: `edit_control.editable_until_msecs`
+ * - `editableUntilAt`: `edit_control.editable_until_msecs`
  * - `remainingEdits`: `edit_control.edits_remaining`
  */
 export const TweetEditInfoSchema = strictObject({
   versionIds: z.array(z.string()),
-  editableUntilMs: z.string().optional(),
+  editableUntilAt: z.string().optional(),
   remainingEdits: z.string().optional(),
 });
 

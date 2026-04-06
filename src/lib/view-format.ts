@@ -5,26 +5,36 @@ export interface StatItem {
   value: string;
 }
 
+function getLocalDateParts(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+
+  return {
+    year: date.getFullYear(),
+    month: String(date.getMonth() + 1).padStart(2, '0'),
+    day: String(date.getDate()).padStart(2, '0'),
+    hours: String(date.getHours()).padStart(2, '0'),
+    minutes: String(date.getMinutes()).padStart(2, '0'),
+    seconds: String(date.getSeconds()).padStart(2, '0'),
+  };
+}
+
 export function formatTweetDate(createdAt: string): string {
-  const d = new Date(createdAt);
-  if (Number.isNaN(d.getTime())) return createdAt;
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
+  const parts = getLocalDateParts(createdAt);
+  if (!parts) return createdAt;
+  return `${parts.year}-${parts.month}-${parts.day}`;
+}
+
+export function formatTweetDateTime(createdAt: string): string {
+  const parts = getLocalDateParts(createdAt);
+  if (!parts) return createdAt;
+  return `${parts.year}-${parts.month}-${parts.day} ${parts.hours}:${parts.minutes}`;
 }
 
 export function formatDateTime(value: string): string {
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return value;
-
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  const hours = String(d.getHours()).padStart(2, '0');
-  const minutes = String(d.getMinutes()).padStart(2, '0');
-  const seconds = String(d.getSeconds()).padStart(2, '0');
-  return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+  const parts = getLocalDateParts(value);
+  if (!parts) return value;
+  return `${parts.year}-${parts.month}-${parts.day} ${parts.hours}:${parts.minutes}:${parts.seconds}`;
 }
 
 export function formatCount(value: number): string {
@@ -56,6 +66,17 @@ export function toTweetStats(tweet: Pick<DbTweetRecord, 'stats'>): StatItem[] {
     { label: 'Likes', value: formatOptionalCount(tweet.stats.likes) },
     { label: 'Reposts', value: formatOptionalCount(tweet.stats.reposts) },
     { label: 'Replies', value: formatOptionalCount(tweet.stats.replies) },
+    { label: 'Quotes', value: formatOptionalCount(tweet.stats.quotes) },
+    { label: 'Bookmarks', value: formatOptionalCount(tweet.stats.bookmarks) },
+  ];
+}
+
+export function toTweetSummaryStats(tweet: Pick<DbTweetRecord, 'stats'>): StatItem[] {
+  return [
+    { label: 'Replies', value: formatOptionalCount(tweet.stats.replies) },
+    { label: 'Reposts', value: formatOptionalCount(tweet.stats.reposts) },
+    { label: 'Likes', value: formatOptionalCount(tweet.stats.likes) },
+    { label: 'Views', value: formatOptionalCount(tweet.stats.views) },
     { label: 'Quotes', value: formatOptionalCount(tweet.stats.quotes) },
     { label: 'Bookmarks', value: formatOptionalCount(tweet.stats.bookmarks) },
   ];

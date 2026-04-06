@@ -10,9 +10,9 @@ import { GM_openInTab } from '$';
 import { getTweetOpenUrl, getUserOpenUrl } from '../lib/tweet-selectors';
 import TweetDetailView from '../components/TweetDetailView.vue';
 import UserDetailCard from '../components/UserDetailCard.vue';
-import TimelineTweetCard from '../components/TimelineTweetCard.vue';
+import TweetSummaryCard from '../components/TweetSummaryCard.vue';
 
-interface TimelineCardItem {
+interface TweetSummaryCardItem {
   tweet: DbTweet;
   author: DbUserRecord | undefined;
   media: DbMediaRecord[];
@@ -43,7 +43,7 @@ function getRouteTimelineContext(value: FeatureRoute): FeatureTimelineContext | 
   return null;
 }
 
-function buildTimelineCardItems(source: FeatureTimelineSource, username?: string | null): TimelineCardItem[] {
+function buildTimelineCardItems(source: FeatureTimelineSource, username?: string | null): TweetSummaryCardItem[] {
   const operationName = getFeatureTimelineOperation(source);
   const tweetIds = getTimelineTweetIdsByAlias(operationName, username ?? null);
 
@@ -197,7 +197,7 @@ const focalReplies = computed(() => {
 
     <template v-else-if="route.page === 'timeline'">
       <div v-if="timelineItems.length === 0" class="xd-empty">{{ getTimelineWaitingText(route.source) }}</div>
-      <TimelineTweetCard
+      <TweetSummaryCard
         v-for="item in timelineItems"
         :key="item.tweet.id"
         :tweet="item.tweet"
