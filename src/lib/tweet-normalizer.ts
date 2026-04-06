@@ -319,6 +319,8 @@ function normalizeVideo(videoInfo: raw.VideoInfo | undefined): normalized.TweetV
 
 function normalizeUser(rawUser: raw.User): normalized.TweetUser {
   const profile: normalized.TweetUserProfile = {
+    displayName: rawUser.core?.name ?? '',
+    userName: rawUser.core?.screen_name ?? '',
     avatarUrl: rawUser.avatar?.image_url,
     usesDefaultAvatar: rawUser.legacy?.default_profile_image,
     avatarShape: rawUser.profile_image_shape,
@@ -331,7 +333,6 @@ function normalizeUser(rawUser: raw.User): normalized.TweetUser {
         )
       : undefined,
     profileLinks: normalizeResolvedUrls(rawUser.legacy?.entities?.url?.urls),
-    isPossiblySensitive: rawUser.legacy?.possibly_sensitive,
   };
 
   const verification = toOptionalObject({
@@ -356,6 +357,7 @@ function normalizeUser(rawUser: raw.User): normalized.TweetUser {
     accountLabel,
     parodyLabel: rawUser.parody_commentary_fan_label,
     hasCompletedNewAccountReview: rawUser.has_graduated_access,
+    isPossiblySensitive: rawUser.legacy?.possibly_sensitive,
   });
 
   const professional = rawUser.professional
@@ -387,8 +389,6 @@ function normalizeUser(rawUser: raw.User): normalized.TweetUser {
 
   return {
     id: rawUser.rest_id ?? rawUser.id ?? '',
-    displayName: rawUser.core?.name ?? '',
-    userName: rawUser.core?.screen_name ?? '',
     createdAt: rawUser.core?.created_at,
     profile,
     pinnedTweetIds: rawUser.legacy?.pinned_tweet_ids_str ?? [],

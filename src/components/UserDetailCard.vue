@@ -34,8 +34,8 @@ const labels = computed(() => [
       loading="lazy"
     />
     <div class="xd-user-card-main">
-      <div class="xd-author-name">{{ user.displayName }}</div>
-      <div class="xd-author-handle">@{{ user.userName }}</div>
+      <div class="xd-author-name">{{ user.profile.displayName }}</div>
+      <div class="xd-author-handle">@{{ user.profile.userName }}</div>
       <div v-if="labels.length > 0" class="xd-user-labels">
         <span v-for="label in labels" :key="label" class="xd-user-label">{{ label }}</span>
       </div>

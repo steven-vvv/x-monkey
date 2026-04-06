@@ -240,12 +240,14 @@ export type TweetUserAccountLabel = z.infer<typeof TweetUserAccountLabelSchema>;
  * - `accountLabel`: `affiliates_highlighted_label.label`
  * - `parodyLabel`: `parody_commentary_fan_label`
  * - `hasCompletedNewAccountReview`: `has_graduated_access`
+ * - `isPossiblySensitive`: `legacy.possibly_sensitive`
  */
 export const TweetUserIdentitySchema = strictObject({
   verification: TweetUserVerificationSchema.optional(),
   accountLabel: TweetUserAccountLabelSchema.optional(),
   parodyLabel: z.string().optional(),
   hasCompletedNewAccountReview: z.boolean().optional(),
+  isPossiblySensitive: z.boolean().optional(),
 });
 
 export type TweetUserIdentity = z.infer<typeof TweetUserIdentitySchema>;
@@ -253,6 +255,8 @@ export type TweetUserIdentity = z.infer<typeof TweetUserIdentitySchema>;
 /**
  * 用户资料信息。
  * 来源汇总:
+ * - `displayName`: `core.name`
+ * - `userName`: `core.screen_name`
  * - `avatarUrl`: `avatar.image_url`
  * - `usesDefaultAvatar`: `legacy.default_profile_image`
  * - `avatarShape`: `profile_image_shape`
@@ -260,9 +264,10 @@ export type TweetUserIdentity = z.infer<typeof TweetUserIdentitySchema>;
  * - `bio`: `legacy.description` + `legacy.entities.description.urls`
  * - `profileLinks`: `legacy.entities.url.urls`
  * - `location`: `location.location`
- * - `isPossiblySensitive`: `legacy.possibly_sensitive`
  */
 export const TweetUserProfileSchema = strictObject({
+  displayName: z.string(),
+  userName: z.string(),
   avatarUrl: z.string().optional(),
   usesDefaultAvatar: z.boolean().optional(),
   avatarShape: z.string().optional(),
@@ -270,7 +275,6 @@ export const TweetUserProfileSchema = strictObject({
   location: z.string().optional(),
   bio: AnnotatedTextSchema.optional(),
   profileLinks: z.array(ResolvedUrlSchema),
-  isPossiblySensitive: z.boolean().optional(),
 });
 
 export type TweetUserProfile = z.infer<typeof TweetUserProfileSchema>;
@@ -281,20 +285,17 @@ export type TweetUserProfile = z.infer<typeof TweetUserProfileSchema>;
  *
  * 来源汇总:
  * - `id`: `rest_id`
- * - `displayName`: `core.name`
- * - `userName`: `core.screen_name`
  * - `createdAt`: `core.created_at`
  * - `pinnedTweetIds`: `legacy.pinned_tweet_ids_str`
- * - `profile`: `avatar` / `legacy` / `location` / `profile_image_shape`
- * - `identity`: `verification` / `is_blue_verified` / `affiliates_highlighted_label` / `parody_commentary_fan_label` / `has_graduated_access`
+ * - `profile`: `core` / `avatar` / `legacy` / `location` / `profile_image_shape`
+ * - `identity`: `verification` / `is_blue_verified` / `affiliates_highlighted_label`
+ *   / `parody_commentary_fan_label` / `has_graduated_access` / `legacy.possibly_sensitive`
  * - `professional`: `professional`
  * - `stats`: `legacy.*_count`
  * - `features`: `dm_permissions` / `media_permissions` / `privacy` / `super_follow_eligible`
  */
 export const TweetUserSchema = strictObject({
   id: z.string(),
-  displayName: z.string(),
-  userName: z.string(),
   createdAt: z.string().optional(),
   profile: TweetUserProfileSchema,
   pinnedTweetIds: z.array(z.string()),

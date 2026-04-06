@@ -32,16 +32,16 @@ export function getUserBioText(user: Pick<DbUserRecord, 'profile'>): string {
   return user.profile.bio?.text ?? '';
 }
 
-export function getUserOpenUrl(user: Pick<DbUserRecord, 'userName'>): string {
-  return `https://x.com/${user.userName}`;
+export function getUserOpenUrl(user: Pick<DbUserRecord, 'profile'>): string {
+  return `https://x.com/${user.profile.userName}`;
 }
 
 export function getTweetOpenUrl(
   tweet: Pick<DbTweetRecord, 'id'>,
-  author: Pick<DbUserRecord, 'userName'> | undefined,
+  author: Pick<DbUserRecord, 'profile'> | undefined,
 ): string | null {
-  if (!author?.userName) return null;
-  return `https://x.com/${author.userName}/status/${tweet.id}`;
+  if (!author?.profile.userName) return null;
+  return `https://x.com/${author.profile.userName}/status/${tweet.id}`;
 }
 
 export function getMediaThumbUrl(media: Pick<DbMediaRecord, 'mediaUrl'>): string {

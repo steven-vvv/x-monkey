@@ -66,8 +66,8 @@ const policyLines = computed(() => {
 
       <div class="xd-detail-head-main">
         <div class="xd-detail-author xd-list-item--clickable" @click="emit('open-user', tweet.authorId)">
-          <span class="xd-author-name">{{ author?.displayName ?? '?' }}</span>
-          <span class="xd-author-handle">@{{ author?.userName ?? '?' }}</span>
+          <span class="xd-author-name">{{ author?.profile.displayName ?? '?' }}</span>
+          <span class="xd-author-handle">@{{ author?.profile.userName ?? '?' }}</span>
         </div>
 
         <div class="xd-detail-meta">
@@ -91,7 +91,7 @@ const policyLines = computed(() => {
       <div class="xd-detail-ref-label">Repost</div>
       <div class="xd-detail-ref-text">
         <template v-if="repostTweet">
-          {{ repostAuthor?.displayName ?? '?' }} · {{ getTweetDisplayText(repostTweet) || '(no text)' }}
+          {{ repostAuthor?.profile.displayName ?? '?' }} · {{ getTweetDisplayText(repostTweet) || '(no text)' }}
         </template>
         <template v-else>
           Tweet ID {{ tweet.repostTweetId }}
@@ -107,7 +107,7 @@ const policyLines = computed(() => {
       <div class="xd-detail-ref-label">Quote</div>
       <div class="xd-detail-ref-text">
         <template v-if="quoteTweet">
-          {{ quoteAuthor?.displayName ?? '?' }} · {{ getTweetDisplayText(quoteTweet) || '(no text)' }}
+          {{ quoteAuthor?.profile.displayName ?? '?' }} · {{ getTweetDisplayText(quoteTweet) || '(no text)' }}
         </template>
         <template v-else>
           Tweet ID {{ tweet.quoteTweetId }}

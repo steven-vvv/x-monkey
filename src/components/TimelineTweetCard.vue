@@ -37,8 +37,8 @@ const flags = computed(() => [
 
     <div class="xd-timeline-card-main">
       <div class="xd-list-item-title">
-        <span class="xd-author-name">{{ author?.displayName ?? '?' }}</span>
-        <span class="xd-author-handle">@{{ author?.userName ?? '?' }}</span>
+        <span class="xd-author-name">{{ author?.profile.displayName ?? '?' }}</span>
+        <span class="xd-author-handle">@{{ author?.profile.userName ?? '?' }}</span>
         <span class="xd-post-date">{{ dateText }}</span>
       </div>
 

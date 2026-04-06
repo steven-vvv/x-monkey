@@ -6,8 +6,6 @@ import type * as normalized from '../schema/tweet-schema';
  */
 export interface DbUserRecord {
   id: string;
-  displayName: string;
-  userName: string;
   createdAt?: string;
   profile: normalized.TweetUserProfile;
   pinnedTweetIds: string[];

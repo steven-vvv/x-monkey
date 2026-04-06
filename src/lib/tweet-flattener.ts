@@ -22,8 +22,6 @@ function upsertEntity<T extends { id: string }>(map: Map<string, T>, entity: T):
 function toDbUser(user: normalized.TweetUser): DbUserRecord {
   return {
     id: user.id,
-    displayName: user.displayName,
-    userName: user.userName,
     createdAt: user.createdAt,
     profile: user.profile,
     pinnedTweetIds: [...user.pinnedTweetIds],

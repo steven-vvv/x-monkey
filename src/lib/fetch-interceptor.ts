@@ -130,7 +130,7 @@ function resolveTopLevelAuthorAliases(parsed: TimelineParsedResponse): string[] 
 
   const authorId = [...authorIds][0];
   const author = parsed.users.get(authorId);
-  return [authorId, author?.userName ?? ''].filter(Boolean);
+  return [authorId, author?.profile.userName ?? ''].filter(Boolean);
 }
 
 function resolveTimelineAliases(request: GraphqlRequestContext, parsed: TimelineParsedResponse): string[] {

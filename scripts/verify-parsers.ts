@@ -81,10 +81,10 @@ function createEmptyTextEntities() {
 function buildStoredUser(id: string): XUser {
   return {
     id,
-    displayName: 'User',
-    userName: 'user',
     createdAt: 'Tue Jan 01 00:00:00 +0000 2030',
     profile: {
+      displayName: 'User',
+      userName: 'user',
       avatarUrl: '',
       avatarShape: 'Circle',
       profileLinks: [],
@@ -100,6 +100,9 @@ function buildStoredUser(id: string): XUser {
     },
     features: {
       isProtected: false,
+    },
+    identity: {
+      isPossiblySensitive: false,
     },
   };
 }
