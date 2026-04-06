@@ -221,6 +221,7 @@ function buildTweet(id: string, userId: string, overrides: Record<string, any> =
       extended_entities: media.length > 0 ? { media } : undefined,
     },
     source: overrides.source ?? '<a href="https://x.com" rel="nofollow">Web</a>',
+    unmention_data: overrides.unmentionData ?? {},
     views: overrides.views ?? { count: '12' },
   };
 }
@@ -370,6 +371,42 @@ function assertInlineParserScenarios() {
   if (mergedTweet.mediaIds.join(',') !== 'm-merge') fail('[inline] duplicate merge lost media ids');
   if (mergedTweet.legacyText.entities.media[0]?.mediaId !== 'm-merge') {
     fail('[inline] duplicate merge lost media entity refs');
+  }
+
+  const unmentionFixture = {
+    data: {
+      home: {
+        home_timeline_urt: {
+          instructions: [
+            {
+              type: 'TimelineAddEntries',
+              entries: [
+                {
+                  content: {
+                    itemContent: {
+                      tweet_results: {
+                        result: buildTweet('t-unmention', 'u-unmention', {
+                          unmentionData: {
+                            hydrate: {
+                              unmentioned_users_results: [{ rest_id: 'u-hidden' }],
+                            },
+                          },
+                        }),
+                      },
+                    },
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      },
+    },
+  };
+
+  const unmentionParsed = parseHomeTimelineResponse(unmentionFixture);
+  if (!unmentionParsed.tweets.has('t-unmention')) {
+    fail('[inline] unmention hydrate traversal failed');
   }
 
   const emptyParsed = parseHomeTimelineResponse({});

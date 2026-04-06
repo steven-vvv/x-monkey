@@ -653,8 +653,22 @@ export const ContentDisclosureSchema = strictObject({
 });
 export type ContentDisclosure = z.infer<typeof ContentDisclosureSchema>;
 
-/** 仅用于容纳当前抓包中基本为空的 unmention_data。 */
-export const UnmentionDataSchema = strictObject({});
+/** unmention hydrate 里的轻量用户结果。 */
+export const UnmentionedUserResultSchema = strictObject({
+  rest_id: z.string().optional(),
+});
+export type UnmentionedUserResult = z.infer<typeof UnmentionedUserResultSchema>;
+
+/** unmention_data.hydrate。 */
+export const UnmentionHydrateSchema = strictObject({
+  unmentioned_users_results: z.array(UnmentionedUserResultSchema).optional(),
+});
+export type UnmentionHydrate = z.infer<typeof UnmentionHydrateSchema>;
+
+/** 当前抓包中的 unmention_data。 */
+export const UnmentionDataSchema = strictObject({
+  hydrate: UnmentionHydrateSchema.optional(),
+});
 export type UnmentionData = z.infer<typeof UnmentionDataSchema>;
 
 /** 谁可以回复等限制动作。 */
