@@ -271,6 +271,9 @@
 .xd-tweet-summary-card {
   display: grid;
   grid-template-columns: 36px minmax(0, 1fr);
+  grid-template-areas:
+    "avatar main"
+    "stats stats";
   gap: 8px;
   align-items: start;
   padding: 6px 8px;
@@ -282,6 +285,9 @@
 
 .xd-tweet-summary-card--no-avatar {
   grid-template-columns: minmax(0, 1fr);
+  grid-template-areas:
+    "main"
+    "stats";
 }
 
 .xd-tweet-summary-card:last-child {
@@ -289,6 +295,7 @@
 }
 
 .xd-tweet-summary-card-avatar {
+  grid-area: avatar;
   width: 36px;
   height: 36px;
   border-radius: 50%;
@@ -298,6 +305,7 @@
 }
 
 .xd-tweet-summary-card-main {
+  grid-area: main;
   min-width: 0;
   display: flex;
   flex-direction: column;
@@ -305,14 +313,14 @@
 }
 
 .xd-tweet-summary-card-head {
-  display: flex;
-  align-items: baseline;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 8px;
+  align-items: baseline;
   min-width: 0;
 }
 
 .xd-tweet-summary-card-author-line {
-  flex: 1;
   min-width: 0;
   display: flex;
   align-items: baseline;
@@ -321,21 +329,22 @@
 
 .xd-tweet-summary-card-author-name,
 .xd-tweet-summary-card-author-handle {
+  flex: 0 1 auto;
   min-width: 0;
+  max-width: min(100%, 18ch);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
 .xd-tweet-summary-card-author-name {
-  flex: 1 1 52%;
   color: var(--xd-text-primary);
   font-size: 11px;
   font-weight: 600;
 }
 
 .xd-tweet-summary-card-author-handle {
-  flex: 1 1 36%;
+  max-width: min(100%, 16ch);
   color: var(--xd-text-muted);
   font-size: 11px;
 }
@@ -361,9 +370,9 @@
 
 .xd-tweet-summary-card-media {
   display: grid;
-  grid-template-columns: repeat(var(--xd-summary-media-columns, 2), minmax(0, 1fr));
-  gap: 4px;
-  height: var(--xd-summary-media-height, 60px);
+  grid-template-columns: repeat(auto-fill, minmax(min(var(--xd-summary-media-min-width, 125px), calc((100% - var(--xd-summary-media-gap, 4px)) / 2)), 1fr));
+  gap: var(--xd-summary-media-gap, 4px);
+  height: var(--xd-summary-media-height, 100px);
 }
 
 .xd-tweet-summary-card-media-cell {
@@ -374,10 +383,6 @@
   border-radius: var(--xd-radius);
   border: 1px solid var(--xd-border);
   background: var(--xd-bg-primary);
-}
-
-.xd-tweet-summary-card-media-cell--empty {
-  opacity: 0.55;
 }
 
 .xd-tweet-summary-card-media-cell img {
@@ -405,10 +410,12 @@
 }
 
 .xd-tweet-summary-card-stats {
+  grid-area: stats;
   display: grid;
   grid-template-columns: repeat(var(--xd-summary-stat-columns, 1), minmax(0, 1fr));
-  gap: 6px;
+  gap: 4px;
   min-width: 0;
+  padding-top: 2px;
 }
 
 .xd-tweet-summary-card-stat {
@@ -416,10 +423,10 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 4px;
+  gap: 3px;
   color: var(--xd-text-muted);
   font-size: 9px;
-  line-height: 1.4;
+  line-height: 1.25;
   white-space: nowrap;
 }
 

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, onUpdated, ref } from 'vue';
 import type { DbMediaRecord, DbTweetRecord, DbUserRecord } from '../lib/types';
 import { avatarFull, formatTweetDateTime, toTweetSummaryStats } from '../lib/view-format';
 import {
@@ -7,14 +7,13 @@ import {
   getTweetSummaryText,
 } from '../lib/tweet-selectors';
 
-const SUMMARY_MEDIA_MIN_WIDTH = 56;
-const SUMMARY_MEDIA_MAX_WIDTH = 88;
+const SUMMARY_MEDIA_MIN_WIDTH = 125;
 const SUMMARY_MEDIA_GAP = 4;
 const SUMMARY_MEDIA_MIN_COLUMNS = 2;
-const SUMMARY_MEDIA_HEIGHT = 60;
+const SUMMARY_MEDIA_HEIGHT = 100;
 
-const SUMMARY_STAT_MIN_WIDTH = 68;
-const SUMMARY_STAT_GAP = 6;
+const SUMMARY_STAT_MIN_WIDTH = 56;
+const SUMMARY_STAT_GAP = 4;
 
 const props = defineProps<{
   tweet: DbTweetRecord;
@@ -26,27 +25,35 @@ const emit = defineEmits<{
   (e: 'select', tweetId: string): void;
 }>();
 
-const mainElement = ref<HTMLElement | null>(null);
-const mainWidth = ref(0);
+const cardElement = ref<HTMLElement | null>(null);
+const mediaElement = ref<HTMLElement | null>(null);
+const cardWidth = ref(0);
+const mediaWidth = ref(0);
 let resizeObserver: ResizeObserver | null = null;
 
-function updateMainWidth() {
-  mainWidth.value = mainElement.value?.clientWidth ?? 0;
+function updateWidths() {
+  cardWidth.value = cardElement.value?.clientWidth ?? 0;
+  mediaWidth.value = mediaElement.value?.clientWidth ?? 0;
 }
 
-function resolveMediaColumns(width: number): number {
-  if (width <= 0) return SUMMARY_MEDIA_MIN_COLUMNS;
+function observeResizableElements() {
+  if (!resizeObserver) return;
 
-  const maxColumnsByMinWidth = Math.max(
+  if (cardElement.value) {
+    resizeObserver.observe(cardElement.value);
+  }
+
+  if (mediaElement.value) {
+    resizeObserver.observe(mediaElement.value);
+  }
+}
+
+function resolveVisibleMediaCount(width: number): number {
+  if (width <= 0) return SUMMARY_MEDIA_MIN_COLUMNS;
+  return Math.max(
     SUMMARY_MEDIA_MIN_COLUMNS,
     Math.floor((width + SUMMARY_MEDIA_GAP) / (SUMMARY_MEDIA_MIN_WIDTH + SUMMARY_MEDIA_GAP)),
   );
-  const minColumnsByMaxWidth = Math.max(
-    SUMMARY_MEDIA_MIN_COLUMNS,
-    Math.ceil((width + SUMMARY_MEDIA_GAP) / (SUMMARY_MEDIA_MAX_WIDTH + SUMMARY_MEDIA_GAP)),
-  );
-
-  return Math.min(maxColumnsByMinWidth, minColumnsByMaxWidth);
 }
 
 function resolveVisibleStatCount(width: number, total: number): number {
@@ -55,32 +62,37 @@ function resolveVisibleStatCount(width: number, total: number): number {
 }
 
 onMounted(() => {
-  updateMainWidth();
-  if (!mainElement.value || typeof ResizeObserver === 'undefined') return;
+  updateWidths();
+  if (typeof ResizeObserver === 'undefined') return;
 
   resizeObserver = new ResizeObserver(() => {
-    updateMainWidth();
+    updateWidths();
   });
-  resizeObserver.observe(mainElement.value);
+  observeResizableElements();
 });
 
 onBeforeUnmount(() => {
   resizeObserver?.disconnect();
 });
 
+onUpdated(() => {
+  updateWidths();
+  observeResizableElements();
+});
+
 const previewText = computed(() => getTweetSummaryText(props.tweet));
 const dateText = computed(() => formatTweetDateTime(props.tweet.createdAt));
 const hasAvatar = computed(() => Boolean(props.author?.profile.avatarUrl));
-const mediaColumns = computed(() => resolveMediaColumns(mainWidth.value));
-const visibleMedia = computed(() => props.media.slice(0, mediaColumns.value));
+const visibleMediaCount = computed(() => resolveVisibleMediaCount(mediaWidth.value));
+const visibleMedia = computed(() => props.media.slice(0, visibleMediaCount.value));
 const extraCount = computed(() => Math.max(0, props.media.length - visibleMedia.value.length));
-const emptyMediaCount = computed(() => Math.max(0, mediaColumns.value - visibleMedia.value.length));
 const mediaGridStyle = computed<Record<string, string>>(() => ({
-  '--xd-summary-media-columns': String(mediaColumns.value),
+  '--xd-summary-media-min-width': `${SUMMARY_MEDIA_MIN_WIDTH}px`,
+  '--xd-summary-media-gap': `${SUMMARY_MEDIA_GAP}px`,
   '--xd-summary-media-height': `${SUMMARY_MEDIA_HEIGHT}px`,
 }));
 const summaryStats = computed(() => toTweetSummaryStats(props.tweet));
-const visibleStatCount = computed(() => resolveVisibleStatCount(mainWidth.value, summaryStats.value.length));
+const visibleStatCount = computed(() => resolveVisibleStatCount(cardWidth.value, summaryStats.value.length));
 const visibleStats = computed(() => summaryStats.value.slice(0, visibleStatCount.value));
 const statsGridStyle = computed<Record<string, string>>(() => ({
   '--xd-summary-stat-columns': String(visibleStats.value.length),
@@ -89,6 +101,7 @@ const statsGridStyle = computed<Record<string, string>>(() => ({
 
 <template>
   <div
+    ref="cardElement"
     class="xd-tweet-summary-card xd-list-item--clickable"
     :class="{ 'xd-tweet-summary-card--no-avatar': !hasAvatar }"
     @click="emit('select', tweet.id)"
@@ -100,7 +113,7 @@ const statsGridStyle = computed<Record<string, string>>(() => ({
       loading="lazy"
     />
 
-    <div ref="mainElement" class="xd-tweet-summary-card-main">
+    <div class="xd-tweet-summary-card-main">
       <div class="xd-tweet-summary-card-head">
         <div class="xd-tweet-summary-card-author-line">
           <span class="xd-tweet-summary-card-author-name">{{ author?.profile.displayName ?? '?' }}</span>
@@ -111,7 +124,12 @@ const statsGridStyle = computed<Record<string, string>>(() => ({
 
       <div v-if="previewText" class="xd-tweet-summary-card-text">{{ previewText }}</div>
 
-      <div v-if="props.media.length > 0" class="xd-tweet-summary-card-media" :style="mediaGridStyle">
+      <div
+        v-if="props.media.length > 0"
+        ref="mediaElement"
+        class="xd-tweet-summary-card-media"
+        :style="mediaGridStyle"
+      >
         <div
           v-for="(item, index) in visibleMedia"
           :key="item.id"
@@ -121,23 +139,17 @@ const statsGridStyle = computed<Record<string, string>>(() => ({
           <span v-if="item.type !== 'photo'" class="xd-tweet-summary-card-media-badge">{{ item.type === 'video' ? 'VID' : 'GIF' }}</span>
           <span v-if="index === visibleMedia.length - 1 && extraCount > 0" class="xd-tweet-summary-card-media-extra">+{{ extraCount }}</span>
         </div>
-
-        <div
-          v-for="index in emptyMediaCount"
-          :key="`empty-${index}`"
-          class="xd-tweet-summary-card-media-cell xd-tweet-summary-card-media-cell--empty"
-        ></div>
       </div>
+    </div>
 
-      <div class="xd-tweet-summary-card-stats" :style="statsGridStyle">
-        <div
-          v-for="stat in visibleStats"
-          :key="stat.label"
-          class="xd-tweet-summary-card-stat"
-        >
-          <span class="xd-tweet-summary-card-stat-label">{{ stat.label }}</span>
-          <span class="xd-tweet-summary-card-stat-value">{{ stat.value }}</span>
-        </div>
+    <div class="xd-tweet-summary-card-stats" :style="statsGridStyle">
+      <div
+        v-for="stat in visibleStats"
+        :key="stat.label"
+        class="xd-tweet-summary-card-stat"
+      >
+        <span class="xd-tweet-summary-card-stat-label">{{ stat.label }}</span>
+        <span class="xd-tweet-summary-card-stat-value">{{ stat.value }}</span>
       </div>
     </div>
   </div>
