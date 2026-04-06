@@ -100,17 +100,6 @@ export const MentionEntitySchema = strictObject({
 export type MentionEntity = z.infer<typeof MentionEntitySchema>;
 
 /**
- * 轻量用户引用。
- */
-export const TweetUserRefSchema = strictObject({
-  id: z.string(),
-  displayName: z.string().optional(),
-  userName: z.string().optional(),
-});
-
-export type TweetUserRef = z.infer<typeof TweetUserRefSchema>;
-
-/**
  * 一段文本中包含的可解析实体集合。
  */
 export const TextEntitiesSchema = strictObject({
@@ -411,6 +400,19 @@ export const TweetMediaGeometrySchema = strictObject({
 export type TweetMediaGeometry = z.infer<typeof TweetMediaGeometrySchema>;
 
 /**
+ * 文本媒体引用中的来源信息。
+ * 来源汇总:
+ * - `tweetId`: `extended_entities.media[].source_status_id_str`
+ * - `userId`: `extended_entities.media[].source_user_id_str`
+ */
+export const MediaEntityOriginSchema = strictObject({
+  tweetId: z.string().optional(),
+  userId: z.string().optional(),
+});
+
+export type MediaEntityOrigin = z.infer<typeof MediaEntityOriginSchema>;
+
+/**
  * 媒体溯源信息。
  * 来源汇总:
  * - `tweetId`: `extended_entities.media[].source_status_id_str`
@@ -420,7 +422,7 @@ export type TweetMediaGeometry = z.infer<typeof TweetMediaGeometrySchema>;
 export const TweetMediaOriginSchema = strictObject({
   tweetId: z.string().optional(),
   userId: z.string().optional(),
-  user: TweetUserRefSchema.optional(),
+  user: TweetUserSchema.optional(),
 });
 
 export type TweetMediaOrigin = z.infer<typeof TweetMediaOriginSchema>;
@@ -434,7 +436,6 @@ export type TweetMediaOrigin = z.infer<typeof TweetMediaOriginSchema>;
  * - `expandedUrl`: `*.entities.media[].expanded_url`
  * - `url`: `*.entities.media[].url`
  * - `origin`: `*.entities.media[].source_status_id_str` / `*.entities.media[].source_user_id_str`
- *   / `*.entities.media[].additional_media_info.source_user.user_results.result`
  */
 export const MediaEntitySchema = strictObject({
   mediaId: z.string(),
@@ -442,7 +443,7 @@ export const MediaEntitySchema = strictObject({
   displayText: z.string().optional(),
   expandedUrl: z.string().optional(),
   url: z.string().optional(),
-  origin: TweetMediaOriginSchema.optional(),
+  origin: MediaEntityOriginSchema.optional(),
 });
 
 export type MediaEntity = z.infer<typeof MediaEntitySchema>;
@@ -472,6 +473,8 @@ export type TweetMediaDetails = z.infer<typeof TweetMediaDetailsSchema>;
  * - `variants`: `legacy.extended_entities.media[].sizes`
  * - `taggedUsers`: `legacy.extended_entities.media[].features.all.tags`
  * - `faces`: `legacy.extended_entities.media[].features.large|medium|small|thumb|orig.faces`
+ * - `origin`: `legacy.extended_entities.media[].source_status_id_str` / `legacy.extended_entities.media[].source_user_id_str`
+ *   / `legacy.extended_entities.media[].additional_media_info.source_user.user_results.result`
  * - `details`: `legacy.extended_entities.media[].additional_media_info`（不含 `source_user`）
  * - `availability`: `legacy.extended_entities.media[].ext_media_availability.status`
  * - `video`: `legacy.extended_entities.media[].video_info`
@@ -486,6 +489,7 @@ export const TweetMediaSchema = strictObject({
   variants: MediaVariantsSchema.optional(),
   taggedUsers: z.array(TweetMediaTagSchema),
   faces: TweetMediaFacesSchema.optional(),
+  origin: TweetMediaOriginSchema.optional(),
   details: TweetMediaDetailsSchema.optional(),
   availability: z.string().optional(),
   video: TweetVideoSchema.optional(),

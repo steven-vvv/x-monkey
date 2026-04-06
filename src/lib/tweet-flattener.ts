@@ -45,6 +45,8 @@ function toDbMedia(media: normalized.TweetMedia): DbMediaRecord {
     variants: media.variants,
     taggedUsers: [...media.taggedUsers],
     faces: media.faces,
+    originTweetId: media.origin?.tweetId,
+    originUserId: media.origin?.user?.id ?? media.origin?.userId,
     details: media.details,
     availability: media.availability,
     video: media.video,
@@ -88,6 +90,9 @@ export function flattenTweet(rootTweet: normalized.Tweet): ParsedResponse {
 
   function visitMedia(media: normalized.TweetMedia): void {
     upsertEntity(parsed.media, toDbMedia(media));
+    if (media.origin?.user && !seenUsers.has(media.origin.user.id)) {
+      visitUser(media.origin.user);
+    }
   }
 
   function visitTweet(tweet: normalized.Tweet): void {

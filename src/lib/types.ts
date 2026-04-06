@@ -31,6 +31,8 @@ export interface DbMediaRecord {
   variants?: normalized.MediaVariants;
   taggedUsers: normalized.TweetMediaTag[];
   faces?: normalized.TweetMediaFaces;
+  originTweetId?: string;
+  originUserId?: string;
   details?: normalized.TweetMediaDetails;
   availability?: string;
   video?: normalized.TweetVideo;

@@ -97,15 +97,16 @@ function normalizeTweetMentions(mentions: raw.UserMention[] | undefined): normal
     .filter(Boolean) as normalized.MentionEntity[];
 }
 
+function normalizeMediaEntityOrigin(rawMedia: raw.Media): normalized.MediaEntityOrigin | undefined {
+  return toOptionalObject({
+    tweetId: rawMedia.source_status_id_str,
+    userId: rawMedia.source_user_id_str,
+  });
+}
+
 function normalizeMediaOrigin(rawMedia: raw.Media): normalized.TweetMediaOrigin | undefined {
   const originUserRaw = rawMedia.additional_media_info?.source_user?.user_results?.result;
-  const originUser = originUserRaw
-    ? {
-        id: originUserRaw.rest_id ?? originUserRaw.id ?? '',
-        displayName: originUserRaw.core?.name,
-        userName: originUserRaw.core?.screen_name,
-      }
-    : undefined;
+  const originUser = originUserRaw ? normalizeUser(originUserRaw) : undefined;
 
   return toOptionalObject({
     tweetId: rawMedia.source_status_id_str,
@@ -124,7 +125,7 @@ function normalizeTweetMediaEntities(
     displayText: item.display_url,
     expandedUrl: item.expanded_url,
     url: item.url,
-    origin: normalizeMediaOrigin(item),
+    origin: normalizeMediaEntityOrigin(item),
   }));
 }
 
@@ -414,6 +415,7 @@ function normalizeMedia(rawMedia: raw.Media): normalized.TweetMedia {
       kind: tag.type,
     })),
     faces: normalizeMediaFaces(rawMedia.features),
+    origin: normalizeMediaOrigin(rawMedia),
     details: toOptionalObject({
       title: rawMedia.additional_media_info?.title,
       description: rawMedia.additional_media_info?.description,

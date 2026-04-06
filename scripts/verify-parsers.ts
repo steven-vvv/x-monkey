@@ -178,7 +178,7 @@ function buildUser(id: string): Record<string, any> {
   };
 }
 
-function buildMedia(id: string): Record<string, any> {
+function buildMedia(id: string, overrides: Record<string, any> = {}): Record<string, any> {
   return {
     id_str: id,
     media_key: `3_${id}`,
@@ -188,6 +188,7 @@ function buildMedia(id: string): Record<string, any> {
       height: 800,
     },
     type: 'photo',
+    ...overrides,
   };
 }
 
@@ -371,6 +372,65 @@ function assertInlineParserScenarios() {
   if (mergedTweet.mediaIds.join(',') !== 'm-merge') fail('[inline] duplicate merge lost media ids');
   if (mergedTweet.legacyText.entities.media[0]?.mediaId !== 'm-merge') {
     fail('[inline] duplicate merge lost media entity refs');
+  }
+
+  const originFixture = {
+    data: {
+      home: {
+        home_timeline_urt: {
+          instructions: [
+            {
+              type: 'TimelineAddEntries',
+              entries: [
+                {
+                  content: {
+                    itemContent: {
+                      tweet_results: {
+                        result: buildTweet('t-origin', 'u-origin', {
+                          media: [
+                            buildMedia('m-origin', {
+                              source_status_id_str: 't-source',
+                              source_user_id_str: 'u-source',
+                              additional_media_info: {
+                                source_user: {
+                                  user_results: {
+                                    result: buildUser('u-source'),
+                                  },
+                                },
+                              },
+                            }),
+                          ],
+                        }),
+                      },
+                    },
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      },
+    },
+  };
+
+  const originParsed = parseHomeTimelineResponse(originFixture);
+  const originTweet = originParsed.tweets.get('t-origin');
+  const originMedia = originParsed.media.get('m-origin');
+  if (!originTweet || !originMedia) fail('[inline] origin fixture parse failed');
+  if ('user' in (originTweet.legacyText.entities.media[0]?.origin ?? {})) {
+    fail('[inline] media entity origin should not embed full user');
+  }
+  if (originTweet.legacyText.entities.media[0]?.origin?.tweetId !== 't-source') {
+    fail('[inline] media entity origin lost source tweet id');
+  }
+  if (originTweet.legacyText.entities.media[0]?.origin?.userId !== 'u-source') {
+    fail('[inline] media entity origin lost source user id');
+  }
+  if (originMedia.originTweetId !== 't-source' || originMedia.originUserId !== 'u-source') {
+    fail('[inline] media object origin lost source ids');
+  }
+  if (!originParsed.users.has('u-source')) {
+    fail('[inline] media object origin user was not collected');
   }
 
   const unmentionFixture = {
