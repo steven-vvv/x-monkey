@@ -100,6 +100,17 @@ export const MentionEntitySchema = strictObject({
 export type MentionEntity = z.infer<typeof MentionEntitySchema>;
 
 /**
+ * 轻量用户引用。
+ */
+export const TweetUserRefSchema = strictObject({
+  id: z.string(),
+  displayName: z.string().optional(),
+  userName: z.string().optional(),
+});
+
+export type TweetUserRef = z.infer<typeof TweetUserRefSchema>;
+
+/**
  * 一段文本中包含的可解析实体集合。
  */
 export const TextEntitiesSchema = strictObject({
@@ -107,6 +118,7 @@ export const TextEntitiesSchema = strictObject({
   symbols: z.array(SymbolEntitySchema),
   urls: z.array(UrlEntitySchema),
   mentions: z.array(MentionEntitySchema),
+  media: z.array(z.lazy(() => MediaEntitySchema)),
 });
 
 export type TextEntities = z.infer<typeof TextEntitiesSchema>;
@@ -120,6 +132,7 @@ export type TextEntities = z.infer<typeof TextEntitiesSchema>;
  * - `entities.symbols`: `*.entities.symbols`
  * - `entities.urls`: `*.entities.urls`
  * - `entities.mentions`: `*.entities.user_mentions`
+ * - `entities.media`: `legacy.entities.media`，缺失时回退到 `legacy.extended_entities.media`
  * - `styles`: `note_tweet.note_tweet_results.result.richtext.richtext_tags`
  */
 export const AnnotatedTextSchema = strictObject({
@@ -407,10 +420,32 @@ export type TweetMediaGeometry = z.infer<typeof TweetMediaGeometrySchema>;
 export const TweetMediaOriginSchema = strictObject({
   tweetId: z.string().optional(),
   userId: z.string().optional(),
-  user: TweetUserSchema.optional(),
+  user: TweetUserRefSchema.optional(),
 });
 
 export type TweetMediaOrigin = z.infer<typeof TweetMediaOriginSchema>;
+
+/**
+ * 文本中的媒体引用实体。
+ * 来源汇总:
+ * - `mediaId`: `*.entities.media[].id_str`
+ * - `range`: `*.entities.media[].indices`
+ * - `displayText`: `*.entities.media[].display_url`
+ * - `expandedUrl`: `*.entities.media[].expanded_url`
+ * - `url`: `*.entities.media[].url`
+ * - `origin`: `*.entities.media[].source_status_id_str` / `*.entities.media[].source_user_id_str`
+ *   / `*.entities.media[].additional_media_info.source_user.user_results.result`
+ */
+export const MediaEntitySchema = strictObject({
+  mediaId: z.string(),
+  range: TextRangeSchema.optional(),
+  displayText: z.string().optional(),
+  expandedUrl: z.string().optional(),
+  url: z.string().optional(),
+  origin: TweetMediaOriginSchema.optional(),
+});
+
+export type MediaEntity = z.infer<typeof MediaEntitySchema>;
 
 /**
  * 媒体附加信息。
@@ -428,29 +463,22 @@ export type TweetMediaDetails = z.infer<typeof TweetMediaDetailsSchema>;
 /**
  * Tweet 媒体对象。
  * 来源汇总:
- * - `id`: `extended_entities.media[].id_str`
- * - `type`: `extended_entities.media[].type`
- * - `displayText`: `extended_entities.media[].display_url`
- * - `expandedUrl`: `extended_entities.media[].expanded_url`
- * - `url`: `extended_entities.media[].url`
- * - `mediaUrl`: `extended_entities.media[].media_url_https`
- * - `altText`: `extended_entities.media[].ext_alt_text`
- * - `grokPostId`: `extended_entities.media[].grok_post_id`
- * - `geometry`: `extended_entities.media[].original_info`
- * - `variants`: `extended_entities.media[].sizes`
- * - `taggedUsers`: `extended_entities.media[].features.all.tags`
- * - `faces`: `extended_entities.media[].features.large|medium|small|thumb|orig.faces`
- * - `origin`: `extended_entities.media[].source_status_id_str` / `extended_entities.media[].source_user_id_str`
- * - `details`: `extended_entities.media[].additional_media_info`
- * - `availability`: `extended_entities.media[].ext_media_availability.status`
- * - `video`: `extended_entities.media[].video_info`
+ * - `id`: `legacy.extended_entities.media[].id_str`
+ * - `type`: `legacy.extended_entities.media[].type`
+ * - `mediaUrl`: `legacy.extended_entities.media[].media_url_https`
+ * - `altText`: `legacy.extended_entities.media[].ext_alt_text`
+ * - `grokPostId`: `legacy.extended_entities.media[].grok_post_id`
+ * - `geometry`: `legacy.extended_entities.media[].original_info`
+ * - `variants`: `legacy.extended_entities.media[].sizes`
+ * - `taggedUsers`: `legacy.extended_entities.media[].features.all.tags`
+ * - `faces`: `legacy.extended_entities.media[].features.large|medium|small|thumb|orig.faces`
+ * - `details`: `legacy.extended_entities.media[].additional_media_info`（不含 `source_user`）
+ * - `availability`: `legacy.extended_entities.media[].ext_media_availability.status`
+ * - `video`: `legacy.extended_entities.media[].video_info`
  */
 export const TweetMediaSchema = strictObject({
   id: z.string(),
   type: z.enum(['photo', 'video', 'animated_gif']),
-  displayText: z.string().optional(),
-  expandedUrl: z.string().optional(),
-  url: z.string().optional(),
   mediaUrl: z.string().optional(),
   altText: z.string().optional(),
   grokPostId: z.string().optional(),
@@ -458,7 +486,6 @@ export const TweetMediaSchema = strictObject({
   variants: MediaVariantsSchema.optional(),
   taggedUsers: z.array(TweetMediaTagSchema),
   faces: TweetMediaFacesSchema.optional(),
-  origin: TweetMediaOriginSchema.optional(),
   details: TweetMediaDetailsSchema.optional(),
   availability: z.string().optional(),
   video: TweetVideoSchema.optional(),
@@ -526,7 +553,7 @@ export type TweetNote = z.infer<typeof TweetNoteSchema>;
  * 来源汇总:
  * - `legacyText`: `legacy.full_text` + `legacy.entities`
  * - `note`: `note_tweet.note_tweet_results.result`
- * - `media`: `legacy.extended_entities.media`
+ * - `media`: `legacy.extended_entities.media`，缺失时回退到 `legacy.entities.media`
  * - `language`: `legacy.lang`
  */
 export const TweetContentSchema = strictObject({

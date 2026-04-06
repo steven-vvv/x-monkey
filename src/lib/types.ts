@@ -19,15 +19,11 @@ export interface DbUserRecord {
 
 /**
  * 扁平化后的媒体存储实体。
- * 媒体归属 tweet 通过 `tweetId` 关联，溯源关系改为 ID 引用。
+ * 媒体对象以全局主键去重存储，不再绑定单条 tweet。
  */
 export interface DbMediaRecord {
   id: string;
-  tweetId: string;
   type: normalized.TweetMedia['type'];
-  displayText?: string;
-  expandedUrl?: string;
-  url?: string;
   mediaUrl?: string;
   altText?: string;
   grokPostId?: string;
@@ -35,8 +31,6 @@ export interface DbMediaRecord {
   variants?: normalized.MediaVariants;
   taggedUsers: normalized.TweetMediaTag[];
   faces?: normalized.TweetMediaFaces;
-  originTweetId?: string;
-  originUserId?: string;
   details?: normalized.TweetMediaDetails;
   availability?: string;
   video?: normalized.TweetVideo;

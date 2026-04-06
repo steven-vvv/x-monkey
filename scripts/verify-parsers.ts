@@ -74,6 +74,7 @@ function createEmptyTextEntities() {
     symbols: [],
     urls: [],
     mentions: [],
+    media: [],
   };
 }
 
@@ -126,10 +127,9 @@ function buildStoredTweet(id: string, authorId: string, mediaIds: string[] = [])
   };
 }
 
-function buildStoredMedia(id: string, tweetId: string): XMedia {
+function buildStoredMedia(id: string): XMedia {
   return {
     id,
-    tweetId,
     type: 'photo',
     mediaUrl: 'https://pbs.twimg.com/media/m-db.jpg',
     geometry: {
@@ -368,6 +368,9 @@ function assertInlineParserScenarios() {
   if (mergedTweet.legacyText.text !== 'kept text') fail('[inline] duplicate merge lost legacyText');
   if (mergedTweet.source !== 'Rich Web') fail('[inline] duplicate merge lost source');
   if (mergedTweet.mediaIds.join(',') !== 'm-merge') fail('[inline] duplicate merge lost media ids');
+  if (mergedTweet.legacyText.entities.media[0]?.mediaId !== 'm-merge') {
+    fail('[inline] duplicate merge lost media entity refs');
+  }
 
   const emptyParsed = parseHomeTimelineResponse({});
   if (!emptyParsed.meta?.warnings?.length) fail('[inline] empty timeline response should emit warnings');
@@ -379,7 +382,7 @@ function assertDbBatchScenario() {
 
   const user = buildStoredUser('u-db');
   const tweet = buildStoredTweet('t-db', 'u-db', ['m-db']);
-  const media = buildStoredMedia('m-db', 't-db');
+  const media = buildStoredMedia('m-db');
 
   runDbBatch(() => {
     upsertUser(user);
@@ -545,9 +548,11 @@ function main() {
         assertTweetShape(tweet, `${testCase.name}/${file}`);
       }
 
-      for (const media of parsed.media.values()) {
-        if (!parsed.tweets.has(media.tweetId)) {
-          fail(`[${testCase.name}/${file}] media ${media.id} references missing tweet ${media.tweetId}`);
+      for (const tweet of parsed.tweets.values()) {
+        for (const mediaId of tweet.mediaIds) {
+          if (!parsed.media.has(mediaId)) {
+            fail(`[${testCase.name}/${file}] tweet ${tweet.id} references missing media ${mediaId}`);
+          }
         }
       }
 

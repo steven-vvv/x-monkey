@@ -9,6 +9,7 @@ function createTextEntities(): normalized.TextEntities {
     symbols: [],
     urls: [],
     mentions: [],
+    media: [],
   };
 }
 
@@ -96,11 +97,43 @@ function normalizeTweetMentions(mentions: raw.UserMention[] | undefined): normal
     .filter(Boolean) as normalized.MentionEntity[];
 }
 
+function normalizeMediaOrigin(rawMedia: raw.Media): normalized.TweetMediaOrigin | undefined {
+  const originUserRaw = rawMedia.additional_media_info?.source_user?.user_results?.result;
+  const originUser = originUserRaw
+    ? {
+        id: originUserRaw.rest_id ?? originUserRaw.id ?? '',
+        displayName: originUserRaw.core?.name,
+        userName: originUserRaw.core?.screen_name,
+      }
+    : undefined;
+
+  return toOptionalObject({
+    tweetId: rawMedia.source_status_id_str,
+    userId: rawMedia.source_user_id_str,
+    user: originUser,
+  });
+}
+
+function normalizeTweetMediaEntities(
+  media: raw.Media[] | undefined,
+  fallbackMedia?: raw.Media[] | undefined,
+): normalized.MediaEntity[] {
+  return (media ?? fallbackMedia ?? []).map((item) => ({
+    mediaId: item.id_str,
+    range: toTextRange(item.indices),
+    displayText: item.display_url,
+    expandedUrl: item.expanded_url,
+    url: item.url,
+    origin: normalizeMediaOrigin(item),
+  }));
+}
+
 function normalizeAnnotatedTextFromTweetEntities(
   text: string,
   entities: raw.TweetEntities | undefined,
   displayRange?: number[] | undefined,
   styles?: normalized.TextStyleRange[] | undefined,
+  fallbackMedia?: raw.Media[] | undefined,
 ): normalized.AnnotatedText {
   return {
     text,
@@ -110,6 +143,7 @@ function normalizeAnnotatedTextFromTweetEntities(
       symbols: normalizeTweetSymbols(entities?.symbols),
       urls: normalizeTweetUrls(entities?.urls),
       mentions: normalizeTweetMentions(entities?.user_mentions),
+      media: normalizeTweetMediaEntities(entities?.media, fallbackMedia),
     },
     styles,
   };
@@ -126,6 +160,7 @@ function normalizeAnnotatedTextFromSimpleUrls(
       symbols: [],
       urls: normalizeTweetUrls(urls),
       mentions: [],
+      media: [],
     },
   };
 }
@@ -364,15 +399,9 @@ function normalizeUser(rawUser: raw.User): normalized.TweetUser {
 }
 
 function normalizeMedia(rawMedia: raw.Media): normalized.TweetMedia {
-  const originUserRaw = rawMedia.additional_media_info?.source_user?.user_results?.result;
-  const originUser = originUserRaw ? normalizeUser(originUserRaw) : undefined;
-
   return {
     id: rawMedia.id_str,
     type: normalizeMediaType(rawMedia.type),
-    displayText: rawMedia.display_url,
-    expandedUrl: rawMedia.expanded_url,
-    url: rawMedia.url,
     mediaUrl: rawMedia.media_url_https,
     altText: rawMedia.ext_alt_text,
     grokPostId: rawMedia.grok_post_id,
@@ -385,11 +414,6 @@ function normalizeMedia(rawMedia: raw.Media): normalized.TweetMedia {
       kind: tag.type,
     })),
     faces: normalizeMediaFaces(rawMedia.features),
-    origin: toOptionalObject({
-      tweetId: rawMedia.source_status_id_str,
-      userId: rawMedia.source_user_id_str,
-      user: originUser,
-    }),
     details: toOptionalObject({
       title: rawMedia.additional_media_info?.title,
       description: rawMedia.additional_media_info?.description,
@@ -537,6 +561,14 @@ function normalizeTweetData(
   wrapper: raw.TweetWithVisibilityResults | undefined,
   stack: Set<string>,
 ): normalized.Tweet {
+  const contentMedia = [...(data.legacy.extended_entities?.media ?? [])];
+  const seenMediaIds = new Set(contentMedia.map((item) => item.id_str));
+  for (const item of data.legacy.entities.media ?? []) {
+    if (seenMediaIds.has(item.id_str)) continue;
+    contentMedia.push(item);
+    seenMediaIds.add(item.id_str);
+  }
+
   const author = normalizeUser(data.core.user_results.result);
   const note = normalizeNote(data.note_tweet);
   const quotedTweet = data.quoted_status_result?.result
@@ -560,9 +592,11 @@ function normalizeTweetData(
         data.legacy.full_text,
         data.legacy.entities,
         data.legacy.display_text_range,
+        undefined,
+        data.legacy.extended_entities?.media,
       ),
       note,
-      media: (data.legacy.extended_entities?.media ?? []).map((item) => normalizeMedia(item)),
+      media: contentMedia.map((item) => normalizeMedia(item)),
       language: data.legacy.lang,
     },
     conversation: {

@@ -34,14 +34,10 @@ function toDbUser(user: normalized.TweetUser): DbUserRecord {
   };
 }
 
-function toDbMedia(tweetId: string, media: normalized.TweetMedia): DbMediaRecord {
+function toDbMedia(media: normalized.TweetMedia): DbMediaRecord {
   return {
     id: media.id,
-    tweetId,
     type: media.type,
-    displayText: media.displayText,
-    expandedUrl: media.expandedUrl,
-    url: media.url,
     mediaUrl: media.mediaUrl,
     altText: media.altText,
     grokPostId: media.grokPostId,
@@ -49,8 +45,6 @@ function toDbMedia(tweetId: string, media: normalized.TweetMedia): DbMediaRecord
     variants: media.variants,
     taggedUsers: [...media.taggedUsers],
     faces: media.faces,
-    originTweetId: media.origin?.tweetId,
-    originUserId: media.origin?.user?.id ?? media.origin?.userId,
     details: media.details,
     availability: media.availability,
     video: media.video,
@@ -67,7 +61,7 @@ function toDbTweet(tweet: normalized.Tweet): DbTweetRecord {
     legacyText: tweet.content.legacyText,
     note: tweet.content.note,
     language: tweet.content.language,
-    mediaIds: tweet.content.media.map((media) => media.id),
+    mediaIds: tweet.content.legacyText.entities.media.map((media: normalized.MediaEntity) => media.mediaId),
     conversationId: tweet.conversation.conversationId,
     replyToTweetId: tweet.conversation.replyTo?.tweetId,
     replyToUserId: tweet.conversation.replyTo?.userId,
@@ -92,11 +86,8 @@ export function flattenTweet(rootTweet: normalized.Tweet): ParsedResponse {
     seenUsers.add(user.id);
   }
 
-  function visitMedia(tweetId: string, media: normalized.TweetMedia): void {
-    upsertEntity(parsed.media, toDbMedia(tweetId, media));
-    if (media.origin?.user && !seenUsers.has(media.origin.user.id)) {
-      visitUser(media.origin.user);
-    }
+  function visitMedia(media: normalized.TweetMedia): void {
+    upsertEntity(parsed.media, toDbMedia(media));
   }
 
   function visitTweet(tweet: normalized.Tweet): void {
@@ -109,7 +100,7 @@ export function flattenTweet(rootTweet: normalized.Tweet): ParsedResponse {
     visitUser(tweet.author);
 
     for (const media of tweet.content.media) {
-      visitMedia(tweet.id, media);
+      visitMedia(media);
     }
 
     if (tweet.conversation.quote?.tweet) {
