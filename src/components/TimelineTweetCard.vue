@@ -2,7 +2,14 @@
 import { computed } from 'vue';
 import type { DbMediaRecord, DbTweetRecord, DbUserRecord } from '../lib/types';
 import { avatarFull, formatTweetDate } from '../lib/view-format';
-import { getMediaThumbUrl, getTweetDisplayText } from '../lib/tweet-selectors';
+import {
+  getMediaThumbUrl,
+  getTweetDisplayText,
+  getTweetMediaIds,
+  getTweetNote,
+  getTweetQuoteId,
+  getTweetRepostId,
+} from '../lib/tweet-selectors';
 
 const props = defineProps<{
   tweet: DbTweetRecord;
@@ -19,11 +26,12 @@ const visibleMedia = computed(() => props.media.slice(0, 4));
 const extraCount = computed(() => Math.max(0, props.media.length - 4));
 const dateText = computed(() => formatTweetDate(props.tweet.createdAt));
 const flags = computed(() => [
-  props.tweet.note ? 'Long' : null,
-  props.tweet.quoteTweetId ? 'Quote' : null,
-  props.tweet.repostTweetId ? 'Repost' : null,
+  getTweetNote(props.tweet) ? 'Long' : null,
+  getTweetQuoteId(props.tweet) ? 'Quote' : null,
+  getTweetRepostId(props.tweet) ? 'Repost' : null,
   props.tweet.communityNote ? 'Note' : null,
 ].filter(Boolean) as string[]);
+const mediaCount = computed(() => getTweetMediaIds(props.tweet).length);
 </script>
 
 <template>
@@ -48,7 +56,7 @@ const flags = computed(() => [
         <span v-for="flag in flags" :key="flag" class="xd-timeline-card-flag">{{ flag }}</span>
       </div>
 
-      <div v-if="visibleMedia.length > 0" class="xd-timeline-card-media">
+      <div v-if="visibleMedia.length > 0 && mediaCount > 0" class="xd-timeline-card-media">
         <div
           v-for="(item, index) in visibleMedia"
           :key="item.id"

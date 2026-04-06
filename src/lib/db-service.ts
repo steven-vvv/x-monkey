@@ -1,6 +1,7 @@
 import { reactive, computed } from 'vue';
 import type { DbMediaRecord, DbTweetRecord, DbUserRecord } from './types';
 import { mergeEntity } from './entity-merge';
+import { getTweetMediaIds, getTweetReplyToTweetId } from './tweet-selectors';
 
 export interface DbTweet extends DbTweetRecord {
   _ts: number;
@@ -125,8 +126,11 @@ export function getParentChain(tweetId: string): DbTweet[] {
   const chain: DbTweet[] = [];
   let current = db.tweets.get(tweetId);
 
-  while (current?.replyToTweetId) {
-    const parent = db.tweets.get(current.replyToTweetId);
+  while (current) {
+    const replyToTweetId = getTweetReplyToTweetId(current);
+    if (!replyToTweetId) break;
+
+    const parent = db.tweets.get(replyToTweetId);
     if (!parent) break;
     chain.unshift(parent);
     current = parent;
@@ -138,7 +142,7 @@ export function getParentChain(tweetId: string): DbTweet[] {
 export function getReplies(tweetId: string): DbTweet[] {
   const result: DbTweet[] = [];
   for (const tweet of db.tweets.values()) {
-    if (tweet.replyToTweetId === tweetId) {
+    if (getTweetReplyToTweetId(tweet) === tweetId) {
       result.push(tweet);
     }
   }
@@ -148,5 +152,5 @@ export function getReplies(tweetId: string): DbTweet[] {
 export function getMediaForTweet(tweetId: string): DbMedia[] {
   const tweet = db.tweets.get(tweetId);
   if (!tweet) return [];
-  return tweet.mediaIds.map((id) => db.media.get(id)).filter(Boolean) as DbMedia[];
+  return getTweetMediaIds(tweet).map((id) => db.media.get(id)).filter(Boolean) as DbMedia[];
 }

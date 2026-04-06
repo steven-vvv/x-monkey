@@ -3,7 +3,13 @@ import { computed } from 'vue';
 import type { DbTweet } from '../lib/db-service';
 import { getDbUser } from '../lib/db-service';
 import { formatTweetDate } from '../lib/view-format';
-import { getTweetDisplayText } from '../lib/tweet-selectors';
+import {
+  getTweetDisplayText,
+  getTweetMediaIds,
+  getTweetNote,
+  getTweetQuoteId,
+  getTweetRepostId,
+} from '../lib/tweet-selectors';
 
 const props = withDefaults(defineProps<{
   tweet: DbTweet;
@@ -20,10 +26,11 @@ const author = computed(() => getDbUser(props.tweet.authorId));
 const text = computed(() => getTweetDisplayText(props.tweet) || '(no text)');
 const dateText = computed(() => formatTweetDate(props.tweet.createdAt));
 const metaFlags = computed(() => [
-  props.tweet.note ? 'Long' : null,
-  props.tweet.quoteTweetId ? 'Quote' : null,
-  props.tweet.repostTweetId ? 'Repost' : null,
+  getTweetNote(props.tweet) ? 'Long' : null,
+  getTweetQuoteId(props.tweet) ? 'Quote' : null,
+  getTweetRepostId(props.tweet) ? 'Repost' : null,
 ].filter(Boolean) as string[]);
+const mediaCount = computed(() => getTweetMediaIds(props.tweet).length);
 </script>
 
 <template>
@@ -43,7 +50,7 @@ const metaFlags = computed(() => [
         <span v-for="flag in metaFlags" :key="flag" class="xd-summary-flag">{{ flag }}</span>
       </div>
     </div>
-    <div v-if="tweet.mediaIds.length > 0" class="xd-media-badge">{{ tweet.mediaIds.length }}</div>
+    <div v-if="mediaCount > 0" class="xd-media-badge">{{ mediaCount }}</div>
   </div>
 </template>
 

@@ -1,4 +1,47 @@
+import type {
+  AnnotatedText,
+  TweetNote,
+  TweetPermalink,
+} from '../schema/tweet-schema';
 import type { DbMediaRecord, DbTweetRecord, DbUserRecord } from './types';
+
+interface TweetFieldAccess {
+  legacyText?: AnnotatedText;
+  note?: TweetNote;
+  mediaIds?: string[];
+  replyToTweetId?: string;
+  replyToUserId?: string;
+  replyToUserName?: string;
+  quoteTweetId?: string;
+  quotePermalink?: TweetPermalink;
+  repostTweetId?: string;
+  content?: {
+    legacyText?: AnnotatedText;
+    note?: TweetNote;
+    mediaIds?: string[];
+  };
+  conversation?: {
+    replyTo?: {
+      tweetId?: string;
+      userId?: string;
+      userName?: string;
+    };
+    quote?: {
+      tweetId: string;
+      permalink?: TweetPermalink;
+    };
+    repostId?: string;
+  };
+}
+
+interface MediaFieldAccess {
+  originTweetId?: string;
+  originUserId?: string;
+  origin?: {
+    tweetId?: string;
+    userId?: string;
+  };
+}
 
 function stripQuery(url: string): string {
   const index = url.indexOf('?');
@@ -25,7 +68,9 @@ function getBestVideoVariant(media: Pick<DbMediaRecord, 'video'>): string | null
 }
 
 export function getTweetDisplayText(tweet: Pick<DbTweetRecord, 'legacyText' | 'note'>): string {
-  return (tweet.note?.text.text ?? tweet.legacyText.text).replace(/https:\/\/t\.co\/\S+/g, '').trim();
+  return (getTweetNote(tweet)?.text.text ?? getTweetLegacyText(tweet).text)
+    .replace(/https:\/\/t\.co\/\S+/g, '')
+    .trim();
 }
 
 export function getUserBioText(user: Pick<DbUserRecord, 'profile'>): string {
@@ -57,4 +102,57 @@ export function getMediaOpenUrl(
   }
 
   return getBestVideoVariant(media) ?? media.mediaUrl ?? '';
+}
+
+export function getTweetLegacyText(tweet: TweetFieldAccess): AnnotatedText {
+  return tweet.content?.legacyText ?? tweet.legacyText ?? {
+    text: '',
+    entities: {
+      hashtags: [],
+      symbols: [],
+      urls: [],
+      mentions: [],
+      media: [],
+    },
+  };
+}
+
+export function getTweetNote(tweet: TweetFieldAccess): TweetNote | undefined {
+  return tweet.content?.note ?? tweet.note;
+}
+
+export function getTweetMediaIds(tweet: TweetFieldAccess): string[] {
+  return tweet.content?.mediaIds ?? tweet.mediaIds ?? [];
+}
+
+export function getTweetReplyToTweetId(tweet: TweetFieldAccess): string | undefined {
+  return tweet.conversation?.replyTo?.tweetId ?? tweet.replyToTweetId;
+}
+
+export function getTweetReplyToUserId(tweet: TweetFieldAccess): string | undefined {
+  return tweet.conversation?.replyTo?.userId ?? tweet.replyToUserId;
+}
+
+export function getTweetReplyToUserName(tweet: TweetFieldAccess): string | undefined {
+  return tweet.conversation?.replyTo?.userName ?? tweet.replyToUserName;
+}
+
+export function getTweetQuoteId(tweet: TweetFieldAccess): string | undefined {
+  return tweet.conversation?.quote?.tweetId ?? tweet.quoteTweetId;
+}
+
+export function getTweetQuotePermalink(tweet: TweetFieldAccess): TweetPermalink | undefined {
+  return tweet.conversation?.quote?.permalink ?? tweet.quotePermalink;
+}
+
+export function getTweetRepostId(tweet: TweetFieldAccess): string | undefined {
+  return tweet.conversation?.repostId ?? tweet.repostTweetId;
+}
+
+export function getMediaOriginTweetId(media: MediaFieldAccess): string | undefined {
+  return media.origin?.tweetId ?? media.originTweetId;
+}
+
+export function getMediaOriginUserId(media: MediaFieldAccess): string | undefined {
+  return media.origin?.userId ?? media.originUserId;
 }

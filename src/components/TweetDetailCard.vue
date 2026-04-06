@@ -3,7 +3,12 @@ import { computed } from 'vue';
 import type { DbTweet } from '../lib/db-service';
 import { getDbTweet, getDbUser, getMediaForTweet } from '../lib/db-service';
 import { avatarFull, formatDateTime, toTweetStats } from '../lib/view-format';
-import { getTweetDisplayText } from '../lib/tweet-selectors';
+import {
+  getTweetDisplayText,
+  getTweetNote,
+  getTweetQuoteId,
+  getTweetRepostId,
+} from '../lib/tweet-selectors';
 import StatGrid from './StatGrid.vue';
 import MediaThumbGrid from './MediaThumbGrid.vue';
 
@@ -20,13 +25,15 @@ const author = computed(() => getDbUser(props.tweet.authorId));
 const text = computed(() => getTweetDisplayText(props.tweet));
 const stats = computed(() => toTweetStats(props.tweet));
 const media = computed(() => getMediaForTweet(props.tweet.id));
-const quoteTweet = computed(() => props.tweet.quoteTweetId ? getDbTweet(props.tweet.quoteTweetId) ?? null : null);
-const repostTweet = computed(() => props.tweet.repostTweetId ? getDbTweet(props.tweet.repostTweetId) ?? null : null);
+const quoteTweetId = computed(() => getTweetQuoteId(props.tweet));
+const repostTweetId = computed(() => getTweetRepostId(props.tweet));
+const quoteTweet = computed(() => quoteTweetId.value ? getDbTweet(quoteTweetId.value) ?? null : null);
+const repostTweet = computed(() => repostTweetId.value ? getDbTweet(repostTweetId.value) ?? null : null);
 const quoteAuthor = computed(() => quoteTweet.value ? getDbUser(quoteTweet.value.authorId) ?? null : null);
 const repostAuthor = computed(() => repostTweet.value ? getDbUser(repostTweet.value.authorId) ?? null : null);
 
 const metaFlags = computed(() => [
-  props.tweet.note ? 'Long Post' : null,
+  getTweetNote(props.tweet) ? 'Long Post' : null,
   props.tweet.communityNote ? 'Community Note' : null,
   props.tweet.policy?.paidPromotion ? 'Paid Promotion' : null,
 ].filter(Boolean) as string[]);
@@ -84,9 +91,9 @@ const policyLines = computed(() => {
     <div v-if="text" class="xd-detail-text">{{ text }}</div>
 
     <div
-      v-if="tweet.repostTweetId"
+      v-if="repostTweetId"
       class="xd-detail-ref xd-list-item--clickable"
-      @click="emit('open-tweet', tweet.repostTweetId)"
+      @click="emit('open-tweet', repostTweetId)"
     >
       <div class="xd-detail-ref-label">Repost</div>
       <div class="xd-detail-ref-text">
@@ -94,15 +101,15 @@ const policyLines = computed(() => {
           {{ repostAuthor?.profile.displayName ?? '?' }} · {{ getTweetDisplayText(repostTweet) || '(no text)' }}
         </template>
         <template v-else>
-          Tweet ID {{ tweet.repostTweetId }}
+          Tweet ID {{ repostTweetId }}
         </template>
       </div>
     </div>
 
     <div
-      v-if="tweet.quoteTweetId"
+      v-if="quoteTweetId"
       class="xd-detail-ref xd-list-item--clickable"
-      @click="emit('open-tweet', tweet.quoteTweetId)"
+      @click="emit('open-tweet', quoteTweetId)"
     >
       <div class="xd-detail-ref-label">Quote</div>
       <div class="xd-detail-ref-text">
@@ -110,7 +117,7 @@ const policyLines = computed(() => {
           {{ quoteAuthor?.profile.displayName ?? '?' }} · {{ getTweetDisplayText(quoteTweet) || '(no text)' }}
         </template>
         <template v-else>
-          Tweet ID {{ tweet.quoteTweetId }}
+          Tweet ID {{ quoteTweetId }}
         </template>
       </div>
     </div>
