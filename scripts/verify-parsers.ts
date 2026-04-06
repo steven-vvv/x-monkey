@@ -23,6 +23,13 @@ import {
   ingestTimeline,
   resolveTimelineRecordKey,
 } from '../src/lib/timeline-store';
+import {
+  getMediaOriginTweetId,
+  getMediaOriginUserId,
+  getTweetLegacyText,
+  getTweetMediaIds,
+  getTweetNote,
+} from '../src/lib/tweet-selectors';
 import type { ParsedResponse, XMedia, XTweet, XUser } from '../src/lib/types';
 
 interface CaseConfig {
@@ -62,8 +69,8 @@ function isTimelineParsedResponse(parsed: ParsedResponse | TimelineParsedRespons
 function assertTweetShape(tweet: XTweet, caseName: string) {
   if (!tweet.id) fail(`[${caseName}] empty tweet id`);
   if (!tweet.authorId) fail(`[${caseName}] tweet ${tweet.id} missing authorId`);
-  if (!tweet.conversationId) fail(`[${caseName}] tweet ${tweet.id} missing conversationId`);
-  if (!tweet.note?.text.text && !tweet.legacyText.text) {
+  if (!tweet.conversation.conversationId) fail(`[${caseName}] tweet ${tweet.id} missing conversationId`);
+  if (!getTweetNote(tweet)?.text.text && !getTweetLegacyText(tweet).text) {
     fail(`[${caseName}] tweet ${tweet.id} is missing both legacyText and note text`);
   }
 }
@@ -113,12 +120,16 @@ function buildStoredTweet(id: string, authorId: string, mediaIds: string[] = [])
     createdAt: 'Tue Jan 01 00:00:00 +0000 2030',
     source: 'Web',
     authorId,
-    legacyText: {
-      text: 'db tweet',
-      entities: createEmptyTextEntities(),
+    content: {
+      legacyText: {
+        text: 'db tweet',
+        entities: createEmptyTextEntities(),
+      },
+      mediaIds,
     },
-    mediaIds,
-    conversationId: id,
+    conversation: {
+      conversationId: id,
+    },
     stats: {
       views: '10',
       replies: 1,
@@ -370,10 +381,10 @@ function assertInlineParserScenarios() {
   const duplicateParsed = parseHomeTimelineResponse(duplicateFixture);
   const mergedTweet = duplicateParsed.tweets.get('t-merge');
   if (!mergedTweet) fail('[inline] duplicate merge tweet missing');
-  if (mergedTweet.legacyText.text !== 'kept text') fail('[inline] duplicate merge lost legacyText');
+  if (mergedTweet.content.legacyText.text !== 'kept text') fail('[inline] duplicate merge lost legacyText');
   if (mergedTweet.source !== 'Rich Web') fail('[inline] duplicate merge lost source');
-  if (mergedTweet.mediaIds.join(',') !== 'm-merge') fail('[inline] duplicate merge lost media ids');
-  if (mergedTweet.legacyText.entities.media[0]?.mediaId !== 'm-merge') {
+  if (mergedTweet.content.mediaIds.join(',') !== 'm-merge') fail('[inline] duplicate merge lost media ids');
+  if (mergedTweet.content.legacyText.entities.media[0]?.mediaId !== 'm-merge') {
     fail('[inline] duplicate merge lost media entity refs');
   }
 
@@ -420,16 +431,16 @@ function assertInlineParserScenarios() {
   const originTweet = originParsed.tweets.get('t-origin');
   const originMedia = originParsed.media.get('m-origin');
   if (!originTweet || !originMedia) fail('[inline] origin fixture parse failed');
-  if ('user' in (originTweet.legacyText.entities.media[0]?.origin ?? {})) {
+  if ('user' in (originTweet.content.legacyText.entities.media[0]?.origin ?? {})) {
     fail('[inline] media entity origin should not embed full user');
   }
-  if (originTweet.legacyText.entities.media[0]?.origin?.tweetId !== 't-source') {
+  if (originTweet.content.legacyText.entities.media[0]?.origin?.tweetId !== 't-source') {
     fail('[inline] media entity origin lost source tweet id');
   }
-  if (originTweet.legacyText.entities.media[0]?.origin?.userId !== 'u-source') {
+  if (originTweet.content.legacyText.entities.media[0]?.origin?.userId !== 'u-source') {
     fail('[inline] media entity origin lost source user id');
   }
-  if (originMedia.originTweetId !== 't-source' || originMedia.originUserId !== 'u-source') {
+  if (getMediaOriginTweetId(originMedia) !== 't-source' || getMediaOriginUserId(originMedia) !== 'u-source') {
     fail('[inline] media object origin lost source ids');
   }
   if (!originParsed.users.has('u-source')) {
@@ -590,9 +601,12 @@ function assertCaptureStateClearScenario() {
     });
     upsertTweet({
       ...buildStoredTweet('t-clear', 'u-clear'),
-      legacyText: {
-        text: 'clear',
-        entities: createEmptyTextEntities(),
+      content: {
+        legacyText: {
+          text: 'clear',
+          entities: createEmptyTextEntities(),
+        },
+        mediaIds: [],
       },
       stats: {
         views: undefined,
@@ -649,7 +663,7 @@ function main() {
       }
 
       for (const tweet of parsed.tweets.values()) {
-        for (const mediaId of tweet.mediaIds) {
+        for (const mediaId of getTweetMediaIds(tweet)) {
           if (!parsed.media.has(mediaId)) {
             fail(`[${testCase.name}/${file}] tweet ${tweet.id} references missing media ${mediaId}`);
           }
