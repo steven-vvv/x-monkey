@@ -1,70 +1,60 @@
 import type * as normalized from '../schema/tweet-schema';
 
 /**
- * 扁平化后的用户存储实体。
- * 由规范化 Tweet 模型进一步拆分得到，供内存数据库与界面层使用。
+ * 紧凑的用户存储实体。
+ * 用户附属结构全部内联保存。
  */
-export interface DbUserRecord {
-  id: string;
-  createdAt?: string;
-  profile: normalized.TweetUserProfile;
-  pinnedTweetIds: string[];
-  identity?: normalized.TweetUserIdentity;
-  professional?: normalized.TweetUserProfessional;
-  stats?: normalized.TweetUserStats;
-  features?: normalized.TweetUserFeatures;
+export interface DbUserRecord extends normalized.TweetUser {}
+
+/**
+ * 紧凑的媒体溯源信息。
+ * 保留 `origin` 语义对象，但不嵌入完整来源用户对象。
+ */
+export interface DbMediaOriginRecord extends Omit<normalized.TweetMediaOrigin, 'user'> {}
+
+/**
+ * 紧凑的媒体存储实体。
+ * 除 `faces` 外，其余结构均内联保存。
+ */
+export interface DbMediaRecord extends Omit<normalized.TweetMedia, 'faces' | 'origin'> {
+  origin?: DbMediaOriginRecord;
 }
 
 /**
- * 扁平化后的媒体存储实体。
- * 媒体对象以全局主键去重存储，不再绑定单条 tweet。
+ * Tweet 内容内联结构。
+ * 媒体改为以 `mediaIds` 保存引用。
  */
-export interface DbMediaRecord {
-  id: string;
-  type: normalized.TweetMedia['type'];
-  mediaUrl?: string;
-  altText?: string;
-  grokPostId?: string;
-  geometry?: normalized.TweetMediaGeometry;
-  variants?: normalized.MediaVariants;
-  taggedUsers: normalized.TweetMediaTag[];
-  faces?: normalized.TweetMediaFaces;
-  originTweetId?: string;
-  originUserId?: string;
-  details?: normalized.TweetMediaDetails;
-  availability?: string;
-  video?: normalized.TweetVideo;
-}
-
-/**
- * 扁平化后的帖子存储实体。
- * 引用、回复、转贴等递归关系统一改为字符串 ID。
- */
-export interface DbTweetRecord {
-  id: string;
-  createdAt: string;
-  source?: string;
-  place?: normalized.TweetPlace;
-  authorId: string;
-  legacyText: normalized.AnnotatedText;
-  note?: normalized.TweetNote;
-  language?: string;
+export interface DbTweetContentRecord extends Omit<normalized.TweetContent, 'media'> {
   mediaIds: string[];
-  conversationId: string;
-  replyToTweetId?: string;
-  replyToUserId?: string;
-  replyToUserName?: string;
-  quoteTweetId?: string;
-  quotePermalink?: normalized.TweetPermalink;
-  repostTweetId?: string;
-  stats: normalized.TweetStats;
-  edit?: normalized.TweetEditInfo;
-  policy?: normalized.TweetPolicy;
-  communityNote?: normalized.TweetCommunityNote;
 }
 
 /**
- * 一次响应扁平化后的实体集合。
+ * Tweet 引用关系内联结构。
+ * 仅保留被引用 tweet ID 与永久链接。
+ */
+export type DbTweetQuoteRecord = Omit<normalized.TweetQuote, 'tweet'>;
+
+/**
+ * Tweet 会话关系内联结构。
+ * 回复信息继续内联，转贴改为仅保存 `repostId`。
+ */
+export interface DbTweetConversationRecord extends Omit<normalized.TweetConversation, 'quote' | 'repost'> {
+  quote?: DbTweetQuoteRecord;
+  repostId?: string;
+}
+
+/**
+ * 紧凑的帖子存储实体。
+ * 仅保留 `Tweet`、`User`、`Media` 三类独立实体，其余结构全部内联。
+ */
+export interface DbTweetRecord extends Omit<normalized.Tweet, 'author' | 'content' | 'conversation'> {
+  authorId: string;
+  content: DbTweetContentRecord;
+  conversation: DbTweetConversationRecord;
+}
+
+/**
+ * 一次响应收敛后的实体集合。
  */
 export interface ParsedResponse {
   users: Map<string, DbUserRecord>;

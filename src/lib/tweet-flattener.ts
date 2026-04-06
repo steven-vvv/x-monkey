@@ -21,18 +21,20 @@ function upsertEntity<T extends { id: string }>(map: Map<string, T>, entity: T):
 
 function toDbUser(user: normalized.TweetUser): DbUserRecord {
   return {
-    id: user.id,
-    createdAt: user.createdAt,
-    profile: user.profile,
+    ...user,
     pinnedTweetIds: [...user.pinnedTweetIds],
-    identity: user.identity,
-    professional: user.professional,
-    stats: user.stats,
-    features: user.features,
   };
 }
 
 function toDbMedia(media: normalized.TweetMedia): DbMediaRecord {
+  const originUserId = media.origin?.user?.id ?? media.origin?.userId;
+  const origin = media.origin?.tweetId || originUserId
+    ? {
+        tweetId: media.origin?.tweetId,
+        userId: originUserId,
+      }
+    : undefined;
+
   return {
     id: media.id,
     type: media.type,
@@ -42,9 +44,7 @@ function toDbMedia(media: normalized.TweetMedia): DbMediaRecord {
     geometry: media.geometry,
     variants: media.variants,
     taggedUsers: [...media.taggedUsers],
-    faces: media.faces,
-    originTweetId: media.origin?.tweetId,
-    originUserId: media.origin?.user?.id ?? media.origin?.userId,
+    origin,
     details: media.details,
     availability: media.availability,
     video: media.video,
@@ -58,17 +58,25 @@ function toDbTweet(tweet: normalized.Tweet): DbTweetRecord {
     source: tweet.source,
     place: tweet.place,
     authorId: tweet.author.id,
-    legacyText: tweet.content.legacyText,
-    note: tweet.content.note,
-    language: tweet.content.language,
-    mediaIds: tweet.content.legacyText.entities.media.map((media: normalized.MediaEntity) => media.mediaId),
-    conversationId: tweet.conversation.conversationId,
-    replyToTweetId: tweet.conversation.replyTo?.tweetId,
-    replyToUserId: tweet.conversation.replyTo?.userId,
-    replyToUserName: tweet.conversation.replyTo?.userName,
-    quoteTweetId: tweet.conversation.quote?.tweet?.id ?? tweet.conversation.quote?.tweetId,
-    quotePermalink: tweet.conversation.quote?.permalink,
-    repostTweetId: tweet.conversation.repost?.id,
+    content: {
+      legacyText: tweet.content.legacyText,
+      note: tweet.content.note,
+      mediaIds: tweet.content.media.map((media) => media.id),
+      language: tweet.content.language,
+    },
+    conversation: {
+      conversationId: tweet.conversation.conversationId,
+      replyTo: tweet.conversation.replyTo
+        ? { ...tweet.conversation.replyTo }
+        : undefined,
+      quote: tweet.conversation.quote
+        ? {
+            tweetId: tweet.conversation.quote.tweet?.id ?? tweet.conversation.quote.tweetId,
+            permalink: tweet.conversation.quote.permalink,
+          }
+        : undefined,
+      repostId: tweet.conversation.repost?.id,
+    },
     stats: tweet.stats,
     edit: tweet.edit,
     policy: tweet.policy,
