@@ -32,6 +32,19 @@ interface MediaFieldAccess {
   };
 }
 
+export interface TweetTextSegment {
+  kind: 'plain' | 'hashtag' | 'symbol' | 'mention' | 'url' | 'media';
+  text: string;
+  emphasis: boolean;
+}
+
+interface TextReplacement {
+  start: number;
+  end: number;
+  kind: TweetTextSegment['kind'];
+  text: string;
+}
+
 function stripQuery(url: string): string {
   const index = url.indexOf('?');
   return index === -1 ? url : url.slice(0, index);
@@ -78,6 +91,122 @@ function decodeBackslashEscapes(text: string): string {
     .replace(/\\\\/g, '\\');
 }
 
+function decodeTextContent(text: string): string {
+  return decodeBackslashEscapes(decodeHtmlEntities(text));
+}
+
+function clampIndex(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
+}
+
+function getAnnotatedTextDisplayRange(value: AnnotatedText): { start: number; end: number } {
+  const max = value.text.length;
+  const start = clampIndex(value.displayRange?.start ?? 0, 0, max);
+  const end = clampIndex(value.displayRange?.end ?? max, start, max);
+  return { start, end };
+}
+
+function getAnnotatedTextReplacements(value: AnnotatedText): TextReplacement[] {
+  const replacements: TextReplacement[] = [];
+
+  for (const item of value.entities.hashtags) {
+    replacements.push({
+      start: item.range.start,
+      end: item.range.end,
+      kind: 'hashtag',
+      text: `#${item.text}`,
+    });
+  }
+
+  for (const item of value.entities.symbols) {
+    if (!item.range) continue;
+    replacements.push({
+      start: item.range.start,
+      end: item.range.end,
+      kind: 'symbol',
+      text: value.text.slice(item.range.start, item.range.end),
+    });
+  }
+
+  for (const item of value.entities.mentions) {
+    replacements.push({
+      start: item.range.start,
+      end: item.range.end,
+      kind: 'mention',
+      text: `@${item.userName}`,
+    });
+  }
+
+  for (const item of value.entities.urls) {
+    replacements.push({
+      start: item.range.start,
+      end: item.range.end,
+      kind: 'url',
+      text: item.expandedUrl || item.displayText || item.url,
+    });
+  }
+
+  for (const item of value.entities.media) {
+    if (!item.range) continue;
+    replacements.push({
+      start: item.range.start,
+      end: item.range.end,
+      kind: 'media',
+      text: value.text.slice(item.range.start, item.range.end),
+    });
+  }
+
+  return replacements.sort((left, right) => {
+    if (left.start !== right.start) return left.start - right.start;
+    return right.end - left.end;
+  });
+}
+
+export function getAnnotatedTextSegments(value: AnnotatedText): TweetTextSegment[] {
+  const { start, end } = getAnnotatedTextDisplayRange(value);
+  const replacements = getAnnotatedTextReplacements(value);
+  const segments: TweetTextSegment[] = [];
+  let cursor = start;
+
+  for (const replacement of replacements) {
+    if (replacement.start < start || replacement.end > end) continue;
+    if (replacement.end <= cursor) continue;
+    if (replacement.start > cursor) {
+      const plainText = decodeTextContent(value.text.slice(cursor, replacement.start));
+      if (plainText) {
+        segments.push({
+          kind: 'plain',
+          text: plainText,
+          emphasis: false,
+        });
+      }
+    }
+
+    const entityText = decodeTextContent(replacement.text);
+    if (entityText) {
+      segments.push({
+        kind: replacement.kind,
+        text: entityText,
+        emphasis: replacement.kind !== 'plain',
+      });
+    }
+    cursor = replacement.end;
+  }
+
+  if (cursor < end) {
+    const trailingText = decodeTextContent(value.text.slice(cursor, end));
+    if (trailingText) {
+      segments.push({
+        kind: 'plain',
+        text: trailingText,
+        emphasis: false,
+      });
+    }
+  }
+
+  return segments;
+}
+
 export function getTweetDisplayText(tweet: TweetFieldAccess): string {
   return (getTweetNote(tweet)?.text.text ?? getTweetLegacyText(tweet).text)
     .replace(/https:\/\/t\.co\/\S+/g, '')
@@ -85,7 +214,11 @@ export function getTweetDisplayText(tweet: TweetFieldAccess): string {
 }
 
 export function getTweetSummaryText(tweet: TweetFieldAccess): string {
-  return decodeBackslashEscapes(decodeHtmlEntities(getTweetLegacyText(tweet).text));
+  return decodeTextContent(getTweetLegacyText(tweet).text);
+}
+
+export function getTweetDetailTextSegments(tweet: TweetFieldAccess): TweetTextSegment[] {
+  return getAnnotatedTextSegments(getTweetNote(tweet)?.text ?? getTweetLegacyText(tweet));
 }
 
 export function getUserBioText(user: Pick<DbUserRecord, 'profile'>): string {

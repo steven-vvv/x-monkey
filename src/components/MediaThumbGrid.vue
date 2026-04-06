@@ -26,14 +26,14 @@ const emit = defineEmits<{
 <style scoped>
 .xd-detail-media {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(88px, 1fr));
-  gap: 6px;
+  grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
+  gap: 8px;
   margin-bottom: 10px;
 }
 
 .xd-thumb {
   position: relative;
-  aspect-ratio: 1;
+  height: 136px;
   border-radius: var(--xd-radius);
   overflow: hidden;
   cursor: pointer;

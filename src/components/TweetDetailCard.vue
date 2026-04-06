@@ -5,6 +5,7 @@ import { getDbTweet, getDbUser, getMediaForTweet } from '../lib/db-service';
 import { avatarFull, formatDateTime, toTweetStats } from '../lib/view-format';
 import {
   getTweetDisplayText,
+  getTweetDetailTextSegments,
   getTweetNote,
   getTweetQuoteId,
   getTweetRepostId,
@@ -22,7 +23,7 @@ const emit = defineEmits<{
 }>();
 
 const author = computed(() => getDbUser(props.tweet.authorId));
-const text = computed(() => getTweetDisplayText(props.tweet));
+const textSegments = computed(() => getTweetDetailTextSegments(props.tweet));
 const stats = computed(() => toTweetStats(props.tweet));
 const media = computed(() => getMediaForTweet(props.tweet.id));
 const quoteTweetId = computed(() => getTweetQuoteId(props.tweet));
@@ -31,16 +32,33 @@ const quoteTweet = computed(() => quoteTweetId.value ? getDbTweet(quoteTweetId.v
 const repostTweet = computed(() => repostTweetId.value ? getDbTweet(repostTweetId.value) ?? null : null);
 const quoteAuthor = computed(() => quoteTweet.value ? getDbUser(quoteTweet.value.authorId) ?? null : null);
 const repostAuthor = computed(() => repostTweet.value ? getDbUser(repostTweet.value.authorId) ?? null : null);
+const verificationTag = computed(() => {
+  const verification = author.value?.identity?.verification;
+  const verificationType = verification?.type?.trim();
 
-const metaFlags = computed(() => [
-  getTweetNote(props.tweet) ? 'Long Post' : null,
-  props.tweet.communityNote ? 'Community Note' : null,
-  props.tweet.policy?.paidPromotion ? 'Paid Promotion' : null,
-].filter(Boolean) as string[]);
+  if (verificationType && verificationType.toLowerCase() !== 'none') {
+    return verificationType;
+  }
+
+  if (verification?.isBlueVerified) {
+    return 'Blue';
+  }
+
+  return null;
+});
 
 const policyLines = computed(() => {
   const lines: string[] = [];
 
+  if (getTweetNote(props.tweet)) {
+    lines.push('Long Post');
+  }
+  if (props.tweet.communityNote) {
+    lines.push('Community Note');
+  }
+  if (props.tweet.policy?.paidPromotion) {
+    lines.push('Paid Promotion');
+  }
   if (props.tweet.policy?.replyPolicy) {
     lines.push(`Reply policy: ${props.tweet.policy.replyPolicy}`);
   }
@@ -75,20 +93,24 @@ const policyLines = computed(() => {
         <div class="xd-detail-author xd-list-item--clickable" @click="emit('open-user', tweet.authorId)">
           <span class="xd-author-name">{{ author?.profile.displayName ?? '?' }}</span>
           <span class="xd-author-handle">@{{ author?.profile.userName ?? '?' }}</span>
+          <span v-if="verificationTag" class="xd-detail-author-tag">{{ verificationTag }}</span>
         </div>
 
         <div class="xd-detail-meta">
           <span>{{ formatDateTime(tweet.createdAt) }}</span>
           <span v-if="tweet.source">{{ tweet.source }}</span>
         </div>
-
-        <div v-if="metaFlags.length > 0" class="xd-detail-flags">
-          <span v-for="flag in metaFlags" :key="flag" class="xd-detail-flag">{{ flag }}</span>
-        </div>
       </div>
     </div>
 
-    <div v-if="text" class="xd-detail-text">{{ text }}</div>
+    <div v-if="textSegments.length > 0" class="xd-detail-text">
+      <span
+        v-for="(segment, index) in textSegments"
+        :key="`${segment.kind}-${index}`"
+        class="xd-detail-text-segment"
+        :class="{ 'xd-detail-text-segment--emphasis': segment.emphasis }"
+      >{{ segment.text }}</span>
+    </div>
 
     <div
       v-if="repostTweetId"
@@ -124,14 +146,14 @@ const policyLines = computed(() => {
 
     <MediaThumbGrid :media="media" @open="(url) => emit('open-media', url)" />
 
-    <div v-if="policyLines.length > 0" class="xd-detail-panel">
-      <div v-for="line in policyLines" :key="line" class="xd-detail-panel-line">{{ line }}</div>
+    <div v-if="policyLines.length > 0" class="xd-detail-lines">
+      <div v-for="line in policyLines" :key="line" class="xd-detail-line">{{ line }}</div>
     </div>
 
-    <div v-if="tweet.communityNote" class="xd-detail-panel">
-      <div class="xd-detail-panel-title">{{ tweet.communityNote.title ?? 'Community Note' }}</div>
-      <div v-if="tweet.communityNote.subtitle?.text" class="xd-detail-panel-line">{{ tweet.communityNote.subtitle.text }}</div>
-      <div v-if="tweet.communityNote.footer?.text" class="xd-detail-panel-line">{{ tweet.communityNote.footer.text }}</div>
+    <div v-if="tweet.communityNote" class="xd-detail-lines">
+      <div class="xd-detail-note-title">{{ tweet.communityNote.title ?? 'Community Note' }}</div>
+      <div v-if="tweet.communityNote.subtitle?.text" class="xd-detail-line">{{ tweet.communityNote.subtitle.text }}</div>
+      <div v-if="tweet.communityNote.footer?.text" class="xd-detail-line">{{ tweet.communityNote.footer.text }}</div>
     </div>
 
     <StatGrid :stats="stats" />
@@ -172,7 +194,21 @@ const policyLines = computed(() => {
 .xd-detail-author {
   display: inline-flex;
   align-items: baseline;
+  flex-wrap: wrap;
   gap: 6px;
+}
+
+.xd-detail-author-tag {
+  display: inline-flex;
+  align-items: center;
+  height: 16px;
+  padding: 0 6px;
+  border-radius: 999px;
+  border: 1px solid var(--xd-border);
+  background: var(--xd-bg-secondary);
+  color: var(--xd-text-secondary);
+  font-size: 9px;
+  line-height: 1;
 }
 
 .xd-detail-meta {
@@ -184,30 +220,16 @@ const policyLines = computed(() => {
   font-size: 10px;
 }
 
-.xd-detail-flags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  margin-top: 6px;
-}
-
-.xd-detail-flag {
-  display: inline-flex;
-  align-items: center;
-  height: 16px;
-  padding: 0 6px;
-  border-radius: 999px;
-  background: var(--xd-bg-secondary);
-  color: var(--xd-text-secondary);
-  font-size: 9px;
-}
-
 .xd-detail-text {
   font-size: 12px;
   color: var(--xd-text-primary);
   line-height: 1.55;
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+.xd-detail-text-segment--emphasis {
+  color: var(--xd-accent);
 }
 
 .xd-detail-ref {
@@ -233,23 +255,19 @@ const policyLines = computed(() => {
   word-break: break-word;
 }
 
-.xd-detail-panel {
+.xd-detail-lines {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 8px;
-  border-radius: var(--xd-radius);
-  background: var(--xd-bg-secondary);
-  border: 1px solid var(--xd-border);
+  gap: 3px;
 }
 
-.xd-detail-panel-title {
+.xd-detail-note-title {
   font-size: 10px;
   color: var(--xd-text-secondary);
   text-transform: uppercase;
 }
 
-.xd-detail-panel-line {
+.xd-detail-line {
   font-size: 11px;
   color: var(--xd-text-secondary);
   line-height: 1.4;
