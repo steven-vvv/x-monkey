@@ -91,7 +91,7 @@ export type UrlEntity = z.infer<typeof UrlEntitySchema>;
  * 文本中的 @ 提及实体。
  */
 export const MentionEntitySchema = strictObject({
-  userId: z.string(),
+  userId: z.string(), // `user_mentions[].id_str`，样本为纯数字用户雪花 ID，可用 BIGINT 存储。
   name: z.string(),
   userName: z.string(),
   range: TextRangeSchema,
@@ -138,7 +138,7 @@ export type AnnotatedText = z.infer<typeof AnnotatedTextSchema>;
  * 来源: `professional.category[].id` / `professional.category[].name`
  */
 export const TweetUserCategorySchema = strictObject({
-  id: z.string(),
+  id: z.string(), // `professional.category[].id`，样本为小整数分类编码（如 580/713/1017），非雪花 ID。
   name: z.string(),
 });
 
@@ -165,7 +165,7 @@ export type TweetUserVerification = z.infer<typeof TweetUserVerificationSchema>;
  * - `categories`: `professional.category`
  */
 export const TweetUserProfessionalSchema = strictObject({
-  id: z.string().optional(),
+  id: z.string().optional(), // `professional.rest_id`，样本为纯数字长 ID，按雪花 ID 处理，可用 BIGINT 存储。
   type: z.string().optional(),
   categories: z.array(TweetUserCategorySchema),
 });
@@ -295,10 +295,10 @@ export type TweetUserProfile = z.infer<typeof TweetUserProfileSchema>;
  * - `features`: `dm_permissions` / `media_permissions` / `privacy` / `super_follow_eligible`
  */
 export const TweetUserSchema = strictObject({
-  id: z.string(),
+  id: z.string(), // `rest_id`，样本为纯数字用户雪花 ID，可用 BIGINT 存储。
   createdAt: z.string().optional(),
   profile: TweetUserProfileSchema,
-  pinnedTweetIds: z.array(z.string()),
+  pinnedTweetIds: z.array(z.string()), // `pinned_tweet_ids_str`，帖子雪花 ID 列表，可用 BIGINT 存储。
   identity: TweetUserIdentitySchema.optional(),
   professional: TweetUserProfessionalSchema.optional(),
   stats: TweetUserStatsSchema.optional(),
@@ -346,7 +346,7 @@ export type MediaVariants = z.infer<typeof MediaVariantsSchema>;
  * 媒体中圈出的用户。
  */
 export const TweetMediaTagSchema = strictObject({
-  userId: z.string().optional(),
+  userId: z.string().optional(), // `features.*.tags[].user_id`，样本为纯数字用户雪花 ID，可用 BIGINT 存储。
   name: z.string().optional(),
   userName: z.string().optional(),
   kind: z.string().optional(),
@@ -407,8 +407,8 @@ export type TweetMediaGeometry = z.infer<typeof TweetMediaGeometrySchema>;
  * - `userId`: `extended_entities.media[].source_user_id_str`
  */
 export const MediaEntityOriginSchema = strictObject({
-  tweetId: z.string().optional(),
-  userId: z.string().optional(),
+  tweetId: z.string().optional(), // `source_status_id_str`，样本为纯数字帖子雪花 ID，可用 BIGINT 存储。
+  userId: z.string().optional(), // `source_user_id_str`，样本为纯数字用户雪花 ID，可用 BIGINT 存储。
 });
 
 export type MediaEntityOrigin = z.infer<typeof MediaEntityOriginSchema>;
@@ -421,8 +421,8 @@ export type MediaEntityOrigin = z.infer<typeof MediaEntityOriginSchema>;
  * - `user`: `extended_entities.media[].additional_media_info.source_user.user_results.result`
  */
 export const TweetMediaOriginSchema = strictObject({
-  tweetId: z.string().optional(),
-  userId: z.string().optional(),
+  tweetId: z.string().optional(), // `source_status_id_str`，样本为纯数字帖子雪花 ID，可用 BIGINT 存储。
+  userId: z.string().optional(), // `source_user_id_str`，样本为纯数字用户雪花 ID，可用 BIGINT 存储。
   user: TweetUserSchema.optional(),
 });
 
@@ -439,7 +439,7 @@ export type TweetMediaOrigin = z.infer<typeof TweetMediaOriginSchema>;
  * - `origin`: `*.entities.media[].source_status_id_str` / `*.entities.media[].source_user_id_str`
  */
 export const MediaEntitySchema = strictObject({
-  mediaId: z.string(),
+  mediaId: z.string(), // `entities.media[].id_str`，样本为纯数字长媒体 ID，按雪花 ID 处理，可用 BIGINT 存储。
   range: TextRangeSchema.optional(),
   displayText: z.string().optional(),
   expandedUrl: z.string().optional(),
@@ -481,11 +481,11 @@ export type TweetMediaDetails = z.infer<typeof TweetMediaDetailsSchema>;
  * - `video`: `legacy.extended_entities.media[].video_info`
  */
 export const TweetMediaSchema = strictObject({
-  id: z.string(),
+  id: z.string(), // `extended_entities.media[].id_str`，样本为纯数字长媒体 ID，按雪花 ID 处理，可用 BIGINT 存储。
   type: z.enum(['photo', 'video', 'animated_gif']),
   mediaUrl: z.string().optional(),
   altText: z.string().optional(),
-  grokPostId: z.string().optional(),
+  grokPostId: z.string().optional(), // `grok_post_id`，样本为 UUID 风格字符串，非雪花 ID。
   geometry: TweetMediaGeometrySchema.optional(),
   variants: MediaVariantsSchema.optional(),
   taggedUsers: z.array(TweetMediaTagSchema),
@@ -527,7 +527,7 @@ export type TweetPlaceBoundary = z.infer<typeof TweetPlaceBoundarySchema>;
  * - `boundary`: `legacy.place.bounding_box.coordinates[0][]`
  */
 export const TweetPlaceSchema = strictObject({
-  id: z.string().optional(),
+  id: z.string().optional(), // `legacy.place.id`，当前按地点字符串标识处理，非雪花 ID。
   name: z.string().optional(),
   fullName: z.string().optional(),
   country: z.string().optional(),
@@ -547,7 +547,7 @@ export type TweetPlace = z.infer<typeof TweetPlaceSchema>;
  * - `text.styles`: `note_tweet.note_tweet_results.result.richtext.richtext_tags`
  */
 export const TweetNoteSchema = strictObject({
-  id: z.string().optional(),
+  id: z.string().optional(), // `note_tweet.note_tweet_results.result.id`，样本为 `Tm90ZVR3ZWV0:...` Base64 风格字符串，非雪花 ID。
   text: AnnotatedTextSchema,
 });
 
@@ -574,8 +574,8 @@ export type TweetContent = z.infer<typeof TweetContentSchema>;
  * 回复目标。
  */
 export const TweetReplyTargetSchema = strictObject({
-  tweetId: z.string(),
-  userId: z.string().optional(),
+  tweetId: z.string(), // `in_reply_to_status_id_str`，样本为纯数字帖子雪花 ID，可用 BIGINT 存储。
+  userId: z.string().optional(), // `in_reply_to_user_id_str`，样本为纯数字用户雪花 ID，可用 BIGINT 存储。
   userName: z.string().optional(),
 });
 
@@ -599,8 +599,9 @@ export interface TweetQuote {
   /**
    * 被引用帖子 ID。
    * 来源: `legacy.quoted_status_id_str` / `quotedRefResult.result.rest_id` / `quoted_status_result.result.rest_id` / `quoted_status_result.result.legacy.id_str`
+   * 类型说明: 样本为纯数字帖子雪花 ID，可用 BIGINT 存储。
    */
-  tweetId: string;
+  tweetId: string; // 帖子雪花 ID，可用 BIGINT 存储。
 
   /**
    * 被引用帖子的链接信息。
@@ -625,8 +626,9 @@ export interface TweetConversation {
   /**
    * 会话主 ID。
    * 来源: `legacy.conversation_id_str`
+   * 类型说明: 样本为纯数字帖子雪花 ID；通常等于会话根帖 ID，可用 BIGINT 存储。
    */
-  conversationId: string;
+  conversationId: string; // 会话根帖雪花 ID，可用 BIGINT 存储。
 
   /**
    * 当前帖子回复到的目标。
@@ -675,7 +677,7 @@ export type TweetStats = z.infer<typeof TweetStatsSchema>;
  * - `remainingEdits`: `edit_control.edits_remaining`
  */
 export const TweetEditInfoSchema = strictObject({
-  versionIds: z.array(z.string()),
+  versionIds: z.array(z.string()), // `edit_tweet_ids`，帖子历史版本雪花 ID 列表，可用 BIGINT 存储。
   editableUntilAt: z.string().optional(),
   remainingEdits: z.string().optional(),
 });
@@ -763,7 +765,7 @@ export type TweetPolicy = z.infer<typeof TweetPolicySchema>;
  * - `visualStyle`: `birdwatch_pivot.visualStyle`
  */
 export const TweetCommunityNoteSchema = strictObject({
-  id: z.string().optional(),
+  id: z.string().optional(), // `birdwatch_pivot.note.rest_id`，样本为纯数字长 ID，按雪花 ID 处理，可用 BIGINT 存储。
   title: z.string().optional(),
   shortTitle: z.string().optional(),
   subtitle: AnnotatedTextSchema.optional(),
@@ -783,8 +785,9 @@ export interface Tweet {
   /**
    * 帖子唯一 ID。
    * 来源: `rest_id` / `legacy.id_str`
+   * 类型说明: 样本为纯数字帖子雪花 ID，可用 BIGINT 存储。
    */
-  id: string;
+  id: string; // 帖子雪花 ID，可用 BIGINT 存储。
 
   /**
    * 标准化后的创建时间字符串。
@@ -842,20 +845,20 @@ export interface Tweet {
 }
 
 export const TweetQuoteSchema: z.ZodType<TweetQuote> = z.lazy(() => strictObject({
-  tweetId: z.string(),
+  tweetId: z.string(), // 帖子雪花 ID，可用 BIGINT 存储。
   permalink: TweetPermalinkSchema.optional(),
   tweet: TweetSchema.optional(),
 }));
 
 export const TweetConversationSchema: z.ZodType<TweetConversation> = z.lazy(() => strictObject({
-  conversationId: z.string(),
+  conversationId: z.string(), // 会话根帖雪花 ID，可用 BIGINT 存储。
   replyTo: TweetReplyTargetSchema.optional(),
   quote: TweetQuoteSchema.optional(),
   repost: TweetSchema.optional(),
 }));
 
 export const TweetSchema: z.ZodType<Tweet> = z.lazy(() => strictObject({
-  id: z.string(),
+  id: z.string(), // 帖子雪花 ID，可用 BIGINT 存储。
   createdAt: z.string(),
   source: z.string().optional(),
   place: TweetPlaceSchema.optional(),
