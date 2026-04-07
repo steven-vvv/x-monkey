@@ -18,10 +18,10 @@ const emit = defineEmits<{
     <div class="xd-tweet-compact-card-main">
       <div class="xd-tweet-compact-card-head">
         <div class="xd-tweet-compact-card-author-line">
-          <span class="xd-tweet-compact-card-author-name">{{ props.item.displayName }}</span>
-          <span class="xd-tweet-compact-card-author-handle">@{{ props.item.userName }}</span>
+          <span class="xd-tweet-compact-card-author-name" :title="props.item.displayName">{{ props.item.displayName }}</span>
+          <span class="xd-tweet-compact-card-author-handle" :title="`@${props.item.userName}`">@{{ props.item.userName }}</span>
+          <span class="xd-tweet-compact-card-date">{{ props.item.dateText }}</span>
         </div>
-        <span class="xd-tweet-compact-card-date">{{ props.item.dateText }}</span>
       </div>
 
       <div class="xd-tweet-compact-card-text xd-text-ellipsis">{{ props.item.text }}</div>
