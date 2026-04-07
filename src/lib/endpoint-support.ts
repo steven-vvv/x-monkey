@@ -4,6 +4,7 @@ export interface EndpointSupportRecord {
   operationName: string;
   kind: EndpointKind;
   dumpDir: string;
+  extraDumpDirs?: readonly string[];
   supportVersion: number;
 }
 
@@ -12,6 +13,7 @@ export const SUPPORTED_ENDPOINTS = [
     operationName: 'TweetDetail',
     kind: 'tweet-detail',
     dumpDir: 'dumps/legacy/TweetDetail',
+    extraDumpDirs: ['dumps/misc/3'],
     supportVersion: 1,
   },
   {
@@ -53,4 +55,8 @@ const supportedEndpointNameSet = new Set<string>(SUPPORTED_ENDPOINTS.map((item) 
 
 export function isSupportedEndpointOperation(value: string): value is SupportedEndpointOperationName {
   return supportedEndpointNameSet.has(value);
+}
+
+export function getEndpointFixtureDirs(endpoint: EndpointSupportRecord): readonly string[] {
+  return endpoint.extraDumpDirs ? [endpoint.dumpDir, ...endpoint.extraDumpDirs] : [endpoint.dumpDir];
 }

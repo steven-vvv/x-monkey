@@ -1,12 +1,12 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { SUPPORTED_ENDPOINTS, type EndpointKind } from '../src/lib/endpoint-support';
+import { SUPPORTED_ENDPOINTS, getEndpointFixtureDirs, type EndpointKind } from '../src/lib/endpoint-support';
 
 type JsonObject = Record<string, any>;
 
 interface EndpointConfig {
   name: string;
-  dir: string;
+  dirs: readonly string[];
   kind: EndpointKind;
   supportVersion: number | null;
 }
@@ -34,11 +34,11 @@ const ROOT = resolve(process.cwd());
 const ENDPOINTS: EndpointConfig[] = [
   ...SUPPORTED_ENDPOINTS.map((endpoint) => ({
     name: endpoint.operationName,
-    dir: endpoint.dumpDir,
+    dirs: getEndpointFixtureDirs(endpoint),
     kind: endpoint.kind,
     supportVersion: endpoint.supportVersion,
   })),
-  { name: 'legacy/UserMedia', dir: 'dumps/legacy/UserMedia', kind: 'timeline', supportVersion: null },
+  { name: 'legacy/UserMedia', dirs: ['dumps/legacy/UserMedia'], kind: 'timeline', supportVersion: null },
 ];
 
 function readJson(filePath: string): JsonObject {
@@ -148,11 +148,8 @@ function collectTweetDetailTweets(json: JsonObject) {
 }
 
 function collectStats(config: EndpointConfig): EndpointStats {
-  const dir = join(ROOT, config.dir);
-  const files = readdirSync(dir).filter((file) => file.endsWith('.json')).sort();
-
   const stats: EndpointStats = {
-    files: files.length,
+    files: 0,
     tweets: 0,
     instructionTypes: new Map(),
     tweetPaths: new Set(),
@@ -170,42 +167,48 @@ function collectStats(config: EndpointConfig): EndpointStats {
     userProfileImageShape: 0,
   };
 
-  for (const file of files) {
-    const json = readJson(join(dir, file));
-    const collector = config.kind === 'timeline' ? collectTimelineTweets(json) : collectTweetDetailTweets(json);
+  for (const relativeDir of config.dirs) {
+    const dir = join(ROOT, relativeDir);
+    const files = readdirSync(dir).filter((file) => file.endsWith('.json')).sort();
+    stats.files += files.length;
 
-    for (const [type, count] of collector.instructionTypes) {
-      stats.instructionTypes.set(type, (stats.instructionTypes.get(type) ?? 0) + count);
-    }
-    for (const pathLabel of collector.tweetPaths) {
-      stats.tweetPaths.add(pathLabel);
-    }
+    for (const file of files) {
+      const json = readJson(join(dir, file));
+      const collector = config.kind === 'timeline' ? collectTimelineTweets(json) : collectTweetDetailTweets(json);
 
-    for (const rawTweet of collector.tweets) {
-      stats.tweets++;
-      const typename = typeof rawTweet.__typename === 'string' ? rawTweet.__typename : '(unknown)';
-      stats.typenames.set(typename, (stats.typenames.get(typename) ?? 0) + 1);
+      for (const [type, count] of collector.instructionTypes) {
+        stats.instructionTypes.set(type, (stats.instructionTypes.get(type) ?? 0) + count);
+      }
+      for (const pathLabel of collector.tweetPaths) {
+        stats.tweetPaths.add(pathLabel);
+      }
 
-      const legacyText = typeof rawTweet?.legacy?.full_text === 'string' ? rawTweet.legacy.full_text : '';
-      const noteText = typeof rawTweet?.note_tweet?.note_tweet_results?.result?.text === 'string'
-        ? rawTweet.note_tweet.note_tweet_results.result.text
-        : null;
-      const quotedResult = rawTweet?.quoted_status_result?.result;
-      const retweetedResult = rawTweet?.retweeted_status_result?.result ?? rawTweet?.legacy?.retweeted_status_result?.result;
-      const author = rawTweet?.core?.user_results?.result;
-      const profileUrl = author?.legacy?.entities?.url?.urls?.find((item: any) => typeof item?.expanded_url === 'string')?.expanded_url;
+      for (const rawTweet of collector.tweets) {
+        stats.tweets++;
+        const typename = typeof rawTweet.__typename === 'string' ? rawTweet.__typename : '(unknown)';
+        stats.typenames.set(typename, (stats.typenames.get(typename) ?? 0) + 1);
 
-      if (noteText) stats.noteTweet++;
-      if (noteText && noteText.length > legacyText.length) stats.noteTweetLonger++;
-      if (quotedResult || rawTweet?.legacy?.quoted_status_id_str) stats.quoted++;
-      if (!quotedResult && rawTweet?.legacy?.quoted_status_id_str) stats.quotedFallbackOnly++;
-      if (retweetedResult) stats.retweeted++;
-      if (rawTweet?.card) stats.card++;
-      if (rawTweet?.article) stats.article++;
-      if (profileUrl) stats.userProfileUrl++;
-      if (author?.verification?.verified_type) stats.userVerifiedType++;
-      if (author?.professional?.professional_type) stats.userProfessionalType++;
-      if (author?.profile_image_shape) stats.userProfileImageShape++;
+        const legacyText = typeof rawTweet?.legacy?.full_text === 'string' ? rawTweet.legacy.full_text : '';
+        const noteText = typeof rawTweet?.note_tweet?.note_tweet_results?.result?.text === 'string'
+          ? rawTweet.note_tweet.note_tweet_results.result.text
+          : null;
+        const quotedResult = rawTweet?.quoted_status_result?.result;
+        const retweetedResult = rawTweet?.retweeted_status_result?.result ?? rawTweet?.legacy?.retweeted_status_result?.result;
+        const author = rawTweet?.core?.user_results?.result;
+        const profileUrl = author?.legacy?.entities?.url?.urls?.find((item: any) => typeof item?.expanded_url === 'string')?.expanded_url;
+
+        if (noteText) stats.noteTweet++;
+        if (noteText && noteText.length > legacyText.length) stats.noteTweetLonger++;
+        if (quotedResult || rawTweet?.legacy?.quoted_status_id_str) stats.quoted++;
+        if (!quotedResult && rawTweet?.legacy?.quoted_status_id_str) stats.quotedFallbackOnly++;
+        if (retweetedResult) stats.retweeted++;
+        if (rawTweet?.card) stats.card++;
+        if (rawTweet?.article) stats.article++;
+        if (profileUrl) stats.userProfileUrl++;
+        if (author?.verification?.verified_type) stats.userVerifiedType++;
+        if (author?.professional?.professional_type) stats.userProfessionalType++;
+        if (author?.profile_image_shape) stats.userProfileImageShape++;
+      }
     }
   }
 

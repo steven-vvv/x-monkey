@@ -1,6 +1,10 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { SUPPORTED_ENDPOINTS, type SupportedEndpointOperationName } from '../src/lib/endpoint-support';
+import {
+  SUPPORTED_ENDPOINTS,
+  getEndpointFixtureDirs,
+  type SupportedEndpointOperationName,
+} from '../src/lib/endpoint-support';
 import {
   parseBookmarksResponse,
   parseHomeLatestTimelineResponse,
@@ -35,7 +39,7 @@ import type { ParsedResponse, XMedia, XTweet, XUser } from '../src/lib/types';
 
 interface CaseConfig {
   name: string;
-  dir: string;
+  dirs: readonly string[];
   parse: (json: unknown) => ParsedResponse | TimelineParsedResponse;
   ordered: boolean;
   supportVersion: number;
@@ -53,7 +57,7 @@ const PARSERS: Record<SupportedEndpointOperationName, (json: unknown) => ParsedR
 
 const CASES: CaseConfig[] = SUPPORTED_ENDPOINTS.map((endpoint) => ({
   name: endpoint.operationName,
-  dir: endpoint.dumpDir,
+  dirs: getEndpointFixtureDirs(endpoint),
   parse: PARSERS[endpoint.operationName],
   ordered: endpoint.kind === 'timeline',
   supportVersion: endpoint.supportVersion,
@@ -89,6 +93,24 @@ function assertUserShape(user: XUser, caseName: string) {
   if (!user.id) fail(`[${caseName}] empty user id`);
   if (user.createdAt && !isIsoDateTime(user.createdAt)) {
     fail(`[${caseName}] user ${user.id} createdAt was not normalized to ISO`);
+  }
+}
+
+function assertFixtureExpectations(
+  parsed: ParsedResponse | TimelineParsedResponse,
+  testCaseName: string,
+  file: string,
+) {
+  if (testCaseName !== 'TweetDetail' || file !== 'TweetDetail-d6dc09dc.json') return;
+
+  const tweet = parsed.tweets.get('2041408315671163341');
+  if (!tweet) {
+    fail(`[${testCaseName}/${file}] expected wrapped tweet 2041408315671163341 to be parsed`);
+  }
+
+  const limitedActionCount = tweet.policy?.limitedActions?.length ?? 0;
+  if (limitedActionCount !== 15) {
+    fail(`[${testCaseName}/${file}] expected 15 limitedActions, received ${limitedActionCount}`);
   }
 }
 
@@ -751,46 +773,52 @@ function main() {
   let totalMedia = 0;
 
   for (const testCase of CASES) {
-    const dir = join(ROOT, testCase.dir);
-    const files = readdirSync(dir).filter((file) => file.endsWith('.json')).sort();
-
+    let caseFiles = 0;
     let caseTweets = 0;
     let caseMedia = 0;
     let caseUsers = 0;
     let caseOrdered = 0;
 
-    for (const file of files) {
-      const json = JSON.parse(readFileSync(join(dir, file), 'utf8'));
-      const parsed = testCase.parse(json);
+    for (const relativeDir of testCase.dirs) {
+      const dir = join(ROOT, relativeDir);
+      const files = readdirSync(dir).filter((file) => file.endsWith('.json')).sort();
+      caseFiles += files.length;
 
-      for (const tweet of parsed.tweets.values()) {
-        assertTweetShape(tweet, `${testCase.name}/${file}`);
-      }
+      for (const file of files) {
+        const json = JSON.parse(readFileSync(join(dir, file), 'utf8'));
+        const parsed = testCase.parse(json);
 
-      for (const user of parsed.users.values()) {
-        assertUserShape(user, `${testCase.name}/${file}`);
-      }
+        for (const tweet of parsed.tweets.values()) {
+          assertTweetShape(tweet, `${testCase.name}/${file}`);
+        }
 
-      for (const tweet of parsed.tweets.values()) {
-        for (const mediaId of getTweetMediaIds(tweet)) {
-          if (!parsed.media.has(mediaId)) {
-            fail(`[${testCase.name}/${file}] tweet ${tweet.id} references missing media ${mediaId}`);
+        for (const user of parsed.users.values()) {
+          assertUserShape(user, `${testCase.name}/${file}`);
+        }
+
+        for (const tweet of parsed.tweets.values()) {
+          for (const mediaId of getTweetMediaIds(tweet)) {
+            if (!parsed.media.has(mediaId)) {
+              fail(`[${testCase.name}/${file}] tweet ${tweet.id} references missing media ${mediaId}`);
+            }
           }
         }
-      }
 
-      if (isTimelineParsedResponse(parsed)) {
-        for (const tweetId of parsed.tweetIds) {
-          if (!parsed.tweets.has(tweetId)) {
-            fail(`[${testCase.name}/${file}] ordered tweet id ${tweetId} missing from parsed.tweets`);
+        if (isTimelineParsedResponse(parsed)) {
+          for (const tweetId of parsed.tweetIds) {
+            if (!parsed.tweets.has(tweetId)) {
+              fail(`[${testCase.name}/${file}] ordered tweet id ${tweetId} missing from parsed.tweets`);
+            }
           }
+          caseOrdered += parsed.tweetIds.length;
         }
-        caseOrdered += parsed.tweetIds.length;
-      }
 
-      caseTweets += parsed.tweets.size;
-      caseMedia += parsed.media.size;
-      caseUsers += parsed.users.size;
+        assertFixtureExpectations(parsed, testCase.name, file);
+
+        caseTweets += parsed.tweets.size;
+        caseMedia += parsed.media.size;
+        caseUsers += parsed.users.size;
+      }
     }
 
     if (caseTweets === 0) {
@@ -801,7 +829,7 @@ function main() {
     totalMedia += caseMedia;
 
     const orderedText = testCase.ordered ? `, ordered=${caseOrdered}` : '';
-    console.log(`${testCase.name}@v${testCase.supportVersion}: files=${files.length}, tweets=${caseTweets}, media=${caseMedia}, users=${caseUsers}${orderedText}`);
+    console.log(`${testCase.name}@v${testCase.supportVersion}: files=${caseFiles}, tweets=${caseTweets}, media=${caseMedia}, users=${caseUsers}${orderedText}`);
   }
 
   console.log(`Totals: tweets=${totalTweets}, media=${totalMedia}`);
