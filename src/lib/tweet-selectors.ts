@@ -36,6 +36,10 @@ export interface TweetTextSegment {
   kind: 'plain' | 'hashtag' | 'symbol' | 'mention' | 'url' | 'media';
   text: string;
   emphasis: boolean;
+  bold: boolean;
+  italic: boolean;
+  underline: boolean;
+  strike: boolean;
 }
 
 interface TextReplacement {
@@ -43,6 +47,18 @@ interface TextReplacement {
   end: number;
   kind: TweetTextSegment['kind'];
   text: string;
+}
+
+interface TweetTextStyleFlags {
+  bold: boolean;
+  italic: boolean;
+  underline: boolean;
+  strike: boolean;
+}
+
+interface ResolvedTextStyleRange extends TweetTextStyleFlags {
+  start: number;
+  end: number;
 }
 
 function stripQuery(url: string): string {
@@ -97,6 +113,57 @@ function decodeTextContent(text: string): string {
 
 function clampIndex(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
+}
+
+function createEmptyTextStyleFlags(): TweetTextStyleFlags {
+  return {
+    bold: false,
+    italic: false,
+    underline: false,
+    strike: false,
+  };
+}
+
+function hasTextStyles(value: TweetTextStyleFlags): boolean {
+  return value.bold || value.italic || value.underline || value.strike;
+}
+
+function createTweetTextSegment(
+  kind: TweetTextSegment['kind'],
+  text: string,
+  emphasis: boolean,
+  styles: TweetTextStyleFlags,
+): TweetTextSegment {
+  return {
+    kind,
+    text,
+    emphasis,
+    ...styles,
+  };
+}
+
+function hasSameTextStyleFlags(left: TweetTextStyleFlags, right: TweetTextStyleFlags): boolean {
+  return left.bold === right.bold
+    && left.italic === right.italic
+    && left.underline === right.underline
+    && left.strike === right.strike;
+}
+
+function pushTweetTextSegment(segments: TweetTextSegment[], segment: TweetTextSegment) {
+  if (!segment.text) return;
+
+  const previous = segments[segments.length - 1];
+  if (
+    previous
+    && previous.kind === segment.kind
+    && previous.emphasis === segment.emphasis
+    && hasSameTextStyleFlags(previous, segment)
+  ) {
+    previous.text += segment.text;
+    return;
+  }
+
+  segments.push(segment);
 }
 
 function getAnnotatedTextDisplayRange(value: AnnotatedText): { start: number; end: number } {
@@ -162,9 +229,120 @@ function getAnnotatedTextReplacements(value: AnnotatedText): TextReplacement[] {
   });
 }
 
+function resolveTextStyleFlags(styleNames: string[]): TweetTextStyleFlags {
+  const flags = createEmptyTextStyleFlags();
+
+  for (const styleName of styleNames) {
+    switch (styleName.trim().toLowerCase()) {
+      case 'bold':
+        flags.bold = true;
+        break;
+      case 'italic':
+        flags.italic = true;
+        break;
+      case 'underline':
+      case 'underlined':
+        flags.underline = true;
+        break;
+      case 'strike':
+      case 'strikethrough':
+        flags.strike = true;
+        break;
+      default:
+        break;
+    }
+  }
+
+  return flags;
+}
+
+function getAnnotatedTextStyles(
+  value: AnnotatedText,
+  start: number,
+  end: number,
+): ResolvedTextStyleRange[] {
+  const styles: ResolvedTextStyleRange[] = [];
+
+  for (const item of value.styles ?? []) {
+    const resolved = resolveTextStyleFlags(item.styles);
+    if (!hasTextStyles(resolved)) continue;
+
+    const rangeStart = clampIndex(item.range.start, start, end);
+    const rangeEnd = clampIndex(item.range.end, rangeStart, end);
+    if (rangeStart >= rangeEnd) continue;
+
+    styles.push({
+      start: rangeStart,
+      end: rangeEnd,
+      ...resolved,
+    });
+  }
+
+  return styles.sort((left, right) => {
+    if (left.start !== right.start) return left.start - right.start;
+    return left.end - right.end;
+  });
+}
+
+function getTextStyleFlagsForRange(
+  styles: ResolvedTextStyleRange[],
+  start: number,
+  end: number,
+): TweetTextStyleFlags {
+  const flags = createEmptyTextStyleFlags();
+
+  for (const style of styles) {
+    if (style.end <= start || style.start >= end) continue;
+    flags.bold ||= style.bold;
+    flags.italic ||= style.italic;
+    flags.underline ||= style.underline;
+    flags.strike ||= style.strike;
+  }
+
+  return flags;
+}
+
+function pushPlainTextSegments(
+  segments: TweetTextSegment[],
+  value: AnnotatedText,
+  start: number,
+  end: number,
+  styles: ResolvedTextStyleRange[],
+) {
+  if (start >= end) return;
+
+  const boundaries = new Set<number>([start, end]);
+  for (const style of styles) {
+    if (style.end <= start || style.start >= end) continue;
+    boundaries.add(clampIndex(style.start, start, end));
+    boundaries.add(clampIndex(style.end, start, end));
+  }
+
+  const orderedBoundaries = [...boundaries].sort((left, right) => left - right);
+  for (let index = 1; index < orderedBoundaries.length; index += 1) {
+    const chunkStart = orderedBoundaries[index - 1];
+    const chunkEnd = orderedBoundaries[index];
+    if (chunkStart >= chunkEnd) continue;
+
+    const plainText = decodeTextContent(value.text.slice(chunkStart, chunkEnd));
+    if (!plainText) continue;
+
+    pushTweetTextSegment(
+      segments,
+      createTweetTextSegment(
+        'plain',
+        plainText,
+        false,
+        getTextStyleFlagsForRange(styles, chunkStart, chunkEnd),
+      ),
+    );
+  }
+}
+
 export function getAnnotatedTextSegments(value: AnnotatedText): TweetTextSegment[] {
   const { start, end } = getAnnotatedTextDisplayRange(value);
   const replacements = getAnnotatedTextReplacements(value);
+  const styles = getAnnotatedTextStyles(value, start, end);
   const segments: TweetTextSegment[] = [];
   let cursor = start;
 
@@ -172,36 +350,26 @@ export function getAnnotatedTextSegments(value: AnnotatedText): TweetTextSegment
     if (replacement.start < start || replacement.end > end) continue;
     if (replacement.end <= cursor) continue;
     if (replacement.start > cursor) {
-      const plainText = decodeTextContent(value.text.slice(cursor, replacement.start));
-      if (plainText) {
-        segments.push({
-          kind: 'plain',
-          text: plainText,
-          emphasis: false,
-        });
-      }
+      pushPlainTextSegments(segments, value, cursor, replacement.start, styles);
     }
 
     const entityText = decodeTextContent(replacement.text);
     if (entityText) {
-      segments.push({
-        kind: replacement.kind,
-        text: entityText,
-        emphasis: replacement.kind !== 'plain',
-      });
+      pushTweetTextSegment(
+        segments,
+        createTweetTextSegment(
+          replacement.kind,
+          entityText,
+          replacement.kind !== 'plain',
+          getTextStyleFlagsForRange(styles, replacement.start, replacement.end),
+        ),
+      );
     }
     cursor = replacement.end;
   }
 
   if (cursor < end) {
-    const trailingText = decodeTextContent(value.text.slice(cursor, end));
-    if (trailingText) {
-      segments.push({
-        kind: 'plain',
-        text: trailingText,
-        emphasis: false,
-      });
-    }
+    pushPlainTextSegments(segments, value, cursor, end, styles);
   }
 
   return segments;

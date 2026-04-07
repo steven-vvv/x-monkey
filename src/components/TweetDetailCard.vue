@@ -6,7 +6,6 @@ import { avatarFull, formatDateTime, toTweetStats } from '../lib/view-format';
 import {
   getTweetDisplayText,
   getTweetDetailTextSegments,
-  getTweetNote,
   getTweetQuoteId,
   getTweetRepostId,
 } from '../lib/tweet-selectors';
@@ -50,12 +49,6 @@ const verificationTag = computed(() => {
 const policyLines = computed(() => {
   const lines: string[] = [];
 
-  if (getTweetNote(props.tweet)) {
-    lines.push('Long Post');
-  }
-  if (props.tweet.communityNote) {
-    lines.push('Community Note');
-  }
   if (props.tweet.policy?.paidPromotion) {
     lines.push('Paid Promotion');
   }
@@ -108,7 +101,13 @@ const policyLines = computed(() => {
         v-for="(segment, index) in textSegments"
         :key="`${segment.kind}-${index}`"
         class="xd-detail-text-segment"
-        :class="{ 'xd-detail-text-segment--emphasis': segment.emphasis }"
+        :class="{
+          'xd-detail-text-segment--emphasis': segment.emphasis,
+          'xd-detail-text-segment--bold': segment.bold,
+          'xd-detail-text-segment--italic': segment.italic,
+          'xd-detail-text-segment--underline': segment.underline,
+          'xd-detail-text-segment--strike': segment.strike,
+        }"
       >{{ segment.text }}</span>
     </div>
 
@@ -230,6 +229,26 @@ const policyLines = computed(() => {
 
 .xd-detail-text-segment--emphasis {
   color: var(--xd-accent);
+}
+
+.xd-detail-text-segment--bold {
+  font-weight: 700;
+}
+
+.xd-detail-text-segment--italic {
+  font-style: italic;
+}
+
+.xd-detail-text-segment--underline {
+  text-decoration: underline;
+}
+
+.xd-detail-text-segment--strike {
+  text-decoration: line-through;
+}
+
+.xd-detail-text-segment--underline.xd-detail-text-segment--strike {
+  text-decoration: underline line-through;
 }
 
 .xd-detail-ref {
