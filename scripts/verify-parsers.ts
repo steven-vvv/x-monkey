@@ -24,6 +24,7 @@ import {
   resolveTimelineRecordKey,
 } from '../src/lib/timeline-store';
 import {
+  getAnnotatedTextSegments,
   getMediaOriginTweetId,
   getMediaOriginUserId,
   getTweetLegacyText,
@@ -497,6 +498,94 @@ function assertInlineParserScenarios() {
   const unmentionParsed = parseHomeTimelineResponse(unmentionFixture);
   if (!unmentionParsed.tweets.has('t-unmention')) {
     fail('[inline] unmention hydrate traversal failed');
+  }
+
+  const styledText = 'ignore Bold text and https://t.co/demo with &gt; and \\n done';
+  const styledDisplayStart = styledText.indexOf('Bold text');
+  const styledDisplayEnd = styledText.indexOf(' done');
+  const boldStart = styledDisplayStart;
+  const boldEnd = boldStart + 'Bold text'.length;
+  const urlStart = styledText.indexOf('https://t.co/demo');
+  const urlEnd = urlStart + 'https://t.co/demo'.length;
+  const unknownStart = styledText.indexOf('&gt;');
+
+  const styledSegments = getAnnotatedTextSegments({
+    text: styledText,
+    displayRange: {
+      start: styledDisplayStart,
+      end: styledDisplayEnd,
+    },
+    entities: {
+      hashtags: [],
+      symbols: [],
+      urls: [
+        {
+          url: 'https://t.co/demo',
+          expandedUrl: 'https://example.com/source',
+          displayText: 'example.com/source',
+          range: {
+            start: urlStart,
+            end: urlEnd,
+          },
+        },
+      ],
+      mentions: [],
+      media: [],
+    },
+    styles: [
+      {
+        range: {
+          start: boldStart,
+          end: boldEnd,
+        },
+        styles: ['Bold'],
+      },
+      {
+        range: {
+          start: urlStart + 8,
+          end: urlEnd - 2,
+        },
+        styles: ['Italic'],
+      },
+      {
+        range: {
+          start: unknownStart,
+          end: unknownStart + '&gt;'.length,
+        },
+        styles: ['Unknown'],
+      },
+    ],
+  });
+
+  if (styledSegments.map((segment) => segment.text).join('') !== 'Bold text and https://example.com/source with > and \n') {
+    fail('[inline] styled text segmentation lost decoded detail text output');
+  }
+
+  const boldSegment = styledSegments.find((segment) => segment.text === 'Bold text');
+  if (!boldSegment?.bold || boldSegment.emphasis) {
+    fail('[inline] styled text segmentation lost bold plain segment');
+  }
+
+  const urlSegment = styledSegments.find((segment) => segment.kind === 'url');
+  if (!urlSegment) {
+    fail('[inline] styled text segmentation lost url segment');
+  }
+  if (urlSegment.text !== 'https://example.com/source') {
+    fail('[inline] styled text segmentation lost expanded url output');
+  }
+  if (!urlSegment.italic || !urlSegment.emphasis) {
+    fail('[inline] styled text segmentation lost italic url styling');
+  }
+  if (urlSegment.bold || urlSegment.underline || urlSegment.strike) {
+    fail('[inline] styled text segmentation applied unexpected url styles');
+  }
+
+  const tailSegment = styledSegments[styledSegments.length - 1];
+  if (!tailSegment || tailSegment.text !== ' with > and \n') {
+    fail('[inline] styled text segmentation lost decoded tail text');
+  }
+  if (tailSegment.bold || tailSegment.italic || tailSegment.underline || tailSegment.strike) {
+    fail('[inline] styled text segmentation should ignore unknown styles');
   }
 
   const emptyParsed = parseHomeTimelineResponse({});
