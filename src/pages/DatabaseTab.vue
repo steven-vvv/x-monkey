@@ -9,15 +9,18 @@ import { clearCaptureState } from '../lib/capture-state-service';
 import type { DbTweet } from '../lib/db-service';
 import { GM_openInTab } from '$';
 import { getTweetOpenUrl, getUserOpenUrl } from '../lib/tweet-selectors';
-import TweetSummaryItem from '../components/TweetSummaryItem.vue';
+import { toTweetCompactCardItem } from '../lib/view-format';
+import TweetCompactCard from '../components/TweetCompactCard.vue';
 import TweetDetailView from '../components/TweetDetailView.vue';
 import UserDetailCard from '../components/UserDetailCard.vue';
 
 const route = dbRoute;
 
-const tweetList = computed(() => {
+const tweetListCards = computed(() => {
   void dbVersion.value;
-  return getAllTweets().sort((a, b) => b._ts - a._ts);
+  return getAllTweets()
+    .sort((a, b) => b._ts - a._ts)
+    .map((tweet) => toTweetCompactCardItem(tweet, getDbUser(tweet.authorId)));
 });
 
 function openTweet(id: string) {
@@ -69,11 +72,11 @@ const detailUser = computed(() => {
     <div class="xd-body">
       <!-- List page -->
       <template v-if="route.page === 'list'">
-        <div v-if="tweetList.length === 0" class="xd-empty">Database is empty</div>
-        <TweetSummaryItem
-          v-for="item in tweetList"
-          :key="item.id"
-          :tweet="item"
+        <div v-if="tweetListCards.length === 0" class="xd-empty">Database is empty</div>
+        <TweetCompactCard
+          v-for="item in tweetListCards"
+          :key="item.tweetId"
+          :item="item"
           @select="openTweet"
         />
       </template>
@@ -103,7 +106,7 @@ const detailUser = computed(() => {
     </div>
 
     <div class="xd-tab-actions">
-      <span class="xd-tab-meta">{{ tweetList.length }} tweets</span>
+      <span class="xd-tab-meta">{{ tweetListCards.length }} tweets</span>
       <button class="xd-btn xd-btn--sm xd-btn--error" @click="clearCaptureState">Clear</button>
     </div>
   </div>

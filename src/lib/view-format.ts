@@ -1,8 +1,18 @@
+import { getTweetDisplayText } from './tweet-selectors';
 import type { DbTweetRecord, DbUserRecord } from './types';
 
 export interface StatItem {
   label: string;
   value: string;
+}
+
+export interface TweetCompactCardItem {
+  tweetId: string;
+  displayName: string;
+  userName: string;
+  dateText: string;
+  text: string;
+  mediaCount: number;
 }
 
 function getLocalDateParts(value: string) {
@@ -17,12 +27,6 @@ function getLocalDateParts(value: string) {
     minutes: String(date.getMinutes()).padStart(2, '0'),
     seconds: String(date.getSeconds()).padStart(2, '0'),
   };
-}
-
-export function formatTweetDate(createdAt: string): string {
-  const parts = getLocalDateParts(createdAt);
-  if (!parts) return createdAt;
-  return `${parts.year}-${parts.month}-${parts.day}`;
 }
 
 export function formatTweetDateTime(createdAt: string): string {
@@ -58,6 +62,20 @@ function formatOptionalCount(value: number | string | undefined): string {
 
 export function avatarFull(url: string): string {
   return url.replace('_normal.', '_400x400.');
+}
+
+export function toTweetCompactCardItem(
+  tweet: Pick<DbTweetRecord, 'id' | 'createdAt' | 'content' | 'conversation'>,
+  author: Pick<DbUserRecord, 'profile'> | undefined,
+): TweetCompactCardItem {
+  return {
+    tweetId: tweet.id,
+    displayName: author?.profile.displayName ?? '?',
+    userName: author?.profile.userName ?? '?',
+    dateText: formatTweetDateTime(tweet.createdAt),
+    text: getTweetDisplayText(tweet) || '(no text)',
+    mediaCount: tweet.content.mediaIds.length,
+  };
 }
 
 export function toTweetStats(tweet: Pick<DbTweetRecord, 'stats'>): StatItem[] {
