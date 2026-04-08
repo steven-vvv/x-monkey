@@ -227,6 +227,75 @@ function normalizeAnnotatedTextFromTimelineText(
   };
 }
 
+function extractTwitterHandleFromUrl(url: string | undefined): string | undefined {
+  if (!url) return undefined;
+
+  try {
+    const parsed = new URL(url);
+    const host = parsed.hostname.toLowerCase();
+    if (
+      host !== 'twitter.com'
+      && host !== 'www.twitter.com'
+      && host !== 'mobile.twitter.com'
+      && host !== 'x.com'
+      && host !== 'www.x.com'
+    ) {
+      return undefined;
+    }
+
+    const handle = parsed.pathname
+      .split('/')
+      .map((segment) => segment.trim())
+      .filter(Boolean)[0];
+    if (!handle) return undefined;
+    return handle.startsWith('@') ? handle.slice(1) : handle;
+  } catch {
+    return undefined;
+  }
+}
+
+function normalizeUserDisclosure(rawUser: raw.User): normalized.TweetUserDisclosure | undefined {
+  const label = rawUser.affiliates_highlighted_label?.label;
+  if (!label) return undefined;
+
+  const subjectUrl = label.url?.url;
+  const subjectHandleFromUrl = extractTwitterHandleFromUrl(subjectUrl);
+
+  if (label.userLabelType === 'BusinessLabel') {
+    const subject = toOptionalObject({
+      subjectHandle: subjectHandleFromUrl,
+      subjectName: label.description,
+      subjectUrl,
+    });
+    return subject
+      ? { relation: 'affiliated_with', ...subject }
+      : { relation: 'affiliated_with' };
+  }
+
+  if (label.userLabelType === 'AutomatedLabel') {
+    const mention = (label.longDescription?.entities ?? []).find((entity) => {
+      const mentionResult = entity.ref?.mention_results?.result;
+      return Boolean(entity.ref?.screen_name || mentionResult?.core?.screen_name || mentionResult?.rest_id);
+    });
+    const subject = toOptionalObject({
+      subjectId: mention?.ref?.mention_results?.result?.rest_id,
+      subjectHandle: mention?.ref?.screen_name ?? mention?.ref?.mention_results?.result?.core?.screen_name,
+    });
+    return subject
+      ? { relation: 'operated_by', ...subject }
+      : { relation: 'operated_by' };
+  }
+
+  const subject = toOptionalObject({
+    subjectHandle: subjectHandleFromUrl,
+    subjectName: label.description,
+    subjectUrl,
+  });
+  return subject
+    ? { relation: 'unknown', ...subject }
+    : { relation: 'unknown' };
+}
+
 function normalizeTextStyles(
   richtext: raw.NoteTweetRichText | undefined,
 ): normalized.TextStyleRange[] | undefined {
@@ -363,21 +432,11 @@ function normalizeUser(rawUser: raw.User): normalized.TweetUser {
     type: rawUser.verification?.verified_type,
   });
 
-  const accountLabel = rawUser.affiliates_highlighted_label?.label
-    ? toOptionalObject({
-        type: rawUser.affiliates_highlighted_label.label.userLabelType,
-        displayType: rawUser.affiliates_highlighted_label.label.userLabelDisplayType,
-        text: rawUser.affiliates_highlighted_label.label.description,
-        detail: normalizeAnnotatedTextFromTimelineText(rawUser.affiliates_highlighted_label.label.longDescription),
-        badgeUrl: rawUser.affiliates_highlighted_label.label.badge?.url,
-        url: rawUser.affiliates_highlighted_label.label.url?.url,
-        urlType: rawUser.affiliates_highlighted_label.label.url?.urlType,
-      })
-    : undefined;
+  const disclosure = normalizeUserDisclosure(rawUser);
 
   const identity = toOptionalObject({
     verification,
-    accountLabel,
+    disclosure,
     parodyLabel: rawUser.parody_commentary_fan_label,
     hasCompletedNewAccountReview: rawUser.has_graduated_access,
     isPossiblySensitive: rawUser.legacy?.possibly_sensitive,
@@ -507,33 +566,12 @@ function normalizePermalink(
   };
 }
 
-function normalizeLimitedActions(
+function normalizeAvailableActions(
   limitedActionResults: raw.LimitedActionResults | undefined,
-): normalized.TweetLimitedAction[] | undefined {
-  const actions = (limitedActionResults?.limited_actions ?? []).map((action) => ({
-    action: action.action,
-    prompt: action.prompt
-      ? toOptionalObject({
-          kind: action.prompt.__typename,
-          ctaType: action.prompt.cta_type,
-          headline: normalizeAnnotatedTextFromTimelineText(action.prompt.headline),
-          subtext: normalizeAnnotatedTextFromTimelineText(action.prompt.subtext),
-        })
-      : undefined,
-  }));
+): normalized.TweetActionName[] | undefined {
+  const actions = (limitedActionResults?.limited_actions ?? []).map((action) => action.action);
 
   return actions.length > 0 ? actions : undefined;
-}
-
-function normalizeMediaInterstitial(
-  interstitial: raw.MediaVisibilityInterstitial | undefined,
-): normalized.TweetMediaInterstitial | undefined {
-  if (!interstitial) return undefined;
-  return toOptionalObject({
-    title: normalizeAnnotatedTextFromTimelineText(interstitial.title),
-    text: normalizeAnnotatedTextFromTimelineText(interstitial.text),
-    opacity: interstitial.opacity,
-  });
 }
 
 function normalizeCommunityNote(
@@ -575,8 +613,8 @@ function normalizeTweetPolicy(
     replyPolicy: data.legacy.conversation_control?.policy,
     followersOnly: data.legacy.scopes?.followers,
     isPossiblySensitive: data.legacy.possibly_sensitive,
-    limitedActions: normalizeLimitedActions(wrapper?.limitedActionResults),
-    mediaInterstitial: normalizeMediaInterstitial(wrapper?.mediaVisibilityResults?.blurred_image_interstitial),
+    availableActions: normalizeAvailableActions(wrapper?.limitedActionResults),
+    isMediaVisibilityRestricted: wrapper?.mediaVisibilityResults?.blurred_image_interstitial ? true : undefined,
     paidPromotion: data.content_disclosure?.advertising_disclosure?.is_paid_promotion,
   });
 }

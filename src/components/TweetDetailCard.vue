@@ -61,8 +61,11 @@ const policyLines = computed(() => {
   if (props.tweet.policy?.isPossiblySensitive) {
     lines.push('Marked as possibly sensitive');
   }
-  if (props.tweet.policy?.limitedActions?.length) {
-    lines.push(`Limited actions: ${props.tweet.policy.limitedActions.map((item) => item.action).join(', ')}`);
+  if (props.tweet.policy?.isMediaVisibilityRestricted) {
+    lines.push('Media visibility restricted');
+  }
+  if (props.tweet.policy?.availableActions?.length) {
+    lines.push(`Available actions: ${props.tweet.policy.availableActions.join(', ')}`);
   }
   if (props.tweet.place?.fullName ?? props.tweet.place?.name) {
     lines.push(`Location: ${props.tweet.place?.fullName ?? props.tweet.place?.name}`);

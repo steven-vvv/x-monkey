@@ -211,40 +211,41 @@ export const TweetUserFeaturesSchema = strictObject({
 export type TweetUserFeatures = z.infer<typeof TweetUserFeaturesSchema>;
 
 /**
- * 用户账号标签。
+ * 用户账号披露关系。
  * 来源汇总:
- * - `type`: `affiliates_highlighted_label.label.userLabelType`
- * - `displayType`: `affiliates_highlighted_label.label.userLabelDisplayType`
- * - `text`: `affiliates_highlighted_label.label.description`
- * - `detail`: `affiliates_highlighted_label.label.longDescription`
- * - `badgeUrl`: `affiliates_highlighted_label.label.badge.url`
- * - `url`: `affiliates_highlighted_label.label.url.url`
- * - `urlType`: `affiliates_highlighted_label.label.url.urlType`
+ * - `relation`:
+ *   - `affiliated_with`: `affiliates_highlighted_label.label.userLabelType = BusinessLabel`
+ *   - `operated_by`: `affiliates_highlighted_label.label.userLabelType = AutomatedLabel`
+ *   - `unknown`: 其余存在 `label` 但无法归入已知关系的情况
+ * - `subjectId`: `affiliates_highlighted_label.label.longDescription.entities[].ref.mention_results.result.rest_id`
+ * - `subjectHandle`:
+ *   - `affiliates_highlighted_label.label.longDescription.entities[].ref.screen_name`
+ *   - 或由 `affiliates_highlighted_label.label.url.url` 推导
+ * - `subjectName`: `affiliates_highlighted_label.label.description`
+ * - `subjectUrl`: `affiliates_highlighted_label.label.url.url`
  */
-export const TweetUserAccountLabelSchema = strictObject({
-  type: z.string().optional(),
-  displayType: z.string().optional(),
-  text: z.string().optional(),
-  detail: AnnotatedTextSchema.optional(),
-  badgeUrl: z.string().optional(),
-  url: z.string().optional(),
-  urlType: z.string().optional(),
+export const TweetUserDisclosureSchema = strictObject({
+  relation: z.enum(['affiliated_with', 'operated_by', 'unknown']),
+  subjectId: z.string().optional(),
+  subjectHandle: z.string().optional(),
+  subjectName: z.string().optional(),
+  subjectUrl: z.string().optional(),
 });
 
-export type TweetUserAccountLabel = z.infer<typeof TweetUserAccountLabelSchema>;
+export type TweetUserDisclosure = z.infer<typeof TweetUserDisclosureSchema>;
 
 /**
  * 用户身份标识。
  * 来源汇总:
  * - `verification`: `verification` / `is_blue_verified`
- * - `accountLabel`: `affiliates_highlighted_label.label`
+ * - `disclosure`: `affiliates_highlighted_label.label`
  * - `parodyLabel`: `parody_commentary_fan_label`
  * - `hasCompletedNewAccountReview`: `has_graduated_access`
  * - `isPossiblySensitive`: `legacy.possibly_sensitive`
  */
 export const TweetUserIdentitySchema = strictObject({
   verification: TweetUserVerificationSchema.optional(),
-  accountLabel: TweetUserAccountLabelSchema.optional(),
+  disclosure: TweetUserDisclosureSchema.optional(),
   parodyLabel: z.string().optional(),
   hasCompletedNewAccountReview: z.boolean().optional(),
   isPossiblySensitive: z.boolean().optional(),
@@ -685,46 +686,12 @@ export const TweetEditInfoSchema = strictObject({
 export type TweetEditInfo = z.infer<typeof TweetEditInfoSchema>;
 
 /**
- * 限制动作的提示文案。
- * 来源汇总:
- * - `kind`: `limitedActionResults.limited_actions[].prompt.__typename`
- * - `ctaType`: `limitedActionResults.limited_actions[].prompt.cta_type`
- * - `headline`: `limitedActionResults.limited_actions[].prompt.headline`
- * - `subtext`: `limitedActionResults.limited_actions[].prompt.subtext`
+ * 帖子当前暴露的动作名称。
+ * 来源: `limitedActionResults.limited_actions[].action`
  */
-export const TweetLimitedActionPromptSchema = strictObject({
-  kind: z.string().optional(),
-  ctaType: z.string().optional(),
-  headline: AnnotatedTextSchema.optional(),
-  subtext: AnnotatedTextSchema.optional(),
-});
+export const TweetActionNameSchema = z.string();
 
-export type TweetLimitedActionPrompt = z.infer<typeof TweetLimitedActionPromptSchema>;
-
-/**
- * 单条限制动作。
- */
-export const TweetLimitedActionSchema = strictObject({
-  action: z.string(),
-  prompt: TweetLimitedActionPromptSchema.optional(),
-});
-
-export type TweetLimitedAction = z.infer<typeof TweetLimitedActionSchema>;
-
-/**
- * 媒体可见性提示。
- * 来源汇总:
- * - `title`: `mediaVisibilityResults.blurred_image_interstitial.title`
- * - `text`: `mediaVisibilityResults.blurred_image_interstitial.text`
- * - `opacity`: `mediaVisibilityResults.blurred_image_interstitial.opacity`
- */
-export const TweetMediaInterstitialSchema = strictObject({
-  title: AnnotatedTextSchema.optional(),
-  text: AnnotatedTextSchema.optional(),
-  opacity: z.number().optional(),
-});
-
-export type TweetMediaInterstitial = z.infer<typeof TweetMediaInterstitialSchema>;
+export type TweetActionName = z.infer<typeof TweetActionNameSchema>;
 
 /**
  * 帖子策略。
@@ -736,16 +703,16 @@ export type TweetMediaInterstitial = z.infer<typeof TweetMediaInterstitialSchema
  * - `replyPolicy`: `legacy.conversation_control.policy`
  * - `followersOnly`: `legacy.scopes.followers`
  * - `isPossiblySensitive`: `legacy.possibly_sensitive`
- * - `limitedActions`: `limitedActionResults.limited_actions`
- * - `mediaInterstitial`: `mediaVisibilityResults.blurred_image_interstitial`
+ * - `availableActions`: `limitedActionResults.limited_actions[].action`
+ * - `isMediaVisibilityRestricted`: `mediaVisibilityResults.blurred_image_interstitial`
  * - `paidPromotion`: `content_disclosure.advertising_disclosure.is_paid_promotion`
  */
 export const TweetPolicySchema = strictObject({
   replyPolicy: z.string().optional(),
   followersOnly: z.boolean().optional(),
   isPossiblySensitive: z.boolean().optional(),
-  limitedActions: z.array(TweetLimitedActionSchema).optional(),
-  mediaInterstitial: TweetMediaInterstitialSchema.optional(),
+  availableActions: z.array(TweetActionNameSchema).optional(),
+  isMediaVisibilityRestricted: z.boolean().optional(),
   paidPromotion: z.boolean().optional(),
 });
 

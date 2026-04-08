@@ -13,9 +13,16 @@ const emit = defineEmits<{
 
 const stats = computed(() => toUserStats(props.user));
 const bio = computed(() => getUserBioText(props.user));
+const disclosureLabel = computed(() => {
+  const disclosure = props.user.identity?.disclosure;
+  if (!disclosure) return null;
+  if (disclosure.subjectName) return disclosure.subjectName;
+  if (disclosure.subjectHandle) return `@${disclosure.subjectHandle}`;
+  return null;
+});
 const labels = computed(() => [
   props.user.identity?.verification?.type,
-  props.user.identity?.accountLabel?.text,
+  disclosureLabel.value,
   props.user.identity?.parodyLabel,
   props.user.features?.canBeSubscribed ? 'Subscriptions' : null,
 ].filter(Boolean) as string[]);
