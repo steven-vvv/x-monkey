@@ -28,12 +28,145 @@ export const TextRangeSchema = strictObject({
 export type TextRange = z.infer<typeof TextRangeSchema>;
 
 /**
+ * 语义化字符串包装。
+ * 对值域较稳定或概念边界清晰的字符串，统一保持 `z.string()`，
+ * 仅通过命名强调其语义类型，不强制收紧为 `z.enum()`。
+ */
+
+/**
+ * 富文本样式名称。
+ * `dumps` 样本值: `Bold`, `Italic`
+ */
+export const TweetTextStyleNameSchema = z.string();
+export type TweetTextStyleName = z.infer<typeof TweetTextStyleNameSchema>;
+
+/**
+ * 用户认证类型。
+ * `dumps` 样本值: `Business`, `Government`
+ */
+export const TweetUserVerificationTypeSchema = z.string();
+export type TweetUserVerificationType = z.infer<typeof TweetUserVerificationTypeSchema>;
+
+/**
+ * 用户职业账号类型。
+ * `dumps` 样本值: `Creator`, `Business`
+ */
+export const TweetUserProfessionalTypeSchema = z.string();
+export type TweetUserProfessionalType = z.infer<typeof TweetUserProfessionalTypeSchema>;
+
+/**
+ * 用户账号披露关系类型。
+ * 领域值: `affiliated_with`, `operated_by`, `unknown`
+ */
+export const TweetUserDisclosureRelationSchema = z.string();
+export type TweetUserDisclosureRelation = z.infer<typeof TweetUserDisclosureRelationSchema>;
+
+/**
+ * 账号声明标签类型。
+ * `dumps` 样本值: `None`, `Parody`, `Commentary`, `Fan`
+ */
+export const TweetUserParodyLabelSchema = z.string();
+export type TweetUserParodyLabel = z.infer<typeof TweetUserParodyLabelSchema>;
+
+/**
+ * 用户头像形状类型。
+ * `dumps` 样本值: `Circle`, `Square`
+ */
+export const TweetUserAvatarShapeSchema = z.string();
+export type TweetUserAvatarShape = z.infer<typeof TweetUserAvatarShapeSchema>;
+
+/**
+ * 国家名称。
+ * `dumps` 样本值: `United States`, `Canada`, `Japan`, `North Korea`
+ */
+export const TweetCountryNameSchema = z.string();
+export type TweetCountryName = z.infer<typeof TweetCountryNameSchema>;
+
+/**
+ * 国家代码。
+ * `dumps` 样本值: `US`, `CA`, `JP`, `KP`
+ */
+export const TweetCountryCodeSchema = z.string();
+export type TweetCountryCode = z.infer<typeof TweetCountryCodeSchema>;
+
+/**
+ * 语言代码。
+ * `dumps` 样本值:
+ * `zh`, `en`, `ja`, `qme`, `zxx`, `ar`, `und`, `hu`,
+ * `fr`, `es`, `qam`, `pt`, `tr`, `de`, `lt`, `in`, `fi`
+ */
+export const TweetLanguageCodeSchema = z.string();
+export type TweetLanguageCode = z.infer<typeof TweetLanguageCodeSchema>;
+
+/**
+ * 媒体可用性状态。
+ * `dumps` 样本值: `Available`
+ */
+export const TweetMediaAvailabilityStatusSchema = z.string();
+export type TweetMediaAvailabilityStatus = z.infer<typeof TweetMediaAvailabilityStatusSchema>;
+
+/**
+ * 媒体标签种类。
+ * `dumps` 样本值: `user`
+ */
+export const TweetMediaTagKindSchema = z.string();
+export type TweetMediaTagKind = z.infer<typeof TweetMediaTagKindSchema>;
+
+/**
+ * 媒体尺寸调整模式。
+ * `dumps` 样本值: `fit`, `crop`
+ */
+export const TweetMediaResizeModeSchema = z.string();
+export type TweetMediaResizeMode = z.infer<typeof TweetMediaResizeModeSchema>;
+
+/**
+ * 视频流内容类型。
+ * `dumps` 样本值: `video/mp4`, `application/x-mpegURL`
+ */
+export const TweetVideoContentTypeSchema = z.string();
+export type TweetVideoContentType = z.infer<typeof TweetVideoContentTypeSchema>;
+
+/**
+ * 地点分类。
+ * `dumps` 样本值: `city`, `country`
+ */
+export const TweetPlaceKindSchema = z.string();
+export type TweetPlaceKind = z.infer<typeof TweetPlaceKindSchema>;
+
+/**
+ * 回复策略代码。
+ * `dumps` 样本值: `ByInvitation`, `MyNetwork`, `Community`
+ */
+export const TweetReplyPolicyCodeSchema = z.string();
+export type TweetReplyPolicyCode = z.infer<typeof TweetReplyPolicyCodeSchema>;
+
+/**
+ * 帖子动作代码。
+ * `dumps` 样本值:
+ * `Reply`, `QuoteTweet`, `CopyLink`, `Like`, `VoteOnPoll`, `AddToMoment`,
+ * `PinToProfile`, `ShareTweetVia`, `React`, `Embed`, `Retweet`,
+ * `SendViaDm`, `AddToBookmarks`, `HideCommunityTweet`, `ViewTweetActivity`
+ */
+export const TweetActionCodeSchema = z.string();
+export type TweetActionCode = z.infer<typeof TweetActionCodeSchema>;
+
+/**
+ * 帖子来源标签。
+ * 归一化后为纯文本来源名，原始 `dumps` 字段为 HTML 链接。
+ * 归一化样本值:
+ * `Twitter Web Client`, `Twitter for iPad`, `Twitter for Android`,
+ * `Twitter for iPhone`, `WSC Sports`, `HubSpot`, `Twitter Ads`, `Buffer`
+ */
+export const TweetSourceLabelSchema = z.string();
+export type TweetSourceLabel = z.infer<typeof TweetSourceLabelSchema>;
+
+/**
  * 富文本样式区间。
  * 来源: `note_tweet.note_tweet_results.result.richtext.richtext_tags[]`
  */
 export const TextStyleRangeSchema = strictObject({
   range: TextRangeSchema,
-  styles: z.array(z.string()),
+  styles: z.array(TweetTextStyleNameSchema),
 });
 
 export type TextStyleRange = z.infer<typeof TextStyleRangeSchema>;
@@ -152,7 +285,7 @@ export type TweetUserCategory = z.infer<typeof TweetUserCategorySchema>;
  */
 export const TweetUserVerificationSchema = strictObject({
   isBlueVerified: z.boolean().optional(),
-  type: z.string().optional(),
+  type: TweetUserVerificationTypeSchema.optional(),
 });
 
 export type TweetUserVerification = z.infer<typeof TweetUserVerificationSchema>;
@@ -166,7 +299,7 @@ export type TweetUserVerification = z.infer<typeof TweetUserVerificationSchema>;
  */
 export const TweetUserProfessionalSchema = strictObject({
   id: z.string().optional(), // `professional.rest_id`，样本为纯数字长 ID，按雪花 ID 处理，可用 BIGINT 存储。
-  type: z.string().optional(),
+  type: TweetUserProfessionalTypeSchema.optional(),
   categories: z.array(TweetUserCategorySchema),
 });
 
@@ -225,7 +358,7 @@ export type TweetUserFeatures = z.infer<typeof TweetUserFeaturesSchema>;
  * - `subjectUrl`: `affiliates_highlighted_label.label.url.url`
  */
 export const TweetUserDisclosureSchema = strictObject({
-  relation: z.enum(['affiliated_with', 'operated_by', 'unknown']),
+  relation: TweetUserDisclosureRelationSchema,
   subjectId: z.string().optional(),
   subjectHandle: z.string().optional(),
   subjectName: z.string().optional(),
@@ -246,7 +379,7 @@ export type TweetUserDisclosure = z.infer<typeof TweetUserDisclosureSchema>;
 export const TweetUserIdentitySchema = strictObject({
   verification: TweetUserVerificationSchema.optional(),
   disclosure: TweetUserDisclosureSchema.optional(),
-  parodyLabel: z.string().optional(),
+  parodyLabel: TweetUserParodyLabelSchema.optional(),
   hasCompletedNewAccountReview: z.boolean().optional(),
   isPossiblySensitive: z.boolean().optional(),
 });
@@ -271,7 +404,7 @@ export const TweetUserProfileSchema = strictObject({
   userName: z.string(),
   avatarUrl: z.string().optional(),
   usesDefaultAvatar: z.boolean().optional(),
-  avatarShape: z.string().optional(),
+  avatarShape: TweetUserAvatarShapeSchema.optional(),
   bannerUrl: z.string().optional(),
   location: z.string().optional(),
   bio: AnnotatedTextSchema.optional(),
@@ -326,7 +459,7 @@ export type MediaRect = z.infer<typeof MediaRectSchema>;
 export const MediaVariantSchema = strictObject({
   width: positiveInt,
   height: positiveInt,
-  resizeMode: z.string(),
+  resizeMode: TweetMediaResizeModeSchema,
 });
 
 export type MediaVariant = z.infer<typeof MediaVariantSchema>;
@@ -350,7 +483,7 @@ export const TweetMediaTagSchema = strictObject({
   userId: z.string().optional(), // `features.*.tags[].user_id`，样本为纯数字用户雪花 ID，可用 BIGINT 存储。
   name: z.string().optional(),
   userName: z.string().optional(),
-  kind: z.string().optional(),
+  kind: TweetMediaTagKindSchema.optional(),
 });
 
 export type TweetMediaTag = z.infer<typeof TweetMediaTagSchema>;
@@ -372,7 +505,7 @@ export type TweetMediaFaces = z.infer<typeof TweetMediaFacesSchema>;
  * 视频流变体。
  */
 export const TweetVideoVariantSchema = strictObject({
-  contentType: z.string(),
+  contentType: TweetVideoContentTypeSchema,
   bitrate: nonNegativeInt.optional(),
   url: z.string(),
 });
@@ -493,7 +626,7 @@ export const TweetMediaSchema = strictObject({
   faces: TweetMediaFacesSchema.optional(),
   origin: TweetMediaOriginSchema.optional(),
   details: TweetMediaDetailsSchema.optional(),
-  availability: z.string().optional(),
+  availability: TweetMediaAvailabilityStatusSchema.optional(),
   video: TweetVideoSchema.optional(),
 });
 
@@ -531,9 +664,9 @@ export const TweetPlaceSchema = strictObject({
   id: z.string().optional(), // `legacy.place.id`，当前按地点字符串标识处理，非雪花 ID。
   name: z.string().optional(),
   fullName: z.string().optional(),
-  country: z.string().optional(),
-  countryCode: z.string().optional(),
-  kind: z.string().optional(),
+  country: TweetCountryNameSchema.optional(),
+  countryCode: TweetCountryCodeSchema.optional(),
+  kind: TweetPlaceKindSchema.optional(),
   boundary: TweetPlaceBoundarySchema.optional(),
 });
 
@@ -566,7 +699,7 @@ export const TweetContentSchema = strictObject({
   legacyText: AnnotatedTextSchema,
   note: TweetNoteSchema.optional(),
   media: z.array(TweetMediaSchema),
-  language: z.string().optional(),
+  language: TweetLanguageCodeSchema.optional(),
 });
 
 export type TweetContent = z.infer<typeof TweetContentSchema>;
@@ -686,14 +819,6 @@ export const TweetEditInfoSchema = strictObject({
 export type TweetEditInfo = z.infer<typeof TweetEditInfoSchema>;
 
 /**
- * 帖子当前暴露的动作名称。
- * 来源: `limitedActionResults.limited_actions[].action`
- */
-export const TweetActionNameSchema = z.string();
-
-export type TweetActionName = z.infer<typeof TweetActionNameSchema>;
-
-/**
  * 帖子策略。
  *
  * 该对象统一承载平台对帖子的访问范围、互动限制、敏感内容标记、
@@ -708,10 +833,10 @@ export type TweetActionName = z.infer<typeof TweetActionNameSchema>;
  * - `paidPromotion`: `content_disclosure.advertising_disclosure.is_paid_promotion`
  */
 export const TweetPolicySchema = strictObject({
-  replyPolicy: z.string().optional(),
+  replyPolicy: TweetReplyPolicyCodeSchema.optional(),
   followersOnly: z.boolean().optional(),
   isPossiblySensitive: z.boolean().optional(),
-  availableActions: z.array(TweetActionNameSchema).optional(),
+  availableActions: z.array(TweetActionCodeSchema).optional(),
   isMediaVisibilityRestricted: z.boolean().optional(),
   paidPromotion: z.boolean().optional(),
 });
@@ -727,9 +852,6 @@ export type TweetPolicy = z.infer<typeof TweetPolicySchema>;
  * - `subtitle`: `birdwatch_pivot.subtitle`
  * - `footer`: `birdwatch_pivot.footer`
  * - `destinationUrl`: `birdwatch_pivot.destinationUrl`
- * - `iconType`: `birdwatch_pivot.iconType`
- * - `footerIconType`: `birdwatch_pivot.footerIconType`
- * - `visualStyle`: `birdwatch_pivot.visualStyle`
  */
 export const TweetCommunityNoteSchema = strictObject({
   id: z.string().optional(), // `birdwatch_pivot.note.rest_id`，样本为纯数字长 ID，按雪花 ID 处理，可用 BIGINT 存储。
@@ -738,9 +860,6 @@ export const TweetCommunityNoteSchema = strictObject({
   subtitle: AnnotatedTextSchema.optional(),
   footer: AnnotatedTextSchema.optional(),
   destinationUrl: z.string().optional(),
-  iconType: z.string().optional(),
-  footerIconType: z.string().optional(),
-  visualStyle: z.string().optional(),
 });
 
 export type TweetCommunityNote = z.infer<typeof TweetCommunityNoteSchema>;
@@ -766,7 +885,7 @@ export interface Tweet {
    * 来源名称，建议提取为纯文本。
    * 来源: `source`
    */
-  source?: string;
+  source?: TweetSourceLabel;
 
   /**
    * 地点信息。
@@ -827,7 +946,7 @@ export const TweetConversationSchema: z.ZodType<TweetConversation> = z.lazy(() =
 export const TweetSchema: z.ZodType<Tweet> = z.lazy(() => strictObject({
   id: z.string(), // 帖子雪花 ID，可用 BIGINT 存储。
   createdAt: z.string(),
-  source: z.string().optional(),
+  source: TweetSourceLabelSchema.optional(),
   place: TweetPlaceSchema.optional(),
   author: TweetUserSchema,
   content: TweetContentSchema,

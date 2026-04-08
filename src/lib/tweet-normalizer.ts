@@ -568,7 +568,7 @@ function normalizePermalink(
 
 function normalizeAvailableActions(
   limitedActionResults: raw.LimitedActionResults | undefined,
-): normalized.TweetActionName[] | undefined {
+): normalized.TweetActionCode[] | undefined {
   const actions = (limitedActionResults?.limited_actions ?? []).map((action) => action.action);
 
   return actions.length > 0 ? actions : undefined;
@@ -585,9 +585,6 @@ function normalizeCommunityNote(
     subtitle: normalizeAnnotatedTextFromTimelineText(pivot.subtitle),
     footer: normalizeAnnotatedTextFromTimelineText(pivot.footer),
     destinationUrl: pivot.destinationUrl,
-    iconType: pivot.iconType,
-    footerIconType: pivot.footerIconType,
-    visualStyle: pivot.visualStyle,
   });
 }
 
