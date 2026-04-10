@@ -1,6 +1,6 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { SUPPORTED_ENDPOINTS, getEndpointFixtureDirs, type EndpointKind } from '../src/lib/endpoint-support';
+import { FIXTURE_ENDPOINTS, getEndpointFixtureDirs, type EndpointKind } from '../src/lib/endpoint-support';
 
 type JsonObject = Record<string, any>;
 
@@ -31,15 +31,14 @@ interface EndpointStats {
 }
 
 const ROOT = resolve(process.cwd());
-const ENDPOINTS: EndpointConfig[] = [
-  ...SUPPORTED_ENDPOINTS.map((endpoint) => ({
+const ENDPOINTS: EndpointConfig[] = FIXTURE_ENDPOINTS
+  .filter((endpoint) => endpoint.kind !== 'user')
+  .map((endpoint) => ({
     name: endpoint.operationName,
     dirs: getEndpointFixtureDirs(endpoint),
     kind: endpoint.kind,
     supportVersion: endpoint.supportVersion,
-  })),
-  { name: 'legacy/UserMedia', dirs: ['dumps/legacy/UserMedia'], kind: 'timeline', supportVersion: null },
-];
+  }));
 
 function readJson(filePath: string): JsonObject {
   return JSON.parse(readFileSync(filePath, 'utf8'));
@@ -55,8 +54,10 @@ function normalizeTweetResult(result: any): JsonObject | null {
 
 function collectTimelineTweets(json: JsonObject) {
   const instructions = json?.data?.user?.result?.timeline?.timeline?.instructions
+    ?? json?.data?.user?.result?.timeline_v2?.timeline?.instructions
     ?? json?.data?.home?.home_timeline_urt?.instructions
-    ?? json?.data?.bookmark_timeline_v2?.timeline?.instructions;
+    ?? json?.data?.bookmark_timeline_v2?.timeline?.instructions
+    ?? json?.data?.search_by_raw_query?.search_timeline?.timeline?.instructions;
 
   const tweets: JsonObject[] = [];
   const instructionTypes = new Map<string, number>();

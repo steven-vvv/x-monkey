@@ -1,7 +1,11 @@
 import { mergeEntity } from './entity-merge';
-import { flattenTweet } from './tweet-flattener';
-import { parseAndNormalizeTweetResult } from './tweet-normalizer';
+import { flattenTweet, flattenUser } from './tweet-flattener';
+import { parseAndNormalizeTweetResult, parseAndNormalizeUserResult } from './tweet-normalizer';
 import type { ParsedResponse } from './types';
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
+}
 
 function createParsedResponse(instructionPath: string | null = null, warnings: string[] = []): ParsedResponse {
   return {
@@ -13,6 +17,11 @@ function createParsedResponse(instructionPath: string | null = null, warnings: s
       warnings: [...warnings],
     },
   };
+}
+
+function appendWarnings(ctx: ParsedResponse, warnings: string[]): void {
+  if (!ctx.meta || warnings.length === 0) return;
+  ctx.meta.warnings.push(...warnings);
 }
 
 function upsertParsedEntity<T extends { id: string }>(map: Map<string, T>, entity: T): void {
@@ -38,22 +47,38 @@ function mergeParsedResponse(target: ParsedResponse, source: ParsedResponse): vo
 
 function parseAndCollectTweet(
   result: unknown,
+  resultPath: string,
   ctx: ParsedResponse,
   orderedIds?: string[],
   seenIds?: Set<string>,
 ): void {
-  const tweet = parseAndNormalizeTweetResult(result);
-  if (!tweet) return;
+  const parsed = parseAndNormalizeTweetResult(result, resultPath);
+  appendWarnings(ctx, parsed.warnings);
 
-  mergeParsedResponse(ctx, flattenTweet(tweet));
+  if (!parsed.tweet) return;
 
-  if (!orderedIds || !seenIds || seenIds.has(tweet.id)) return;
-  seenIds.add(tweet.id);
-  orderedIds.push(tweet.id);
+  mergeParsedResponse(ctx, flattenTweet(parsed.tweet));
+
+  if (!orderedIds || !seenIds || seenIds.has(parsed.tweet.id)) return;
+  seenIds.add(parsed.tweet.id);
+  orderedIds.push(parsed.tweet.id);
+}
+
+function parseAndCollectUser(
+  result: unknown,
+  resultPath: string,
+  ctx: ParsedResponse,
+): void {
+  const parsed = parseAndNormalizeUserResult(result, resultPath);
+  appendWarnings(ctx, parsed.warnings);
+  if (!parsed.user) return;
+
+  mergeParsedResponse(ctx, flattenUser(parsed.user));
 }
 
 function walkModuleItem(
   item: unknown,
+  itemPath: string,
   ctx: ParsedResponse,
   orderedIds?: string[],
   seenIds?: Set<string>,
@@ -66,18 +91,19 @@ function walkModuleItem(
     };
   })?.item?.itemContent?.tweet_results?.result;
 
-  if (tweetResult) {
-    parseAndCollectTweet(tweetResult, ctx, orderedIds, seenIds);
+  if (tweetResult !== undefined) {
+    parseAndCollectTweet(tweetResult, `${itemPath}.item.itemContent.tweet_results.result`, ctx, orderedIds, seenIds);
   }
 }
 
 function walkEntryContent(
   content: unknown,
+  contentPath: string,
   ctx: ParsedResponse,
   orderedIds?: string[],
   seenIds?: Set<string>,
 ): void {
-  if (!content || typeof content !== 'object') return;
+  if (!isPlainObject(content)) return;
 
   const itemResult = (content as {
     itemContent?: {
@@ -86,27 +112,28 @@ function walkEntryContent(
     items?: unknown[];
   }).itemContent?.tweet_results?.result;
 
-  if (itemResult) {
-    parseAndCollectTweet(itemResult, ctx, orderedIds, seenIds);
+  if (itemResult !== undefined) {
+    parseAndCollectTweet(itemResult, `${contentPath}.itemContent.tweet_results.result`, ctx, orderedIds, seenIds);
   }
 
   const items = (content as { items?: unknown[] }).items;
   if (Array.isArray(items)) {
-    for (const item of items) {
-      walkModuleItem(item, ctx, orderedIds, seenIds);
+    for (const [index, item] of items.entries()) {
+      walkModuleItem(item, `${contentPath}.items[${index}]`, ctx, orderedIds, seenIds);
     }
   }
 }
 
 function walkEntry(
   entry: unknown,
+  entryPath: string,
   ctx: ParsedResponse,
   orderedIds?: string[],
   seenIds?: Set<string>,
 ): void {
   const content = (entry as { content?: unknown })?.content;
-  if (content) {
-    walkEntryContent(content, ctx, orderedIds, seenIds);
+  if (content !== undefined) {
+    walkEntryContent(content, `${entryPath}.content`, ctx, orderedIds, seenIds);
   }
 }
 
@@ -138,6 +165,10 @@ const TIMELINE_INSTRUCTION_CANDIDATES: InstructionCandidate[] = [
     path: 'data.bookmark_timeline_v2.timeline.instructions',
     read: (response) => (response as any)?.data?.bookmark_timeline_v2?.timeline?.instructions,
   },
+  {
+    path: 'data.search_by_raw_query.search_timeline.timeline.instructions',
+    read: (response) => (response as any)?.data?.search_by_raw_query?.search_timeline?.timeline?.instructions,
+  },
 ];
 
 const TWEET_DETAIL_INSTRUCTION_CANDIDATES: InstructionCandidate[] = [
@@ -152,7 +183,7 @@ function extractInstructionArray(
   candidates: InstructionCandidate[],
   label: string,
 ): InstructionExtraction {
-  if (!json || typeof json !== 'object') {
+  if (!isPlainObject(json)) {
     return {
       instructions: [],
       instructionPath: null,
@@ -191,6 +222,7 @@ function extractInstructionArray(
 
 function walkInstruction(
   instruction: unknown,
+  instructionPath: string,
   ctx: ParsedResponse,
   orderedIds?: string[],
   seenIds?: Set<string>,
@@ -204,18 +236,18 @@ function walkInstruction(
   };
 
   if (Array.isArray(instructionObject.entries)) {
-    for (const entry of instructionObject.entries) {
-      walkEntry(entry, ctx, orderedIds, seenIds);
+    for (const [index, entry] of instructionObject.entries.entries()) {
+      walkEntry(entry, `${instructionPath}.entries[${index}]`, ctx, orderedIds, seenIds);
     }
   }
 
-  if (instructionObject.entry) {
-    walkEntry(instructionObject.entry, ctx, orderedIds, seenIds);
+  if (instructionObject.entry !== undefined) {
+    walkEntry(instructionObject.entry, `${instructionPath}.entry`, ctx, orderedIds, seenIds);
   }
 
   if (Array.isArray(instructionObject.moduleItems)) {
-    for (const item of instructionObject.moduleItems) {
-      walkModuleItem(item, ctx, orderedIds, seenIds);
+    for (const [index, item] of instructionObject.moduleItems.entries()) {
+      walkModuleItem(item, `${instructionPath}.moduleItems[${index}]`, ctx, orderedIds, seenIds);
     }
   }
 }
@@ -236,8 +268,11 @@ function parseTimelineResponse(json: unknown): TimelineParsedResponse {
   };
 
   const seenOrderedIds = new Set<string>();
-  for (const instruction of extracted.instructions) {
-    walkInstruction(instruction, ctx, ctx.tweetIds, seenOrderedIds);
+  for (const [index, instruction] of extracted.instructions.entries()) {
+    const instructionPath = extracted.instructionPath
+      ? `${extracted.instructionPath}[${index}]`
+      : `instructions[${index}]`;
+    walkInstruction(instruction, instructionPath, ctx, ctx.tweetIds, seenOrderedIds);
   }
 
   return ctx;
@@ -255,6 +290,10 @@ export function parseUserTweetsResponse(json: unknown): TimelineParsedResponse {
   return parseTimelineResponse(json);
 }
 
+export function parseUserTweetsAndRepliesResponse(json: unknown): TimelineParsedResponse {
+  return parseTimelineResponse(json);
+}
+
 export function parseUserMediaResponse(json: unknown): UserMediaParsedResponse {
   return parseTimelineResponse(json);
 }
@@ -263,13 +302,64 @@ export function parseBookmarksResponse(json: unknown): BookmarksParsedResponse {
   return parseTimelineResponse(json);
 }
 
+export function parseSearchTimelineResponse(json: unknown): TimelineParsedResponse {
+  return parseTimelineResponse(json);
+}
+
 export function parseTweetDetailResponse(json: unknown): ParsedResponse {
   const extracted = extractInstructionArray(json, TWEET_DETAIL_INSTRUCTION_CANDIDATES, 'tweet detail');
   const ctx = createParsedResponse(extracted.instructionPath, extracted.warnings);
 
-  for (const instruction of extracted.instructions) {
-    walkInstruction(instruction, ctx);
+  for (const [index, instruction] of extracted.instructions.entries()) {
+    const instructionPath = extracted.instructionPath
+      ? `${extracted.instructionPath}[${index}]`
+      : `instructions[${index}]`;
+    walkInstruction(instruction, instructionPath, ctx);
   }
 
+  return ctx;
+}
+
+export function parseUserByScreenNameResponse(json: unknown): ParsedResponse {
+  if (!isPlainObject(json)) {
+    return createParsedResponse(null, ['user response was not an object']);
+  }
+
+  const result = (json as any)?.data?.user?.result;
+  const ctx = createParsedResponse('data.user.result');
+
+  if (result === undefined) {
+    appendWarnings(ctx, ['No user result found at data.user.result']);
+    return ctx;
+  }
+
+  parseAndCollectUser(result, 'data.user.result', ctx);
+  return ctx;
+}
+
+export function parseUsersByRestIdsResponse(json: unknown): ParsedResponse {
+  if (!isPlainObject(json)) {
+    return createParsedResponse(null, ['users response was not an object']);
+  }
+
+  const usersRoot = (json as any)?.data?.users;
+  const ctx = createParsedResponse('data.users');
+
+  if (Array.isArray(usersRoot)) {
+    for (const [index, user] of usersRoot.entries()) {
+      parseAndCollectUser(user, `data.users[${index}]`, ctx);
+    }
+    return ctx;
+  }
+
+  if (isPlainObject(usersRoot)) {
+    for (const [key, user] of Object.entries(usersRoot)) {
+      const keyLabel = /^\d+$/.test(key) ? key : JSON.stringify(key);
+      parseAndCollectUser(user, `data.users[${keyLabel}]`, ctx);
+    }
+    return ctx;
+  }
+
+  appendWarnings(ctx, ['No users collection found at data.users']);
   return ctx;
 }

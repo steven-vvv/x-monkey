@@ -46,6 +46,7 @@ function toDbMedia(media: normalized.TweetMedia): DbMediaRecord {
     taggedUsers: [...media.taggedUsers],
     origin,
     details: media.details,
+    sensitivityWarnings: media.sensitivityWarnings ? [...media.sensitivityWarnings] : undefined,
     availability: media.availability,
     video: media.video,
   };
@@ -124,5 +125,11 @@ export function flattenTweet(rootTweet: normalized.Tweet): ParsedResponse {
   }
 
   visitTweet(rootTweet);
+  return parsed;
+}
+
+export function flattenUser(rootUser: normalized.TweetUser): ParsedResponse {
+  const parsed = createParsedMaps();
+  upsertEntity(parsed.users, toDbUser(rootUser));
   return parsed;
 }

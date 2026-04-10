@@ -1,16 +1,20 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import {
-  SUPPORTED_ENDPOINTS,
+  FIXTURE_ENDPOINTS,
   getEndpointFixtureDirs,
-  type SupportedEndpointOperationName,
+  type FixtureEndpointOperationName,
 } from '../src/lib/endpoint-support';
 import {
   parseBookmarksResponse,
   parseHomeLatestTimelineResponse,
   parseHomeTimelineResponse,
+  parseSearchTimelineResponse,
   parseTweetDetailResponse,
+  parseUserByScreenNameResponse,
   parseUserMediaResponse,
+  parseUsersByRestIdsResponse,
+  parseUserTweetsAndRepliesResponse,
   parseUserTweetsResponse,
   type TimelineParsedResponse,
 } from '../src/lib/parser';
@@ -43,24 +47,32 @@ interface CaseConfig {
   parse: (json: unknown) => ParsedResponse | TimelineParsedResponse;
   ordered: boolean;
   supportVersion: number;
+  requireTweets: boolean;
+  requireUsers: boolean;
 }
 
 const ROOT = resolve(process.cwd());
-const PARSERS: Record<SupportedEndpointOperationName, (json: unknown) => ParsedResponse | TimelineParsedResponse> = {
+const PARSERS: Record<FixtureEndpointOperationName, (json: unknown) => ParsedResponse | TimelineParsedResponse> = {
   Bookmarks: parseBookmarksResponse,
   HomeLatestTimeline: parseHomeLatestTimelineResponse,
   HomeTimeline: parseHomeTimelineResponse,
+  SearchTimeline: parseSearchTimelineResponse,
   TweetDetail: parseTweetDetailResponse,
+  UserByScreenName: parseUserByScreenNameResponse,
   UserMedia: parseUserMediaResponse,
+  UserTweetsAndReplies: parseUserTweetsAndRepliesResponse,
   UserTweets: parseUserTweetsResponse,
+  UsersByRestIds: parseUsersByRestIdsResponse,
 };
 
-const CASES: CaseConfig[] = SUPPORTED_ENDPOINTS.map((endpoint) => ({
+const CASES: CaseConfig[] = FIXTURE_ENDPOINTS.map((endpoint) => ({
   name: endpoint.operationName,
   dirs: getEndpointFixtureDirs(endpoint),
   parse: PARSERS[endpoint.operationName],
   ordered: endpoint.kind === 'timeline',
   supportVersion: endpoint.supportVersion,
+  requireTweets: endpoint.kind !== 'user',
+  requireUsers: true,
 }));
 
 function fail(message: string): never {
@@ -108,7 +120,7 @@ function assertFixtureExpectations(
     fail(`[${testCaseName}/${file}] expected wrapped tweet 2041408315671163341 to be parsed`);
   }
 
-  const limitedActionCount = tweet.policy?.limitedActions?.length ?? 0;
+  const limitedActionCount = tweet.policy?.availableActions?.length ?? 0;
   if (limitedActionCount !== 15) {
     fail(`[${testCaseName}/${file}] expected 15 limitedActions, received ${limitedActionCount}`);
   }
@@ -612,6 +624,97 @@ function assertInlineParserScenarios() {
 
   const emptyParsed = parseHomeTimelineResponse({});
   if (!emptyParsed.meta?.warnings?.length) fail('[inline] empty timeline response should emit warnings');
+
+  const searchFixture = {
+    data: {
+      search_by_raw_query: {
+        search_timeline: {
+          timeline: {
+            instructions: [
+              {
+                entries: [
+                  {
+                    content: {
+                      itemContent: {
+                        tweet_results: {
+                          result: buildTweet('t-search', 'u-search'),
+                        },
+                      },
+                    },
+                  },
+                ],
+              },
+            ],
+          },
+        },
+      },
+    },
+  };
+
+  const searchParsed = parseSearchTimelineResponse(searchFixture);
+  if (searchParsed.tweetIds.join(',') !== 't-search') {
+    fail(`[inline] search timeline traversal failed: ${searchParsed.tweetIds.join(',')}`);
+  }
+
+  const repliesFixture = {
+    data: {
+      user: {
+        result: {
+          timeline: {
+            timeline: {
+              instructions: [
+                {
+                  entries: [
+                    {
+                      content: {
+                        itemContent: {
+                          tweet_results: {
+                            result: buildTweet('t-reply', 'u-reply'),
+                          },
+                        },
+                      },
+                    },
+                  ],
+                },
+              ],
+            },
+          },
+        },
+      },
+    },
+  };
+
+  const repliesParsed = parseUserTweetsAndRepliesResponse(repliesFixture);
+  if (repliesParsed.tweetIds.join(',') !== 't-reply') {
+    fail(`[inline] replies timeline traversal failed: ${repliesParsed.tweetIds.join(',')}`);
+  }
+
+  const singleUserFixture = {
+    data: {
+      user: {
+        result: buildUser('u-screen-name'),
+      },
+    },
+  };
+
+  const singleUserParsed = parseUserByScreenNameResponse(singleUserFixture);
+  if (!singleUserParsed.users.has('u-screen-name')) {
+    fail('[inline] single user response was not parsed');
+  }
+
+  const multiUserFixture = {
+    data: {
+      users: {
+        0: buildUser('u-rest-1'),
+        1: buildUser('u-rest-2'),
+      },
+    },
+  };
+
+  const multiUserParsed = parseUsersByRestIdsResponse(multiUserFixture);
+  if (!multiUserParsed.users.has('u-rest-1') || !multiUserParsed.users.has('u-rest-2')) {
+    fail('[inline] users-by-rest-ids response was not parsed');
+  }
 }
 
 function assertDbBatchScenario() {
@@ -821,8 +924,12 @@ function main() {
       }
     }
 
-    if (caseTweets === 0) {
+    if (testCase.requireTweets && caseTweets === 0) {
       fail(`[${testCase.name}] parser produced zero tweets across all fixtures`);
+    }
+
+    if (testCase.requireUsers && caseUsers === 0) {
+      fail(`[${testCase.name}] parser produced zero users across all fixtures`);
     }
 
     totalTweets += caseTweets;

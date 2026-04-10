@@ -1,4 +1,4 @@
-export type EndpointKind = 'timeline' | 'tweet-detail';
+export type EndpointKind = 'timeline' | 'tweet-detail' | 'user';
 
 export interface EndpointSupportRecord {
   operationName: string;
@@ -12,8 +12,7 @@ export const SUPPORTED_ENDPOINTS = [
   {
     operationName: 'TweetDetail',
     kind: 'tweet-detail',
-    dumpDir: 'dumps/legacy/TweetDetail',
-    extraDumpDirs: ['dumps/misc/3'],
+    dumpDir: 'dumps/TweetDetail',
     supportVersion: 1,
   },
   {
@@ -48,8 +47,37 @@ export const SUPPORTED_ENDPOINTS = [
   },
 ] as const satisfies readonly EndpointSupportRecord[];
 
+export const FIXTURE_ENDPOINTS = [
+  ...SUPPORTED_ENDPOINTS,
+  {
+    operationName: 'SearchTimeline',
+    kind: 'timeline',
+    dumpDir: 'dumps/SearchTimeline',
+    supportVersion: 1,
+  },
+  {
+    operationName: 'UserTweetsAndReplies',
+    kind: 'timeline',
+    dumpDir: 'dumps/UserTweetsAndReplies',
+    supportVersion: 1,
+  },
+  {
+    operationName: 'UserByScreenName',
+    kind: 'user',
+    dumpDir: 'dumps/UserByScreenName',
+    supportVersion: 1,
+  },
+  {
+    operationName: 'UsersByRestIds',
+    kind: 'user',
+    dumpDir: 'dumps/UsersByRestIds',
+    supportVersion: 1,
+  },
+] as const satisfies readonly EndpointSupportRecord[];
+
 export type SupportedEndpointOperationName = (typeof SUPPORTED_ENDPOINTS)[number]['operationName'];
 export type SupportedTimelineOperationName = Extract<(typeof SUPPORTED_ENDPOINTS)[number], { kind: 'timeline' }>['operationName'];
+export type FixtureEndpointOperationName = (typeof FIXTURE_ENDPOINTS)[number]['operationName'];
 
 const supportedEndpointNameSet = new Set<string>(SUPPORTED_ENDPOINTS.map((item) => item.operationName));
 

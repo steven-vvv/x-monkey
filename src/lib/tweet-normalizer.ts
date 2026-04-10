@@ -1,7 +1,78 @@
-import { TweetSchema } from '../schema/tweet-schema';
-import { parseTweetResult as parseRawTweetResult } from '../schema/tweet-raw-schema';
+import { TweetSchema, TweetUserSchema } from '../schema/tweet-schema';
 import type * as normalized from '../schema/tweet-schema';
-import type * as raw from '../schema/tweet-raw-schema';
+
+type JsonObject = Record<string, unknown>;
+
+export interface ParsedTweetResult {
+  tweet: normalized.Tweet | null;
+  warnings: string[];
+}
+
+export interface ParsedUserResult {
+  user: normalized.TweetUser | null;
+  warnings: string[];
+}
+
+function isPlainObject(value: unknown): value is JsonObject {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+function asObject(value: unknown): JsonObject | undefined {
+  return isPlainObject(value) ? value : undefined;
+}
+
+function asArray(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : [];
+}
+
+function asString(value: unknown): string | undefined {
+  return typeof value === 'string' ? value : undefined;
+}
+
+function asBoolean(value: unknown): boolean | undefined {
+  return typeof value === 'boolean' ? value : undefined;
+}
+
+function asNumber(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
+function asStringLike(value: unknown): string | undefined {
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+  return undefined;
+}
+
+function readPath(value: unknown, ...path: string[]): unknown {
+  let current: unknown = value;
+
+  for (const segment of path) {
+    const currentObject = asObject(current);
+    if (!currentObject) return undefined;
+    current = currentObject[segment];
+  }
+
+  return current;
+}
+
+function readStringArray(value: unknown): string[] {
+  return asArray(value).map((item) => asString(item)).filter(Boolean) as string[];
+}
+
+function readNumberArray(value: unknown): number[] {
+  return asArray(value).map((item) => asNumber(item)).filter((item): item is number => item !== undefined);
+}
+
+function readActiveStringFlags(value: unknown): string[] {
+  const object = asObject(value);
+  if (!object) return [];
+
+  return [...new Set(
+    Object.entries(object)
+      .filter(([, enabled]) => enabled === true)
+      .map(([key]) => key),
+  )].sort();
+}
 
 function createTextEntities(): normalized.TextEntities {
   return {
@@ -60,114 +131,177 @@ function normalizeIsoDateTime(value: string | undefined): string | undefined {
   return parsed.toISOString();
 }
 
-function normalizeResolvedUrls(urls: raw.UrlEntity[] | undefined): normalized.ResolvedUrl[] {
-  return (urls ?? []).map((item) => ({
-    url: item.url,
-    expandedUrl: item.expanded_url,
-    displayText: item.display_url,
-  }));
+function appendWarning(warnings: string[], path: string, message: string): void {
+  warnings.push(`${path}: ${message}`);
 }
 
-function normalizeTweetHashtags(hashtags: raw.HashtagEntity[] | undefined): normalized.HashtagEntity[] {
-  return (hashtags ?? [])
+function formatErrorMessage(error: unknown): string {
+  const issues = (error as { issues?: Array<{ path?: Array<string | number>; message?: string }> })?.issues;
+  if (Array.isArray(issues) && issues.length > 0) {
+    const first = issues[0];
+    const issuePath = Array.isArray(first.path) && first.path.length > 0
+      ? ` (${first.path.join('.')})`
+      : '';
+    return `${first.message ?? 'validation failed'}${issuePath}`;
+  }
+
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  return String(error);
+}
+
+function normalizeResolvedUrls(urlsInput: unknown): normalized.ResolvedUrl[] {
+  return asArray(urlsInput)
     .map((item) => {
-      const range = toTextRange(item.indices);
-      if (!range) return null;
+      const object = asObject(item);
+      const url = asString(object?.url);
+      const expandedUrl = asString(object?.expanded_url);
+      const displayText = asString(object?.display_url);
+      if (!url || !expandedUrl || !displayText) return null;
+
       return {
-        text: item.text,
+        url,
+        expandedUrl,
+        displayText,
+      };
+    })
+    .filter(Boolean) as normalized.ResolvedUrl[];
+}
+
+function normalizeTweetHashtags(hashtagsInput: unknown): normalized.HashtagEntity[] {
+  return asArray(hashtagsInput)
+    .map((item) => {
+      const object = asObject(item);
+      const text = asString(object?.text);
+      const range = toTextRange(readNumberArray(object?.indices));
+      if (!text || !range) return null;
+
+      return {
+        text,
         range,
       };
     })
     .filter(Boolean) as normalized.HashtagEntity[];
 }
 
-function normalizeTweetSymbols(symbols: raw.SymbolEntity[] | undefined): normalized.SymbolEntity[] {
-  return (symbols ?? []).map((item) => ({
-    text: item.text ?? '',
-    range: toTextRange(item.indices),
-    ticker: item.tag?.info?.info?.ticker,
-    name: item.tag?.info?.info?.name,
-  }));
+function normalizeTweetSymbols(symbolsInput: unknown): normalized.SymbolEntity[] {
+  return asArray(symbolsInput).map((item) => {
+    const object = asObject(item);
+    return {
+      text: asString(object?.text) ?? '',
+      range: toTextRange(readNumberArray(object?.indices)),
+      ticker: asString(readPath(object, 'tag', 'info', 'info', 'ticker')),
+      name: asString(readPath(object, 'tag', 'info', 'info', 'name')),
+    };
+  });
 }
 
-function normalizeTweetUrls(urls: raw.UrlEntity[] | undefined): normalized.UrlEntity[] {
-  return (urls ?? [])
+function normalizeTweetUrls(urlsInput: unknown): normalized.UrlEntity[] {
+  return asArray(urlsInput)
     .map((item) => {
-      const range = toTextRange(item.indices);
-      if (!range) return null;
+      const object = asObject(item);
+      const url = asString(object?.url);
+      const expandedUrl = asString(object?.expanded_url);
+      const displayText = asString(object?.display_url);
+      const range = toTextRange(readNumberArray(object?.indices));
+
+      if (!url || !expandedUrl || !displayText || !range) return null;
       return {
-        url: item.url,
-        expandedUrl: item.expanded_url,
-        displayText: item.display_url,
+        url,
+        expandedUrl,
+        displayText,
         range,
       };
     })
     .filter(Boolean) as normalized.UrlEntity[];
 }
 
-function normalizeTweetMentions(mentions: raw.UserMention[] | undefined): normalized.MentionEntity[] {
-  return (mentions ?? [])
+function normalizeTweetMentions(mentionsInput: unknown): normalized.MentionEntity[] {
+  return asArray(mentionsInput)
     .map((item) => {
-      const range = toTextRange(item.indices);
-      if (!range) return null;
+      const object = asObject(item);
+      const userId = asString(object?.id_str);
+      const name = asString(object?.name);
+      const userName = asString(object?.screen_name);
+      const range = toTextRange(readNumberArray(object?.indices));
+
+      if (!userId || !name || !userName || !range) return null;
       return {
-        userId: item.id_str,
-        name: item.name,
-        userName: item.screen_name,
+        userId,
+        name,
+        userName,
         range,
       };
     })
     .filter(Boolean) as normalized.MentionEntity[];
 }
 
-function normalizeMediaEntityOrigin(rawMedia: raw.Media): normalized.MediaEntityOrigin | undefined {
+function normalizeMediaEntityOrigin(rawMedia: JsonObject): normalized.MediaEntityOrigin | undefined {
   return toOptionalObject({
-    tweetId: rawMedia.source_status_id_str,
-    userId: rawMedia.source_user_id_str,
+    tweetId: asString(rawMedia.source_status_id_str),
+    userId: asString(rawMedia.source_user_id_str),
   });
 }
 
-function normalizeMediaOrigin(rawMedia: raw.Media): normalized.TweetMediaOrigin | undefined {
-  const originUserRaw = rawMedia.additional_media_info?.source_user?.user_results?.result;
-  const originUser = originUserRaw ? normalizeUser(originUserRaw) : undefined;
+function normalizeMediaOrigin(
+  rawMedia: JsonObject,
+  warnings: string[],
+  path: string,
+): normalized.TweetMediaOrigin | undefined {
+  const originUserRaw = readPath(rawMedia, 'additional_media_info', 'source_user', 'user_results', 'result');
+  const originUser = originUserRaw
+    ? normalizeUser(originUserRaw, warnings, `${path}.additional_media_info.source_user.user_results.result`)
+    : null;
 
   return toOptionalObject({
-    tweetId: rawMedia.source_status_id_str,
-    userId: rawMedia.source_user_id_str,
-    user: originUser,
+    tweetId: asString(rawMedia.source_status_id_str),
+    userId: asString(rawMedia.source_user_id_str),
+    user: originUser ?? undefined,
   });
 }
 
 function normalizeTweetMediaEntities(
-  media: raw.Media[] | undefined,
-  fallbackMedia?: raw.Media[] | undefined,
+  mediaInput: unknown,
+  fallbackMediaInput?: unknown,
 ): normalized.MediaEntity[] {
-  return (media ?? fallbackMedia ?? []).map((item) => ({
-    mediaId: item.id_str,
-    range: toTextRange(item.indices),
-    displayText: item.display_url,
-    expandedUrl: item.expanded_url,
-    url: item.url,
-    origin: normalizeMediaEntityOrigin(item),
-  }));
+  const mediaObjects = asArray(mediaInput).length > 0 ? asArray(mediaInput) : asArray(fallbackMediaInput);
+
+  return mediaObjects
+    .map((item) => {
+      const object = asObject(item);
+      const mediaId = asString(object?.id_str);
+      if (!object || !mediaId) return null;
+
+      return {
+        mediaId,
+        range: toTextRange(readNumberArray(object.indices)),
+        displayText: asString(object.display_url),
+        expandedUrl: asString(object.expanded_url),
+        url: asString(object.url),
+        origin: normalizeMediaEntityOrigin(object),
+      };
+    })
+    .filter(Boolean) as normalized.MediaEntity[];
 }
 
 function normalizeAnnotatedTextFromTweetEntities(
   text: string,
-  entities: raw.TweetEntities | undefined,
-  displayRange?: number[] | undefined,
+  entitiesInput: unknown,
+  displayRangeInput?: unknown,
   styles?: normalized.TextStyleRange[] | undefined,
-  fallbackMedia?: raw.Media[] | undefined,
+  fallbackMediaInput?: unknown,
 ): normalized.AnnotatedText {
   return {
     text,
-    displayRange: toTextRange(displayRange),
+    displayRange: toTextRange(readNumberArray(displayRangeInput)),
     entities: {
-      hashtags: normalizeTweetHashtags(entities?.hashtags),
-      symbols: normalizeTweetSymbols(entities?.symbols),
-      urls: normalizeTweetUrls(entities?.urls),
-      mentions: normalizeTweetMentions(entities?.user_mentions),
-      media: normalizeTweetMediaEntities(entities?.media, fallbackMedia),
+      hashtags: normalizeTweetHashtags(readPath(entitiesInput, 'hashtags')),
+      symbols: normalizeTweetSymbols(readPath(entitiesInput, 'symbols')),
+      urls: normalizeTweetUrls(readPath(entitiesInput, 'urls')),
+      mentions: normalizeTweetMentions(readPath(entitiesInput, 'user_mentions')),
+      media: normalizeTweetMediaEntities(readPath(entitiesInput, 'media'), fallbackMediaInput),
     },
     styles,
   };
@@ -175,14 +309,14 @@ function normalizeAnnotatedTextFromTweetEntities(
 
 function normalizeAnnotatedTextFromSimpleUrls(
   text: string,
-  urls: raw.UrlEntity[] | undefined,
+  urlsInput: unknown,
 ): normalized.AnnotatedText {
   return {
     text,
     entities: {
       hashtags: [],
       symbols: [],
-      urls: normalizeTweetUrls(urls),
+      urls: normalizeTweetUrls(urlsInput),
       mentions: [],
       media: [],
     },
@@ -190,20 +324,29 @@ function normalizeAnnotatedTextFromSimpleUrls(
 }
 
 function normalizeAnnotatedTextFromTimelineText(
-  value: raw.TimelineText | undefined,
+  valueInput: unknown,
 ): normalized.AnnotatedText | undefined {
-  if (!value) return undefined;
+  const value = asObject(valueInput);
+  const text = asString(value?.text);
+  if (!value || text === undefined) return undefined;
 
   const entities = createTextEntities();
-  for (const entity of value.entities ?? []) {
-    const range = toTextRange([entity.fromIndex, entity.toIndex]);
-    if (!range || !entity.ref) continue;
+  for (const entityInput of asArray(value.entities)) {
+    const entity = asObject(entityInput);
+    const range = toTextRange([
+      asNumber(entity?.fromIndex) ?? Number.NaN,
+      asNumber(entity?.toIndex) ?? Number.NaN,
+    ]);
+    const ref = asObject(entity?.ref);
 
-    const mentionResult = entity.ref.mention_results?.result;
-    if (mentionResult?.rest_id) {
-      const userName = entity.ref.screen_name ?? mentionResult.core?.screen_name ?? '';
+    if (!range || !ref) continue;
+
+    const mentionResult = asObject(readPath(ref, 'mention_results', 'result'));
+    const mentionUserId = asString(mentionResult?.rest_id);
+    if (mentionUserId) {
+      const userName = asString(ref.screen_name) ?? asString(readPath(mentionResult, 'core', 'screen_name')) ?? '';
       entities.mentions.push({
-        userId: mentionResult.rest_id,
+        userId: mentionUserId,
         name: userName,
         userName,
         range,
@@ -211,18 +354,19 @@ function normalizeAnnotatedTextFromTimelineText(
       continue;
     }
 
-    if (entity.ref.url) {
+    const url = asString(ref.url);
+    if (url) {
       entities.urls.push({
-        url: entity.ref.url,
-        expandedUrl: entity.ref.url,
-        displayText: entity.ref.url,
+        url,
+        expandedUrl: url,
+        displayText: url,
         range,
       });
     }
   }
 
   return {
-    text: value.text,
+    text,
     entities,
   };
 }
@@ -254,17 +398,17 @@ function extractTwitterHandleFromUrl(url: string | undefined): string | undefine
   }
 }
 
-function normalizeUserDisclosure(rawUser: raw.User): normalized.TweetUserDisclosure | undefined {
-  const label = rawUser.affiliates_highlighted_label?.label;
+function normalizeUserDisclosure(rawUser: JsonObject): normalized.TweetUserDisclosure | undefined {
+  const label = asObject(readPath(rawUser, 'affiliates_highlighted_label', 'label'));
   if (!label) return undefined;
 
-  const subjectUrl = label.url?.url;
+  const subjectUrl = asString(readPath(label, 'url', 'url'));
   const subjectHandleFromUrl = extractTwitterHandleFromUrl(subjectUrl);
 
-  if (label.userLabelType === 'BusinessLabel') {
+  if (asString(label.userLabelType) === 'BusinessLabel') {
     const subject = toOptionalObject({
       subjectHandle: subjectHandleFromUrl,
-      subjectName: label.description,
+      subjectName: asString(label.description),
       subjectUrl,
     });
     return subject
@@ -272,14 +416,22 @@ function normalizeUserDisclosure(rawUser: raw.User): normalized.TweetUserDisclos
       : { relation: 'affiliated_with' };
   }
 
-  if (label.userLabelType === 'AutomatedLabel') {
-    const mention = (label.longDescription?.entities ?? []).find((entity) => {
-      const mentionResult = entity.ref?.mention_results?.result;
-      return Boolean(entity.ref?.screen_name || mentionResult?.core?.screen_name || mentionResult?.rest_id);
-    });
+  if (asString(label.userLabelType) === 'AutomatedLabel') {
+    const mention = asArray(readPath(label, 'longDescription', 'entities'))
+      .map((item) => asObject(item))
+      .find((entity) => {
+        const mentionResult = asObject(readPath(entity, 'ref', 'mention_results', 'result'));
+        return Boolean(
+          asString(readPath(entity, 'ref', 'screen_name'))
+          || asString(readPath(mentionResult, 'core', 'screen_name'))
+          || asString(mentionResult?.rest_id),
+        );
+      });
+
     const subject = toOptionalObject({
-      subjectId: mention?.ref?.mention_results?.result?.rest_id,
-      subjectHandle: mention?.ref?.screen_name ?? mention?.ref?.mention_results?.result?.core?.screen_name,
+      subjectId: asString(readPath(mention, 'ref', 'mention_results', 'result', 'rest_id')),
+      subjectHandle: asString(readPath(mention, 'ref', 'screen_name'))
+        ?? asString(readPath(mention, 'ref', 'mention_results', 'result', 'core', 'screen_name')),
     });
     return subject
       ? { relation: 'operated_by', ...subject }
@@ -288,7 +440,7 @@ function normalizeUserDisclosure(rawUser: raw.User): normalized.TweetUserDisclos
 
   const subject = toOptionalObject({
     subjectHandle: subjectHandleFromUrl,
-    subjectName: label.description,
+    subjectName: asString(label.description),
     subjectUrl,
   });
   return subject
@@ -297,15 +449,21 @@ function normalizeUserDisclosure(rawUser: raw.User): normalized.TweetUserDisclos
 }
 
 function normalizeTextStyles(
-  richtext: raw.NoteTweetRichText | undefined,
+  richtextInput: unknown,
 ): normalized.TextStyleRange[] | undefined {
-  const styles = (richtext?.richtext_tags ?? [])
+  const styles = asArray(readPath(richtextInput, 'richtext_tags'))
     .map((item) => {
-      const range = toTextRange([item.from_index, item.to_index]);
-      if (!range) return null;
+      const object = asObject(item);
+      const range = toTextRange([
+        asNumber(object?.from_index) ?? Number.NaN,
+        asNumber(object?.to_index) ?? Number.NaN,
+      ]);
+      const styleNames = readStringArray(object?.richtext_types);
+      if (!range || styleNames.length === 0) return null;
+
       return {
         range,
-        styles: item.richtext_types,
+        styles: styleNames,
       };
     })
     .filter(Boolean) as normalized.TextStyleRange[];
@@ -313,425 +471,653 @@ function normalizeTextStyles(
   return styles.length > 0 ? styles : undefined;
 }
 
-function normalizeMediaType(value: string): normalized.TweetMedia['type'] {
+function normalizeMediaType(
+  value: unknown,
+  warnings: string[],
+  path: string,
+): normalized.TweetMedia['type'] | null {
   if (value === 'photo' || value === 'video' || value === 'animated_gif') {
     return value;
   }
-  throw new Error(`Unsupported media type: ${value}`);
+
+  appendWarning(warnings, path, `unsupported media type: ${String(value)}`);
+  return null;
 }
 
 function normalizeMediaRect(
-  value: { x: number; y: number; w: number; h: number } | undefined,
+  valueInput: unknown,
 ): normalized.MediaRect | undefined {
-  if (!value) return undefined;
-  if (value.x < 0 || value.y < 0 || value.w <= 0 || value.h <= 0) return undefined;
+  const value = asObject(valueInput);
+  const x = asNumber(value?.x);
+  const y = asNumber(value?.y);
+  const w = asNumber(value?.w);
+  const h = asNumber(value?.h);
+
+  if (x === undefined || y === undefined || w === undefined || h === undefined) return undefined;
+  if (x < 0 || y < 0 || w <= 0 || h <= 0) return undefined;
+
   return {
-    x: value.x,
-    y: value.y,
-    width: value.w,
-    height: value.h,
+    x,
+    y,
+    width: w,
+    height: h,
   };
 }
 
 function normalizeMediaRects(
-  values: Array<{ x: number; y: number; w: number; h: number }> | undefined,
+  valuesInput: unknown,
 ): normalized.MediaRect[] | undefined {
-  const rects = (values ?? [])
+  const rects = asArray(valuesInput)
     .map((item) => normalizeMediaRect(item))
     .filter(Boolean) as normalized.MediaRect[];
 
   return rects.length > 0 ? rects : undefined;
 }
 
-function normalizeMediaFaces(features: raw.MediaFeatures | undefined): normalized.TweetMediaFaces | undefined {
+function normalizeMediaFaces(featuresInput: unknown): normalized.TweetMediaFaces | undefined {
+  const features = asObject(featuresInput);
   if (!features) return undefined;
 
   return toOptionalObject({
-    large: normalizeMediaRects(features.large?.faces),
-    medium: normalizeMediaRects(features.medium?.faces),
-    small: normalizeMediaRects(features.small?.faces),
-    thumb: normalizeMediaRects(features.small?.faces),
-    original: normalizeMediaRects(features.orig?.faces),
+    large: normalizeMediaRects(readPath(features, 'large', 'faces')),
+    medium: normalizeMediaRects(readPath(features, 'medium', 'faces')),
+    small: normalizeMediaRects(readPath(features, 'small', 'faces')),
+    thumb: normalizeMediaRects(readPath(features, 'small', 'faces')),
+    original: normalizeMediaRects(readPath(features, 'orig', 'faces')),
   });
 }
 
-function normalizeMediaVariants(sizes: raw.MediaSizes | undefined): normalized.MediaVariants | undefined {
-  if (!sizes) return undefined;
+function normalizeMediaVariants(sizesInput: unknown): normalized.MediaVariants | undefined {
+  const normalizeVariant = (valueInput: unknown): normalized.MediaVariant | undefined => {
+    const value = asObject(valueInput);
+    const width = asNumber(value?.w);
+    const height = asNumber(value?.h);
+    const resizeMode = asString(value?.resize);
 
-  const normalizeVariant = (value: raw.MediaSize | undefined): normalized.MediaVariant | undefined => {
-    if (!value) return undefined;
-    if (value.w <= 0 || value.h <= 0) return undefined;
+    if (width === undefined || height === undefined || !resizeMode) return undefined;
+    if (width <= 0 || height <= 0) return undefined;
+
     return {
-      width: value.w,
-      height: value.h,
-      resizeMode: value.resize,
+      width,
+      height,
+      resizeMode,
     };
   };
 
   return toOptionalObject({
-    large: normalizeVariant(sizes.large),
-    medium: normalizeVariant(sizes.medium),
-    small: normalizeVariant(sizes.small),
-    thumb: normalizeVariant(sizes.thumb),
+    large: normalizeVariant(readPath(sizesInput, 'large')),
+    medium: normalizeVariant(readPath(sizesInput, 'medium')),
+    small: normalizeVariant(readPath(sizesInput, 'small')),
+    thumb: normalizeVariant(readPath(sizesInput, 'thumb')),
   });
 }
 
-function normalizeMediaGeometry(info: raw.OriginalInfo | undefined): normalized.TweetMediaGeometry | undefined {
-  if (!info) return undefined;
-  if (info.width <= 0 || info.height <= 0) return undefined;
+function normalizeMediaGeometry(infoInput: unknown): normalized.TweetMediaGeometry | undefined {
+  const info = asObject(infoInput);
+  const width = asNumber(info?.width);
+  const height = asNumber(info?.height);
+  if (!info || width === undefined || height === undefined) return undefined;
+  if (width <= 0 || height <= 0) return undefined;
 
   return {
-    width: info.width,
-    height: info.height,
-    focusRects: (info.focus_rects ?? [])
+    width,
+    height,
+    focusRects: asArray(info.focus_rects)
       .map((item) => normalizeMediaRect(item))
       .filter(Boolean) as normalized.MediaRect[],
   };
 }
 
-function normalizeVideo(videoInfo: raw.VideoInfo | undefined): normalized.TweetVideo | undefined {
+function normalizeVideo(videoInfoInput: unknown): normalized.TweetVideo | undefined {
+  const videoInfo = asObject(videoInfoInput);
   if (!videoInfo) return undefined;
 
-  const aspectRatio = videoInfo.aspect_ratio && videoInfo.aspect_ratio.length >= 2
-    ? videoInfo.aspect_ratio.slice(0, 2)
-    : undefined;
+  const aspectRatioInput = readNumberArray(videoInfo.aspect_ratio);
+  const aspectRatio = aspectRatioInput.length >= 2 ? aspectRatioInput.slice(0, 2) : undefined;
 
   return {
     aspectRatio: aspectRatio && aspectRatio[0] > 0 && aspectRatio[1] > 0
       ? [aspectRatio[0], aspectRatio[1]]
       : undefined,
-    durationMs: videoInfo.duration_millis,
-    variants: (videoInfo.variants ?? []).map((variant) => ({
-      contentType: variant.content_type,
-      bitrate: variant.bitrate,
-      url: variant.url,
-    })),
+    durationMs: asNumber(videoInfo.duration_millis),
+    variants: asArray(videoInfo.variants)
+      .map((variantInput) => {
+        const variant = asObject(variantInput);
+        const contentType = asString(variant?.content_type);
+        const url = asString(variant?.url);
+        if (!contentType || !url) return null;
+
+        return {
+          contentType,
+          bitrate: asNumber(variant?.bitrate),
+          url,
+        };
+      })
+      .filter(Boolean) as normalized.TweetVideoVariant[],
   };
 }
 
-function normalizeUser(rawUser: raw.User): normalized.TweetUser {
-  const profile: normalized.TweetUserProfile = {
-    displayName: rawUser.core?.name ?? '',
-    userName: rawUser.core?.screen_name ?? '',
-    avatarUrl: rawUser.avatar?.image_url,
-    usesDefaultAvatar: rawUser.legacy?.default_profile_image,
-    avatarShape: rawUser.profile_image_shape,
-    bannerUrl: rawUser.legacy?.profile_banner_url,
-    location: rawUser.location?.location,
-    bio: rawUser.legacy?.description || rawUser.profile_bio?.description
-      ? normalizeAnnotatedTextFromSimpleUrls(
-          rawUser.legacy?.description ?? rawUser.profile_bio?.description ?? '',
-          rawUser.legacy?.entities?.description?.urls,
-        )
+function normalizeUser(
+  rawUserInput: unknown,
+  warnings: string[],
+  path: string,
+): normalized.TweetUser | null {
+  const rawUserRoot = asObject(rawUserInput);
+  const rawUser = asObject(rawUserRoot?.result) ?? rawUserRoot;
+  if (!rawUser) {
+    appendWarning(warnings, path, 'expected user object');
+    return null;
+  }
+
+  const id = asString(rawUser.rest_id) ?? asString(rawUser.id);
+  if (!id) {
+    appendWarning(warnings, path, 'missing user id');
+    return null;
+  }
+
+  const description = asString(readPath(rawUser, 'legacy', 'description'))
+    ?? asString(readPath(rawUser, 'profile_bio', 'description'))
+    ?? '';
+
+  const candidate: normalized.TweetUser = {
+    id,
+    createdAt: normalizeIsoDateTime(asStringLike(readPath(rawUser, 'core', 'created_at'))),
+    profile: {
+      displayName: asString(readPath(rawUser, 'core', 'name')) ?? '',
+      userName: asString(readPath(rawUser, 'core', 'screen_name')) ?? '',
+      avatarUrl: asString(readPath(rawUser, 'avatar', 'image_url')),
+      usesDefaultAvatar: asBoolean(readPath(rawUser, 'legacy', 'default_profile_image')),
+      avatarShape: asString(rawUser.profile_image_shape),
+      bannerUrl: asString(readPath(rawUser, 'legacy', 'profile_banner_url')),
+      location: asString(readPath(rawUser, 'location', 'location')),
+      bio: description
+        ? normalizeAnnotatedTextFromSimpleUrls(
+            description,
+            readPath(rawUser, 'legacy', 'entities', 'description', 'urls'),
+          )
+        : undefined,
+      profileLinks: normalizeResolvedUrls(readPath(rawUser, 'legacy', 'entities', 'url', 'urls')),
+    },
+    pinnedTweetIds: readStringArray(readPath(rawUser, 'legacy', 'pinned_tweet_ids_str')),
+    identity: toOptionalObject({
+      verification: toOptionalObject({
+        isBlueVerified: asBoolean(rawUser.is_blue_verified),
+        type: asString(readPath(rawUser, 'verification', 'verified_type')),
+      }),
+      disclosure: normalizeUserDisclosure(rawUser),
+      parodyLabel: asString(rawUser.parody_commentary_fan_label),
+      hasCompletedNewAccountReview: asBoolean(rawUser.has_graduated_access),
+      isPossiblySensitive: asBoolean(readPath(rawUser, 'legacy', 'possibly_sensitive')),
+    }),
+    professional: asObject(rawUser.professional)
+      ? {
+          id: asString(readPath(rawUser, 'professional', 'rest_id')),
+          type: asString(readPath(rawUser, 'professional', 'professional_type')),
+          categories: asArray(readPath(rawUser, 'professional', 'category'))
+            .map((categoryInput) => {
+              const category = asObject(categoryInput);
+              const categoryId = asStringLike(category?.id);
+              const categoryName = asString(category?.name);
+              if (!categoryId || !categoryName) return null;
+
+              return {
+                id: categoryId,
+                name: categoryName,
+              };
+            })
+            .filter(Boolean) as normalized.TweetUserCategory[],
+        }
       : undefined,
-    profileLinks: normalizeResolvedUrls(rawUser.legacy?.entities?.url?.urls),
+    stats: toOptionalObject({
+      followers: asNumber(readPath(rawUser, 'legacy', 'followers_count')),
+      following: asNumber(readPath(rawUser, 'legacy', 'friends_count')),
+      likes: asNumber(readPath(rawUser, 'legacy', 'favourites_count')),
+      mediaPosts: asNumber(readPath(rawUser, 'legacy', 'media_count')),
+      tweets: asNumber(readPath(rawUser, 'legacy', 'statuses_count')),
+      listed: asNumber(readPath(rawUser, 'legacy', 'listed_count')),
+    }),
+    features: toOptionalObject({
+      canDm: asBoolean(readPath(rawUser, 'dm_permissions', 'can_dm')),
+      canTagMedia: asBoolean(readPath(rawUser, 'media_permissions', 'can_media_tag')),
+      isProtected: asBoolean(readPath(rawUser, 'privacy', 'protected')),
+      canBeSubscribed: asBoolean(rawUser.super_follow_eligible),
+    }),
   };
 
-  const verification = toOptionalObject({
-    isBlueVerified: rawUser.is_blue_verified,
-    type: rawUser.verification?.verified_type,
-  });
-
-  const disclosure = normalizeUserDisclosure(rawUser);
-
-  const identity = toOptionalObject({
-    verification,
-    disclosure,
-    parodyLabel: rawUser.parody_commentary_fan_label,
-    hasCompletedNewAccountReview: rawUser.has_graduated_access,
-    isPossiblySensitive: rawUser.legacy?.possibly_sensitive,
-  });
-
-  const professional = rawUser.professional
-    ? {
-        id: rawUser.professional.rest_id,
-        type: rawUser.professional.professional_type,
-        categories: (rawUser.professional.category ?? []).map((category) => ({
-          id: String(category.id),
-          name: category.name,
-        })),
-      }
-    : undefined;
-
-  const stats = toOptionalObject({
-    followers: rawUser.legacy?.followers_count,
-    following: rawUser.legacy?.friends_count,
-    likes: rawUser.legacy?.favourites_count,
-    mediaPosts: rawUser.legacy?.media_count,
-    tweets: rawUser.legacy?.statuses_count,
-    listed: rawUser.legacy?.listed_count,
-  });
-
-  const features = toOptionalObject({
-    canDm: rawUser.dm_permissions?.can_dm,
-    canTagMedia: rawUser.media_permissions?.can_media_tag,
-    isProtected: rawUser.privacy?.protected,
-    canBeSubscribed: rawUser.super_follow_eligible,
-  });
-
-  return {
-    id: rawUser.rest_id ?? rawUser.id ?? '',
-    createdAt: normalizeIsoDateTime(rawUser.core?.created_at),
-    profile,
-    pinnedTweetIds: rawUser.legacy?.pinned_tweet_ids_str ?? [],
-    identity,
-    professional,
-    stats,
-    features,
-  };
+  try {
+    return TweetUserSchema.parse(candidate);
+  } catch (error) {
+    appendWarning(warnings, path, `user normalization failed: ${formatErrorMessage(error)}`);
+    return null;
+  }
 }
 
-function normalizeMedia(rawMedia: raw.Media): normalized.TweetMedia {
-  const sensitivityWarnings = rawMedia.sensitive_media_warning
-    ? [...new Set(
-        Object.entries(rawMedia.sensitive_media_warning)
-          .filter(([, enabled]) => enabled)
-          .map(([warning]) => warning),
-      )].sort()
-    : [];
+function normalizeMedia(
+  rawMediaInput: unknown,
+  warnings: string[],
+  path: string,
+): normalized.TweetMedia | null {
+  const rawMedia = asObject(rawMediaInput);
+  if (!rawMedia) {
+    appendWarning(warnings, path, 'expected media object');
+    return null;
+  }
+
+  const id = asString(rawMedia.id_str);
+  if (!id) {
+    appendWarning(warnings, path, 'missing media id');
+    return null;
+  }
+
+  const type = normalizeMediaType(rawMedia.type, warnings, `${path}.type`);
+  if (!type) return null;
 
   return {
-    id: rawMedia.id_str,
-    type: normalizeMediaType(rawMedia.type),
-    mediaUrl: rawMedia.media_url_https,
-    altText: rawMedia.ext_alt_text,
-    grokPostId: rawMedia.grok_post_id,
+    id,
+    type,
+    mediaUrl: asString(rawMedia.media_url_https),
+    altText: asString(rawMedia.ext_alt_text),
+    grokPostId: asString(rawMedia.grok_post_id),
     geometry: normalizeMediaGeometry(rawMedia.original_info),
     variants: normalizeMediaVariants(rawMedia.sizes),
-    taggedUsers: (rawMedia.features?.all?.tags ?? []).map((tag) => ({
-      userId: tag.user_id,
-      name: tag.name,
-      userName: tag.screen_name,
-      kind: tag.type,
-    })),
-    faces: normalizeMediaFaces(rawMedia.features),
-    origin: normalizeMediaOrigin(rawMedia),
-    details: toOptionalObject({
-      title: rawMedia.additional_media_info?.title,
-      description: rawMedia.additional_media_info?.description,
-      siteUrl: rawMedia.additional_media_info?.call_to_actions?.visit_site?.url,
-      isEmbeddable: rawMedia.additional_media_info?.embeddable,
-      isMonetizable: rawMedia.additional_media_info?.monetizable,
+    taggedUsers: asArray(readPath(rawMedia, 'features', 'all', 'tags')).map((tagInput) => {
+      const tag = asObject(tagInput);
+      return {
+        userId: asString(tag?.user_id),
+        name: asString(tag?.name),
+        userName: asString(tag?.screen_name),
+        kind: asString(tag?.type),
+      };
     }),
-    sensitivityWarnings: sensitivityWarnings.length > 0 ? sensitivityWarnings : undefined,
-    availability: rawMedia.ext_media_availability?.status,
+    faces: normalizeMediaFaces(rawMedia.features),
+    origin: normalizeMediaOrigin(rawMedia, warnings, path),
+    details: toOptionalObject({
+      title: asString(readPath(rawMedia, 'additional_media_info', 'title')),
+      description: asString(readPath(rawMedia, 'additional_media_info', 'description')),
+      siteUrl: asString(readPath(rawMedia, 'additional_media_info', 'call_to_actions', 'visit_site', 'url')),
+      isEmbeddable: asBoolean(readPath(rawMedia, 'additional_media_info', 'embeddable')),
+      isMonetizable: asBoolean(readPath(rawMedia, 'additional_media_info', 'monetizable')),
+    }),
+    sensitivityWarnings: (() => {
+      const values = readActiveStringFlags(rawMedia.sensitive_media_warning);
+      return values.length > 0 ? values : undefined;
+    })(),
+    availability: asString(readPath(rawMedia, 'ext_media_availability', 'status')),
     video: normalizeVideo(rawMedia.video_info),
   };
 }
 
-function normalizePlace(place: raw.Place | undefined): normalized.TweetPlace | undefined {
+function normalizePlace(placeInput: unknown): normalized.TweetPlace | undefined {
+  const place = asObject(placeInput);
   if (!place) return undefined;
 
-  const boundaryPoints = place.bounding_box?.coordinates?.[0]
-    ?.map((point) => {
-      const [longitude, latitude] = point;
-      if (longitude === undefined || latitude === undefined) return null;
-      return { longitude, latitude };
-    })
-    .filter(Boolean) as normalized.TweetPlaceBoundary | undefined;
+  const boundaryPoints = asArray(readPath(place, 'bounding_box', 'coordinates'))
+    .flatMap((ring) => (Array.isArray(ring) ? [ring] : []))[0];
+
+  const boundary = Array.isArray(boundaryPoints)
+    ? boundaryPoints
+        .map((point) => {
+          if (!Array.isArray(point) || point.length < 2) return null;
+          const longitude = asNumber(point[0]);
+          const latitude = asNumber(point[1]);
+          if (longitude === undefined || latitude === undefined) return null;
+          return { longitude, latitude };
+        })
+        .filter(Boolean) as normalized.TweetPlaceBoundary
+    : undefined;
 
   return toOptionalObject({
-    id: place.id,
-    name: place.name,
-    fullName: place.full_name,
-    country: place.country,
-    countryCode: place.country_code,
-    kind: place.place_type,
-    boundary: boundaryPoints && boundaryPoints.length > 0 ? boundaryPoints : undefined,
+    id: asString(place.id),
+    name: asString(place.name),
+    fullName: asString(place.full_name),
+    country: asString(place.country),
+    countryCode: asString(place.country_code),
+    kind: asString(place.place_type),
+    boundary: boundary && boundary.length > 0 ? boundary : undefined,
   });
 }
 
-function normalizeNote(noteTweet: raw.NoteTweet | undefined): normalized.TweetNote | undefined {
-  const result = noteTweet?.note_tweet_results?.result;
-  if (!result) return undefined;
+function normalizeNote(noteTweetInput: unknown): normalized.TweetNote | undefined {
+  const result = asObject(readPath(noteTweetInput, 'note_tweet_results', 'result'));
+  const text = asString(result?.text);
+  if (!result || text === undefined) return undefined;
 
   return {
-    id: result.id,
+    id: asString(result.id),
     text: normalizeAnnotatedTextFromTweetEntities(
-      result.text,
+      text,
       {
-        hashtags: result.entity_set?.hashtags,
-        media: undefined,
-        smarttags: undefined,
-        symbols: undefined,
-        timestamps: undefined,
-        urls: result.entity_set?.urls,
-        user_mentions: result.entity_set?.user_mentions,
+        hashtags: readPath(result, 'entity_set', 'hashtags'),
+        urls: readPath(result, 'entity_set', 'urls'),
+        user_mentions: readPath(result, 'entity_set', 'user_mentions'),
       },
       undefined,
-      normalizeTextStyles(result.richtext),
+      normalizeTextStyles(readPath(result, 'richtext')),
     ),
   };
 }
 
 function normalizePermalink(
-  permalink: raw.QuotedStatusPermalink | undefined,
+  permalinkInput: unknown,
 ): normalized.TweetPermalink | undefined {
-  if (!permalink) return undefined;
+  const permalink = asObject(permalinkInput);
+  const url = asString(permalink?.url);
+  const expandedUrl = asString(permalink?.expanded);
+  const displayText = asString(permalink?.display);
+  if (!url || !expandedUrl || !displayText) return undefined;
+
   return {
-    url: permalink.url,
-    expandedUrl: permalink.expanded,
-    displayText: permalink.display,
+    url,
+    expandedUrl,
+    displayText,
   };
 }
 
 function normalizeAvailableActions(
-  limitedActionResults: raw.LimitedActionResults | undefined,
+  limitedActionResultsInput: unknown,
 ): normalized.TweetActionCode[] | undefined {
-  const actions = (limitedActionResults?.limited_actions ?? []).map((action) => action.action);
+  const actions = asArray(readPath(limitedActionResultsInput, 'limited_actions'))
+    .map((actionInput) => asString(readPath(actionInput, 'action')))
+    .filter(Boolean) as normalized.TweetActionCode[];
 
   return actions.length > 0 ? actions : undefined;
 }
 
 function normalizeCommunityNote(
-  pivot: raw.BirdwatchPivot | undefined,
+  pivotInput: unknown,
 ): normalized.TweetCommunityNote | undefined {
+  const pivot = asObject(pivotInput);
   if (!pivot) return undefined;
+
   return toOptionalObject({
-    id: pivot.note?.rest_id,
-    title: pivot.title,
-    shortTitle: pivot.shorttitle,
+    id: asString(readPath(pivot, 'note', 'rest_id')),
+    title: asString(pivot.title),
+    shortTitle: asString(pivot.shorttitle),
     subtitle: normalizeAnnotatedTextFromTimelineText(pivot.subtitle),
     footer: normalizeAnnotatedTextFromTimelineText(pivot.footer),
-    destinationUrl: pivot.destinationUrl,
+    destinationUrl: asString(pivot.destinationUrl),
   });
 }
 
-function normalizeEditInfo(editControl: raw.EditControl | undefined): normalized.TweetEditInfo | undefined {
+function normalizeEditInfo(editControlInput: unknown): normalized.TweetEditInfo | undefined {
+  const editControl = asObject(editControlInput);
   if (!editControl) return undefined;
 
-  const base = 'edit_control_initial' in editControl
-    ? editControl.edit_control_initial
-    : editControl;
+  const base = asObject(editControl.edit_control_initial) ?? editControl;
 
   return {
-    versionIds: base.edit_tweet_ids,
-    editableUntilAt: normalizeIsoDateTime(base.editable_until_msecs),
-    remainingEdits: base.edits_remaining,
+    versionIds: readStringArray(base.edit_tweet_ids),
+    editableUntilAt: normalizeIsoDateTime(asStringLike(base.editable_until_msecs)),
+    remainingEdits: asStringLike(base.edits_remaining),
   };
 }
 
 function normalizeTweetPolicy(
-  data: raw.TweetData,
-  wrapper: raw.TweetWithVisibilityResults | undefined,
+  data: JsonObject,
+  wrapper: JsonObject | undefined,
 ): normalized.TweetPolicy | undefined {
   return toOptionalObject({
-    replyPolicy: data.legacy.conversation_control?.policy,
-    followersOnly: data.legacy.scopes?.followers,
-    isPossiblySensitive: data.legacy.possibly_sensitive,
-    availableActions: normalizeAvailableActions(wrapper?.limitedActionResults),
-    isMediaVisibilityRestricted: wrapper?.mediaVisibilityResults?.blurred_image_interstitial ? true : undefined,
-    paidPromotion: data.content_disclosure?.advertising_disclosure?.is_paid_promotion,
+    replyPolicy: asString(readPath(data, 'legacy', 'conversation_control', 'policy')),
+    followersOnly: asBoolean(readPath(data, 'legacy', 'scopes', 'followers')),
+    isPossiblySensitive: asBoolean(readPath(data, 'legacy', 'possibly_sensitive')),
+    availableActions: normalizeAvailableActions(readPath(wrapper, 'limitedActionResults')),
+    isMediaVisibilityRestricted: asObject(readPath(wrapper, 'mediaVisibilityResults', 'blurred_image_interstitial')) ? true : undefined,
+    paidPromotion: asBoolean(readPath(data, 'content_disclosure', 'advertising_disclosure', 'is_paid_promotion')),
   });
 }
 
+function classifyTweetResultNode(node: JsonObject): 'tweet' | 'wrapper' | 'tombstone' | null {
+  const typename = asString(node.__typename);
+
+  if (typename === 'TweetTombstone' || asObject(node.tombstone)) {
+    return 'tombstone';
+  }
+
+  if (
+    typename === 'TweetWithVisibilityResults'
+    || (asObject(node.tweet) && !asString(node.rest_id) && !asObject(node.legacy))
+  ) {
+    return 'wrapper';
+  }
+
+  if (
+    typename === 'Tweet'
+    || asString(node.rest_id)
+    || asString(readPath(node, 'legacy', 'id_str'))
+    || asObject(node.legacy)
+  ) {
+    return 'tweet';
+  }
+
+  return null;
+}
+
+function extractTweetIdFromResultInput(input: unknown): string | undefined {
+  const node = asObject(input);
+  if (!node) return undefined;
+
+  const kind = classifyTweetResultNode(node);
+  if (kind === 'tombstone') return undefined;
+
+  const data = kind === 'wrapper' ? asObject(node.tweet) : node;
+  return asString(data?.rest_id) ?? asString(readPath(data, 'legacy', 'id_str'));
+}
+
 function normalizeTweetData(
-  data: raw.TweetData,
-  wrapper: raw.TweetWithVisibilityResults | undefined,
+  dataInput: unknown,
+  wrapperInput: unknown,
   stack: Set<string>,
-): normalized.Tweet {
-  const contentMedia = [...(data.legacy.extended_entities?.media ?? [])];
-  const seenMediaIds = new Set(contentMedia.map((item) => item.id_str));
-  for (const item of data.legacy.entities.media ?? []) {
-    if (seenMediaIds.has(item.id_str)) continue;
-    contentMedia.push(item);
-    seenMediaIds.add(item.id_str);
+  warnings: string[],
+  path: string,
+): normalized.Tweet | null {
+  const data = asObject(dataInput);
+  const wrapper = asObject(wrapperInput);
+  if (!data) {
+    appendWarning(warnings, path, 'expected tweet data object');
+    return null;
   }
 
-  const author = normalizeUser(data.core.user_results.result);
-  const createdAt = normalizeIsoDateTime(data.legacy.created_at);
-  const note = normalizeNote(data.note_tweet);
-  const quotedTweet = data.quoted_status_result?.result
-    ? normalizeParsedTweetResultInternal(data.quoted_status_result.result, stack)
-    : null;
-  const quotedTweetId = data.legacy.quoted_status_id_str
-    ?? quotedTweet?.id
-    ?? data.quotedRefResult?.result.rest_id;
-  const repostTweet = data.legacy.retweeted_status_result?.result
-    ? normalizeParsedTweetResultInternal(data.legacy.retweeted_status_result.result, stack)
-    : null;
+  const tweetId = asString(data.rest_id) ?? asString(readPath(data, 'legacy', 'id_str'));
+  if (!tweetId) {
+    appendWarning(warnings, path, 'missing tweet id');
+    return null;
+  }
 
+  const author = normalizeUser(readPath(data, 'core', 'user_results', 'result'), warnings, `${path}.core.user_results.result`);
+  if (!author) {
+    appendWarning(warnings, path, 'missing valid author');
+    return null;
+  }
+
+  const createdAt = normalizeIsoDateTime(asStringLike(readPath(data, 'legacy', 'created_at')));
   if (!createdAt) {
-    throw new Error(`Unable to normalize tweet created_at: ${data.rest_id}`);
+    appendWarning(warnings, `${path}.legacy.created_at`, 'unable to normalize created_at');
+    return null;
   }
 
-  return {
-    id: data.rest_id,
+  const conversationId = asString(readPath(data, 'legacy', 'conversation_id_str'));
+  if (!conversationId) {
+    appendWarning(warnings, `${path}.legacy.conversation_id_str`, 'missing conversation id');
+    return null;
+  }
+
+  const note = normalizeNote(data.note_tweet);
+  const legacyFullText = asString(readPath(data, 'legacy', 'full_text')) ?? '';
+  if (!legacyFullText && !note?.text.text) {
+    appendWarning(warnings, path, 'missing both legacy full_text and note text');
+    return null;
+  }
+
+  const contentMediaInputs: Array<{ value: unknown; path: string }> = [];
+  const seenMediaIds = new Set<string>();
+
+  for (const [index, item] of asArray(readPath(data, 'legacy', 'extended_entities', 'media')).entries()) {
+    const mediaId = asString(readPath(item, 'id_str'));
+    if (mediaId) {
+      seenMediaIds.add(mediaId);
+    }
+    contentMediaInputs.push({
+      value: item,
+      path: `${path}.legacy.extended_entities.media[${index}]`,
+    });
+  }
+
+  for (const [index, item] of asArray(readPath(data, 'legacy', 'entities', 'media')).entries()) {
+    const mediaId = asString(readPath(item, 'id_str'));
+    if (mediaId && seenMediaIds.has(mediaId)) {
+      continue;
+    }
+    if (mediaId) {
+      seenMediaIds.add(mediaId);
+    }
+    contentMediaInputs.push({
+      value: item,
+      path: `${path}.legacy.entities.media[${index}]`,
+    });
+  }
+
+  const media = contentMediaInputs
+    .map((item) => normalizeMedia(item.value, warnings, item.path))
+    .filter(Boolean) as normalized.TweetMedia[];
+
+  const quotedResultInput = readPath(data, 'quoted_status_result', 'result');
+  const quotedTweet = quotedResultInput === undefined
+    ? null
+    : normalizeParsedTweetResultInternal(
+        quotedResultInput,
+        stack,
+        warnings,
+        `${path}.quoted_status_result.result`,
+      );
+
+  const repostResultInput = readPath(data, 'legacy', 'retweeted_status_result', 'result');
+  const repostTweet = repostResultInput === undefined
+    ? null
+    : normalizeParsedTweetResultInternal(
+        repostResultInput,
+        stack,
+        warnings,
+        `${path}.legacy.retweeted_status_result.result`,
+      );
+
+  const quotedTweetId = asString(readPath(data, 'legacy', 'quoted_status_id_str'))
+    ?? quotedTweet?.id
+    ?? extractTweetIdFromResultInput(quotedResultInput)
+    ?? asString(readPath(data, 'quotedRefResult', 'result', 'rest_id'));
+
+  const candidate: normalized.Tweet = {
+    id: tweetId,
     createdAt,
-    source: stripHtmlSource(data.source),
-    place: normalizePlace(data.legacy.place),
+    source: stripHtmlSource(asString(data.source)),
+    place: normalizePlace(readPath(data, 'legacy', 'place')),
     author,
     content: {
       legacyText: normalizeAnnotatedTextFromTweetEntities(
-        data.legacy.full_text,
-        data.legacy.entities,
-        data.legacy.display_text_range,
+        legacyFullText,
+        readPath(data, 'legacy', 'entities'),
+        readPath(data, 'legacy', 'display_text_range'),
         undefined,
-        data.legacy.extended_entities?.media,
+        readPath(data, 'legacy', 'extended_entities', 'media'),
       ),
       note,
-      media: contentMedia.map((item) => normalizeMedia(item)),
-      language: data.legacy.lang,
+      media,
+      language: asString(readPath(data, 'legacy', 'lang')),
     },
     conversation: {
-      conversationId: data.legacy.conversation_id_str,
-      replyTo: data.legacy.in_reply_to_status_id_str
-        ? toOptionalObject({
-            tweetId: data.legacy.in_reply_to_status_id_str,
-            userId: data.legacy.in_reply_to_user_id_str ?? undefined,
-            userName: data.legacy.in_reply_to_screen_name ?? undefined,
-          }) as normalized.TweetReplyTarget
+      conversationId,
+      replyTo: asString(readPath(data, 'legacy', 'in_reply_to_status_id_str'))
+        ? {
+            tweetId: asString(readPath(data, 'legacy', 'in_reply_to_status_id_str')) as string,
+            userId: asString(readPath(data, 'legacy', 'in_reply_to_user_id_str')),
+            userName: asString(readPath(data, 'legacy', 'in_reply_to_screen_name')),
+          }
         : undefined,
       quote: quotedTweetId
         ? {
             tweetId: quotedTweetId,
-            permalink: normalizePermalink(data.legacy.quoted_status_permalink),
+            permalink: normalizePermalink(readPath(data, 'legacy', 'quoted_status_permalink')),
             tweet: quotedTweet ?? undefined,
           }
         : undefined,
       repost: repostTweet ?? undefined,
     },
     stats: {
-      views: data.views?.count,
-      replies: data.legacy.reply_count,
-      reposts: data.legacy.retweet_count,
-      quotes: data.legacy.quote_count,
-      likes: data.legacy.favorite_count,
-      bookmarks: data.legacy.bookmark_count,
+      views: asStringLike(readPath(data, 'views', 'count')),
+      replies: asNumber(readPath(data, 'legacy', 'reply_count')),
+      reposts: asNumber(readPath(data, 'legacy', 'retweet_count')),
+      quotes: asNumber(readPath(data, 'legacy', 'quote_count')),
+      likes: asNumber(readPath(data, 'legacy', 'favorite_count')),
+      bookmarks: asNumber(readPath(data, 'legacy', 'bookmark_count')),
     },
-    edit: normalizeEditInfo(data.edit_control),
+    edit: normalizeEditInfo(readPath(data, 'edit_control')),
     policy: normalizeTweetPolicy(data, wrapper),
-    communityNote: normalizeCommunityNote(data.birdwatch_pivot),
+    communityNote: normalizeCommunityNote(readPath(data, 'birdwatch_pivot')),
   };
+
+  try {
+    return TweetSchema.parse(candidate);
+  } catch (error) {
+    appendWarning(warnings, path, `tweet normalization failed: ${formatErrorMessage(error)}`);
+    return null;
+  }
 }
 
 function normalizeParsedTweetResultInternal(
-  result: raw.TweetResult,
+  input: unknown,
   stack: Set<string>,
+  warnings: string[],
+  path: string,
 ): normalized.Tweet | null {
-  if (result.__typename === 'TweetTombstone') {
+  const node = asObject(input);
+  if (!node) {
+    appendWarning(warnings, path, 'expected tweet result object');
     return null;
   }
 
-  const wrapper = result.__typename === 'TweetWithVisibilityResults' ? result : undefined;
-  const data = result.__typename === 'TweetWithVisibilityResults' ? result.tweet : result;
-
-  if (stack.has(data.rest_id)) {
+  const kind = classifyTweetResultNode(node);
+  if (!kind) {
+    appendWarning(warnings, path, 'unrecognized tweet result shape');
     return null;
   }
 
-  stack.add(data.rest_id);
+  if (kind === 'tombstone') {
+    return null;
+  }
+
+  const data = kind === 'wrapper' ? asObject(node.tweet) : node;
+  const tweetId = asString(data?.rest_id) ?? asString(readPath(data, 'legacy', 'id_str'));
+
+  if (!tweetId) {
+    appendWarning(warnings, path, 'missing tweet id');
+    return null;
+  }
+
+  if (stack.has(tweetId)) {
+    return null;
+  }
+
+  stack.add(tweetId);
   try {
-    return TweetSchema.parse(normalizeTweetData(data, wrapper, stack));
+    return normalizeTweetData(data, kind === 'wrapper' ? node : undefined, stack, warnings, path);
   } finally {
-    stack.delete(data.rest_id);
+    stack.delete(tweetId);
   }
 }
 
-export function normalizeParsedTweetResult(result: raw.TweetResult): normalized.Tweet | null {
-  return normalizeParsedTweetResultInternal(result, new Set<string>());
+export function parseAndNormalizeUserResult(
+  input: unknown,
+  rootPath = 'user',
+): ParsedUserResult {
+  const warnings: string[] = [];
+  const user = normalizeUser(input, warnings, rootPath);
+  return { user, warnings };
 }
 
-export function parseAndNormalizeTweetResult(input: unknown): normalized.Tweet | null {
-  return normalizeParsedTweetResult(parseRawTweetResult(input));
+export function parseAndNormalizeTweetResult(
+  input: unknown,
+  rootPath = 'tweet_results.result',
+): ParsedTweetResult {
+  const warnings: string[] = [];
+  const tweet = normalizeParsedTweetResultInternal(input, new Set<string>(), warnings, rootPath);
+  return { tweet, warnings };
 }
