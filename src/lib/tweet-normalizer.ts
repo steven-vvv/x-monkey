@@ -482,6 +482,14 @@ function normalizeUser(rawUser: raw.User): normalized.TweetUser {
 }
 
 function normalizeMedia(rawMedia: raw.Media): normalized.TweetMedia {
+  const sensitivityWarnings = rawMedia.sensitive_media_warning
+    ? [...new Set(
+        Object.entries(rawMedia.sensitive_media_warning)
+          .filter(([, enabled]) => enabled)
+          .map(([warning]) => warning),
+      )].sort()
+    : [];
+
   return {
     id: rawMedia.id_str,
     type: normalizeMediaType(rawMedia.type),
@@ -505,6 +513,7 @@ function normalizeMedia(rawMedia: raw.Media): normalized.TweetMedia {
       isEmbeddable: rawMedia.additional_media_info?.embeddable,
       isMonetizable: rawMedia.additional_media_info?.monetizable,
     }),
+    sensitivityWarnings: sensitivityWarnings.length > 0 ? sensitivityWarnings : undefined,
     availability: rawMedia.ext_media_availability?.status,
     video: normalizeVideo(rawMedia.video_info),
   };

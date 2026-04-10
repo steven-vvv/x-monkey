@@ -466,6 +466,10 @@ export const AdditionalMediaInfoSchema = strictObject({
 });
 export type AdditionalMediaInfo = z.infer<typeof AdditionalMediaInfoSchema>;
 
+/** 媒体敏感性提示。 */
+export const SensitiveMediaWarningSchema = z.record(z.string(), z.boolean());
+export type SensitiveMediaWarning = z.infer<typeof SensitiveMediaWarningSchema>;
+
 /** 帖子媒体。 */
 export const MediaSchema = strictObject({
   id_str: z.string(),
@@ -482,6 +486,7 @@ export const MediaSchema = strictObject({
   sizes: MediaSizesSchema.optional(),
   source_status_id_str: z.string().optional(),
   source_user_id_str: z.string().optional(),
+  sensitive_media_warning: SensitiveMediaWarningSchema.optional(),
   type: z.string(),
   url: z.string().optional(),
   ext_alt_text: z.string().optional(),

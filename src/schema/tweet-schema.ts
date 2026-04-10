@@ -106,6 +106,15 @@ export const TweetMediaAvailabilityStatusSchema = z.string();
 export type TweetMediaAvailabilityStatus = z.infer<typeof TweetMediaAvailabilityStatusSchema>;
 
 /**
+ * 媒体敏感性提示代码。
+ * 当前样本值: `adult_content`, `graphic_violence`, `other`
+ *
+ * 为兼容上游未来新增类别，运行时不收紧为 `z.enum()`。
+ */
+export const TweetMediaSensitivityCodeSchema = z.string();
+export type TweetMediaSensitivityCode = z.infer<typeof TweetMediaSensitivityCodeSchema>;
+
+/**
  * 媒体标签种类。
  * `dumps` 样本值: `user`
  */
@@ -611,6 +620,7 @@ export type TweetMediaDetails = z.infer<typeof TweetMediaDetailsSchema>;
  * - `origin`: `legacy.extended_entities.media[].source_status_id_str` / `legacy.extended_entities.media[].source_user_id_str`
  *   / `legacy.extended_entities.media[].additional_media_info.source_user.user_results.result`
  * - `details`: `legacy.extended_entities.media[].additional_media_info`（不含 `source_user`）
+ * - `sensitivityWarnings`: `legacy.extended_entities.media[].sensitive_media_warning` 中值为 `true` 的键列表
  * - `availability`: `legacy.extended_entities.media[].ext_media_availability.status`
  * - `video`: `legacy.extended_entities.media[].video_info`
  */
@@ -626,6 +636,7 @@ export const TweetMediaSchema = strictObject({
   faces: TweetMediaFacesSchema.optional(),
   origin: TweetMediaOriginSchema.optional(),
   details: TweetMediaDetailsSchema.optional(),
+  sensitivityWarnings: z.array(TweetMediaSensitivityCodeSchema).optional(),
   availability: TweetMediaAvailabilityStatusSchema.optional(),
   video: TweetVideoSchema.optional(),
 });
