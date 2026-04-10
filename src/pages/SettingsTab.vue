@@ -117,10 +117,14 @@ function onNumberInput(key: keyof AppConfig, e: Event) {
         </div>
       </SettingsSection>
 
-      <SettingsSection title="Behavior" hint="By default, captured data is retained for the current page session. Enable auto-clear only if URL changes should reset the in-memory capture state.">
+      <SettingsSection title="Behavior" hint="By default, captured data is retained for the current page session. Enable auto-clear only if URL changes should reset the in-memory capture state. Media with sensitivity labels is masked unless disabled here.">
         <label class="xd-settings-check-row">
           <input type="checkbox" :checked="draft.autoClearOnNavigate" @change="setDraft('autoClearOnNavigate', !draft.autoClearOnNavigate)" />
           <span>Auto-clear capture state on navigation</span>
+        </label>
+        <label class="xd-settings-check-row">
+          <input type="checkbox" :checked="draft.maskSensitiveMediaWarnings" @change="setDraft('maskSensitiveMediaWarnings', !draft.maskSensitiveMediaWarnings)" />
+          <span>Automatically mask media with sensitivity labels</span>
         </label>
       </SettingsSection>
     </div>

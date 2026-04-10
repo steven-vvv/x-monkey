@@ -244,6 +244,21 @@
   gap: 6px;
 }
 
+.xd-settings-check-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  color: var(--xd-text-primary);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.xd-settings-check-row input {
+  margin-top: 1px;
+  accent-color: var(--xd-accent);
+  flex-shrink: 0;
+}
+
 .xd-empty {
   display: flex;
   align-items: center;
@@ -452,6 +467,40 @@
   -webkit-line-clamp: 3;
 }
 
+.xd-media-maskable {
+  isolation: isolate;
+}
+
+.xd-media-sensitivity-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px;
+  background: rgba(10, 10, 12, 0.58);
+  color: #fff;
+  text-align: center;
+  pointer-events: none;
+}
+
+.xd-media-maskable:hover .xd-media-sensitivity-overlay {
+  opacity: 0;
+  visibility: hidden;
+}
+
+.xd-media-sensitivity-label {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  color: inherit;
+  font-size: 10px;
+  line-height: 1.35;
+  font-weight: 600;
+  word-break: break-word;
+}
+
 .xd-tweet-summary-card-media {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(min(var(--xd-summary-media-min-width, 125px), calc((100% - var(--xd-summary-media-gap, 4px)) / 2)), 1fr));
@@ -481,6 +530,7 @@
   position: absolute;
   right: 4px;
   bottom: 4px;
+  z-index: 2;
   padding: 1px 5px;
   border-radius: 999px;
   background: rgba(0, 0, 0, 0.72);

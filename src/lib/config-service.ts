@@ -12,6 +12,7 @@ export interface AppConfig {
   panelVisible: boolean;
   uiScale: number; // 25-200%
   autoClearOnNavigate: boolean;
+  maskSensitiveMediaWarnings: boolean;
   theme: ThemeMode;
   remoteDbEnabled: boolean;
   remoteDbBaseUrl: string;
@@ -29,13 +30,14 @@ export const DEFAULT_CONFIG: AppConfig = {
   panelVisible: true,
   uiScale: 100,
   autoClearOnNavigate: false,
+  maskSensitiveMediaWarnings: true,
   theme: 'page',
   remoteDbEnabled: false,
   remoteDbBaseUrl: '',
 };
 
 const CONFIG_KEY = 'xd_config';
-const CONFIG_STORAGE_VERSION = 4;
+const CONFIG_STORAGE_VERSION = 5;
 
 const config = reactive<AppConfig>({ ...DEFAULT_CONFIG });
 
@@ -49,6 +51,10 @@ function resolvePersistedRemoteDbBaseUrl(savedValue: unknown): string {
 
 function resolvePersistedRemoteDbEnabled(savedValue: unknown): boolean {
   return typeof savedValue === 'boolean' ? savedValue : DEFAULT_CONFIG.remoteDbEnabled;
+}
+
+function resolvePersistedMaskSensitiveMediaWarnings(savedValue: unknown): boolean {
+  return typeof savedValue === 'boolean' ? savedValue : DEFAULT_CONFIG.maskSensitiveMediaWarnings;
 }
 
 function normalizePersistedConfig(saved: PersistedAppConfig): AppConfig {
@@ -67,6 +73,9 @@ function normalizePersistedConfig(saved: PersistedAppConfig): AppConfig {
   );
   merged.remoteDbEnabled = resolvePersistedRemoteDbEnabled(
     savedVersion >= 4 ? saved.remoteDbEnabled : DEFAULT_CONFIG.remoteDbEnabled,
+  );
+  merged.maskSensitiveMediaWarnings = resolvePersistedMaskSensitiveMediaWarnings(
+    savedVersion >= 5 ? saved.maskSensitiveMediaWarnings : DEFAULT_CONFIG.maskSensitiveMediaWarnings,
   );
 
   return merged;

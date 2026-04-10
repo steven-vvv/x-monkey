@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, onUpdated, ref } from 'vue';
 import type { DbMediaRecord, DbTweetRecord, DbUserRecord } from '../lib/types';
+import { getConfig } from '../lib/config-service';
 import { avatarFull, formatTweetDateTime, toTweetSummaryStats } from '../lib/view-format';
+import { getMediaSensitivityOverlayText } from '../lib/view-format';
 import {
   getMediaThumbUrl,
   getTweetSummaryText,
@@ -25,6 +27,7 @@ const emit = defineEmits<{
   (e: 'select', tweetId: string): void;
 }>();
 
+const cfg = getConfig();
 const cardElement = ref<HTMLElement | null>(null);
 const mediaElement = ref<HTMLElement | null>(null);
 const cardWidth = ref(0);
@@ -85,6 +88,10 @@ const dateText = computed(() => formatTweetDateTime(props.tweet.createdAt));
 const hasAvatar = computed(() => Boolean(props.author?.profile.avatarUrl));
 const visibleMediaCount = computed(() => resolveVisibleMediaCount(mediaWidth.value));
 const visibleMedia = computed(() => props.media.slice(0, visibleMediaCount.value));
+const visibleMediaItems = computed(() => visibleMedia.value.map((item) => ({
+  item,
+  sensitivityText: cfg.maskSensitiveMediaWarnings ? getMediaSensitivityOverlayText(item) : null,
+})));
 const extraCount = computed(() => Math.max(0, props.media.length - visibleMedia.value.length));
 const mediaGridStyle = computed<Record<string, string>>(() => ({
   '--xd-summary-media-min-width': `${SUMMARY_MEDIA_MIN_WIDTH}px`,
@@ -131,13 +138,16 @@ const statsGridStyle = computed<Record<string, string>>(() => ({
         :style="mediaGridStyle"
       >
         <div
-          v-for="(item, index) in visibleMedia"
+          v-for="({ item, sensitivityText }, index) in visibleMediaItems"
           :key="item.id"
-          class="xd-tweet-summary-card-media-cell"
+          class="xd-tweet-summary-card-media-cell xd-media-maskable"
         >
           <img :src="getMediaThumbUrl(item)" loading="lazy" />
+          <div v-if="sensitivityText" class="xd-media-sensitivity-overlay">
+            <span class="xd-media-sensitivity-label">{{ sensitivityText }}</span>
+          </div>
           <span v-if="item.type !== 'photo'" class="xd-tweet-summary-card-media-badge">{{ item.type === 'video' ? 'VID' : 'GIF' }}</span>
-          <span v-if="index === visibleMedia.length - 1 && extraCount > 0" class="xd-tweet-summary-card-media-extra">+{{ extraCount }}</span>
+          <span v-if="index === visibleMediaItems.length - 1 && extraCount > 0" class="xd-tweet-summary-card-media-extra">+{{ extraCount }}</span>
         </div>
       </div>
     </div>

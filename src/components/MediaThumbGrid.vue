@@ -1,23 +1,36 @@
 <script setup lang="ts">
+import { computed } from 'vue';
 import type { DbMediaRecord } from '../lib/types';
+import { getConfig } from '../lib/config-service';
 import { getMediaOpenUrl, getMediaThumbUrl } from '../lib/tweet-selectors';
+import { getMediaSensitivityOverlayText } from '../lib/view-format';
 
 const props = defineProps<{ media: DbMediaRecord[] }>();
 
 const emit = defineEmits<{
   (e: 'open', url: string): void;
 }>();
+
+const cfg = getConfig();
+
+const mediaItems = computed(() => props.media.map((mediaItem) => ({
+  mediaItem,
+  sensitivityText: cfg.maskSensitiveMediaWarnings ? getMediaSensitivityOverlayText(mediaItem) : null,
+})));
 </script>
 
 <template>
   <div v-if="props.media.length > 0" class="xd-detail-media">
     <div
-      v-for="mediaItem in props.media"
+      v-for="{ mediaItem, sensitivityText } in mediaItems"
       :key="mediaItem.id"
-      class="xd-thumb"
+      class="xd-thumb xd-media-maskable"
       @click="emit('open', getMediaOpenUrl(mediaItem))"
     >
       <img :src="getMediaThumbUrl(mediaItem)" loading="lazy" />
+      <div v-if="sensitivityText" class="xd-media-sensitivity-overlay">
+        <span class="xd-media-sensitivity-label">{{ sensitivityText }}</span>
+      </div>
       <span v-if="mediaItem.type !== 'photo'" class="xd-thumb-badge">{{ mediaItem.type === 'video' ? 'VID' : 'GIF' }}</span>
     </div>
   </div>
@@ -56,6 +69,7 @@ const emit = defineEmits<{
   position: absolute;
   right: 4px;
   bottom: 4px;
+  z-index: 2;
   padding: 1px 5px;
   border-radius: 999px;
   background: rgba(0, 0, 0, 0.72);

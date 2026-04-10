@@ -1,5 +1,5 @@
 import { getTweetDisplayText } from './tweet-selectors';
-import type { DbTweetRecord, DbUserRecord } from './types';
+import type { DbMediaRecord, DbTweetRecord, DbUserRecord } from './types';
 
 export interface StatItem {
   label: string;
@@ -14,6 +14,12 @@ export interface TweetCompactCardItem {
   text: string;
   mediaCount: number;
 }
+
+const MEDIA_SENSITIVITY_LABELS: Record<string, string> = {
+  adult_content: 'Adult content',
+  graphic_violence: 'Graphic violence',
+  other: 'Sensitive media',
+};
 
 function getLocalDateParts(value: string) {
   const date = new Date(value);
@@ -58,6 +64,43 @@ function formatOptionalCount(value: number | string | undefined): string {
   }
 
   return '-';
+}
+
+function toDisplayLabel(value: string): string {
+  return value
+    .trim()
+    .replace(/[_-]+/g, ' ')
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((part) => part.slice(0, 1).toUpperCase() + part.slice(1).toLowerCase())
+    .join(' ');
+}
+
+export function formatMediaSensitivityWarnings(warnings: readonly string[]): string[] {
+  const labels: string[] = [];
+  const seen = new Set<string>();
+
+  for (const warning of warnings) {
+    const normalized = warning.trim();
+    if (!normalized) continue;
+
+    const label = MEDIA_SENSITIVITY_LABELS[normalized] ?? toDisplayLabel(normalized);
+    const dedupeKey = label.toLowerCase();
+    if (seen.has(dedupeKey)) continue;
+
+    seen.add(dedupeKey);
+    labels.push(label);
+  }
+
+  return labels;
+}
+
+export function getMediaSensitivityOverlayText(media: Pick<DbMediaRecord, 'sensitivityWarnings'>): string | null {
+  const warnings = media.sensitivityWarnings;
+  if (!warnings?.length) return null;
+
+  const labels = formatMediaSensitivityWarnings(warnings);
+  return labels.length > 0 ? labels.join(', ') : null;
 }
 
 export function avatarFull(url: string): string {
