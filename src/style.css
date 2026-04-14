@@ -244,6 +244,64 @@
   gap: 6px;
 }
 
+.xd-settings-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.xd-settings-column {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.xd-settings-input-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.xd-settings-field {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 11px;
+}
+
+.xd-settings-field-label {
+  color: var(--xd-text-muted);
+  flex-shrink: 0;
+}
+
+.xd-settings-field-value {
+  color: var(--xd-text-primary);
+  text-align: right;
+  word-break: break-word;
+}
+
+.xd-settings-input {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 6px;
+  border: 1px solid var(--xd-border);
+  border-radius: var(--xd-radius);
+  background: var(--xd-bg-primary);
+  color: var(--xd-text-primary);
+  font: inherit;
+}
+
+.xd-settings-input::placeholder {
+  color: var(--xd-text-muted);
+}
+
+.xd-settings-error {
+  color: var(--xd-error);
+  font-size: 10px;
+  line-height: 1.35;
+}
+
 .xd-settings-check-row {
   display: flex;
   align-items: flex-start;

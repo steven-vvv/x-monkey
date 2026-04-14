@@ -1,21 +1,36 @@
-import type {
-  RemoteDbPostStatusItem,
-  RemoteDbSubmissionEnvelope,
-  RemoteDbTransferSummary,
-} from './types';
+import type { DbMedia, DbTweet, DbUser } from '../db-service';
+import type { RemoteDbSubmissionEnvelope, RemoteDbTweetBundle } from './types';
+
+export interface RemoteDbEntityComparison {
+  remoteStatus: 'found' | 'missing' | 'failed';
+  consistent: boolean;
+  message: string | null;
+  error: string | null;
+}
+
+export interface RemoteDbMediaComparison {
+  total: number;
+  found: number;
+  missing: number;
+  failed: number;
+  consistent: number;
+  mismatchIds: string[];
+  missingIds: string[];
+  failedIds: string[];
+}
 
 export interface RemoteDbStatusComparison {
-  exists: boolean;
-  consistent: boolean;
-  mismatchReason: string | null;
-  expectedMediaCount: number;
-  transferSummary: RemoteDbTransferSummary;
+  tweet: RemoteDbEntityComparison;
+  author: RemoteDbEntityComparison | null;
+  media: RemoteDbMediaComparison;
+  overallStatus: 'in_sync' | 'mismatch' | 'missing' | 'failed';
+  message: string | null;
 }
 
 export interface RemoteDbSubmissionSourceItem {
-  tweet: { id: string };
-  author: { id: string } | undefined;
-  media: Array<{ id: string }>;
+  tweet: DbTweet;
+  author: DbUser | undefined;
+  media: DbMedia[];
 }
 
 export interface RemoteDbSubmissionBatchResult {
@@ -44,13 +59,10 @@ export function normalizeRemoteDbCreatedAt(value: string | null | undefined): st
 }
 
 export function buildRemoteDbSubmission(
-  tweet: RemoteDbSubmissionSourceItem['tweet'],
-  author: RemoteDbSubmissionSourceItem['author'],
-  media: RemoteDbSubmissionSourceItem['media'],
+  _tweet: DbTweet,
+  _author: DbUser | undefined,
+  _media: DbMedia[],
 ): RemoteDbSubmissionEnvelope | null {
-  void tweet;
-  void author;
-  void media;
   return null;
 }
 
@@ -65,17 +77,46 @@ export function buildRemoteDbSubmissionBatch(
   };
 }
 
-export function compareRemoteDbPostStatus(
-  _tweet: RemoteDbSubmissionSourceItem['tweet'],
-  _author: RemoteDbSubmissionSourceItem['author'],
-  _media: RemoteDbSubmissionSourceItem['media'],
-  remoteItem: RemoteDbPostStatusItem,
+export function compareRemoteDbTweetBundle(
+  _tweet: DbTweet,
+  _author: DbUser | undefined,
+  media: DbMedia[],
+  bundle: RemoteDbTweetBundle,
 ): RemoteDbStatusComparison {
+  const missingIds = bundle.media
+    .filter((item) => item.status === 'missing')
+    .map((item) => item.id ?? '');
+  const failedIds = bundle.media
+    .filter((item) => item.status === 'failed')
+    .map((item) => item.id ?? '');
+  const found = bundle.media.filter((item) => item.status === 'found').length;
+
   return {
-    exists: remoteItem.found,
-    consistent: false,
-    mismatchReason: 'Remote database integration is disabled',
-    expectedMediaCount: 0,
-    transferSummary: remoteItem.transferSummary,
+    tweet: {
+      remoteStatus: bundle.tweet.status,
+      consistent: false,
+      message: 'Comparison is not implemented yet',
+      error: bundle.tweet.error ?? null,
+    },
+    author: bundle.author
+      ? {
+          remoteStatus: bundle.author.status,
+          consistent: false,
+          message: 'Comparison is not implemented yet',
+          error: bundle.author.error ?? null,
+        }
+      : null,
+    media: {
+      total: media.length,
+      found,
+      missing: missingIds.length,
+      failed: failedIds.length,
+      consistent: 0,
+      mismatchIds: [],
+      missingIds,
+      failedIds,
+    },
+    overallStatus: bundle.tweet.status === 'failed' ? 'failed' : bundle.tweet.status === 'missing' ? 'missing' : 'mismatch',
+    message: 'Comparison is not implemented yet',
   };
 }
