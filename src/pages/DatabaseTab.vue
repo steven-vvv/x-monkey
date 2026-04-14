@@ -13,6 +13,8 @@ import { toTweetCompactCardItem } from '../lib/view-format';
 import TweetCompactCard from '../components/TweetCompactCard.vue';
 import TweetDetailView from '../components/TweetDetailView.vue';
 import UserDetailCard from '../components/UserDetailCard.vue';
+import RemoteDbTweetPanel from '../components/RemoteDbTweetPanel.vue';
+import { isRemoteDbTweetApiReady } from '../lib/remote-db';
 
 const route = dbRoute;
 
@@ -59,11 +61,20 @@ const detailReplies = computed(() => {
   return getReplies(detailTweet.value.id);
 });
 
+const detailRemoteSyncTweets = computed(() => {
+  if (!detailTweet.value) return [];
+  return [detailTweet.value, ...detailReplies.value];
+});
+
 // User detail computeds
 const detailUser = computed(() => {
   void dbVersion.value;
   if (route.value.page === 'user') return getDbUser(route.value.userId) ?? null;
   return null;
+});
+
+const shouldShowRemoteDbPanel = computed(() => {
+  return isRemoteDbTweetApiReady();
 });
 </script>
 
@@ -92,7 +103,15 @@ const detailUser = computed(() => {
             @open-original="openOriginal"
             @open-media="openMediaUrl"
             @open-tweet="openTweet"
-          />
+          >
+            <template #after-detail>
+              <RemoteDbTweetPanel
+                v-if="shouldShowRemoteDbPanel"
+                :tweet="detailTweet"
+                :batch-sync-tweets="detailRemoteSyncTweets"
+              />
+            </template>
+          </TweetDetailView>
         </template>
       </template>
 
