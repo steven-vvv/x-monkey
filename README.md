@@ -36,7 +36,23 @@ Build output is generated in `dist/` as a userscript bundle.
 
 ## Remote Database Build Options
 
-The tweet-db integration can now be configured in two ways:
+The tweet-db integration targets the current tweet-db v2 public API only:
+
+- `GET /api/v1/session`
+- `POST /api/v1/tweet/query`
+- `POST /api/v1/tweet/submit`
+
+Legacy tweet-db endpoints such as `/api/v1/ingest/submissions` and `/api/v1/posts/status/query` are intentionally not supported.
+
+Runtime behavior in the userscript:
+
+- Remote database sync is manual from the tweet detail panel.
+- `Refresh` queries the remote state for the current tweet, author, and media.
+- `Sync` submits the current tweet bundle.
+- `Sync All` submits the current tweet plus visible replies when available.
+- Query requires a registered tweet-db session; submit requires an administrator session.
+
+The integration can be configured in two ways:
 
 1. Optionally create `remote-db.config.json` in the project root
 2. Override the same fields with Vite environment variables when needed
@@ -51,7 +67,7 @@ Default repository configuration:
 
 This means the feature is enabled by default, the Settings tab will show the remote database section, and the Base URL can be entered later if it is not fixed in the file.
 
-Runtime behavior in the userscript:
+Settings behavior:
 
 - A per-user `Enable remote database` switch is available in Settings.
 - `Check` applies the current draft enable state and Base URL in memory immediately.
@@ -104,4 +120,10 @@ VITE_XD_REMOTE_DB_ENABLED=true \
 VITE_XD_REMOTE_DB_CONFIGURABLE=true \
 VITE_XD_REMOTE_DB_BASE_URL= \
 bun run build
+```
+
+Contract verification against the adjacent tweet-db checkout:
+
+```bash
+bun run scripts/verify-remote-db-contract.ts
 ```
