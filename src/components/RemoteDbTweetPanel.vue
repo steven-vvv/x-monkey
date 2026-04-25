@@ -8,6 +8,7 @@ import {
   getRemoteDbClientState,
   isRemoteDbTweetApiReady,
   queryRemoteDbTweetBundle,
+  RemoteDbHttpError,
   submitRemoteDbSubmission,
   type RemoteDbSubmissionSourceItem,
 } from '../lib/remote-db';
@@ -67,6 +68,16 @@ const batchSyncSources = computed<RemoteDbSubmissionSourceItem[]>(() => {
 let queryToken = 0;
 
 function toErrorMessage(error: unknown, fallback: string): string {
+  if (error instanceof RemoteDbHttpError) {
+    if (error.status === 401) {
+      return 'Remote database session expired. Open Settings and sign in again.';
+    }
+
+    if (error.status === 403) {
+      return 'Remote database sync requires an administrator account.';
+    }
+  }
+
   if (error instanceof Error && error.message.trim()) {
     return error.message;
   }

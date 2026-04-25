@@ -210,7 +210,7 @@ export interface RemoteDbSubmitTweetPlace {
 
 export interface RemoteDbSubmitTweetNote {
   id?: string;
-  text?: RemoteDbSubmitAnnotatedText;
+  text: RemoteDbSubmitAnnotatedText;
 }
 
 export interface RemoteDbSubmitTweetReplyTarget {

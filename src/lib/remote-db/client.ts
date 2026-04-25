@@ -5,6 +5,7 @@ import type {
   RemoteDbClientConfig,
   RemoteDbClientState,
   RemoteDbQueryObjectResult,
+  RemoteDbQueryRequest,
   RemoteDbQueryResponse,
   RemoteDbQueryTweetData,
   RemoteDbQueryUserData,
@@ -371,14 +372,15 @@ export async function queryRemoteDbTweetBundle(
 
   const normalizedMediaIds = [...new Set((query.mediaIds ?? []).filter(Boolean))];
   try {
+    const body: RemoteDbQueryRequest = {
+      users: query.authorId ? [{ id: query.authorId }] : [],
+      tweets: [{ id: query.tweetId }],
+      media: normalizedMediaIds.map((id) => ({ id })),
+    };
     const payload = await requestJson<RemoteDbQueryResponse>({
       method: 'POST',
       path: '/api/v1/tweet/query',
-      body: {
-        users: query.authorId ? [{ id: query.authorId }] : [],
-        tweets: [{ id: query.tweetId }],
-        media: normalizedMediaIds.map((id) => ({ id })),
-      },
+      body,
     });
 
     remoteDbState.lastError = null;
