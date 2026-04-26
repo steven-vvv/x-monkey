@@ -211,7 +211,14 @@ const selectedTimelineItems = computed(() => {
   return timelineItems.value.filter((item) => selectedTimelineTweetIds.has(item.tweet.id));
 });
 
+const timelineTweetIds = computed(() => timelineItems.value.map((item) => item.tweet.id));
+
 const selectedTimelineCount = computed(() => selectedTimelineItems.value.length);
+
+const allTimelineTweetsSelected = computed(() => {
+  return timelineTweetIds.value.length > 0
+    && timelineTweetIds.value.every((tweetId) => selectedTimelineTweetIds.has(tweetId));
+});
 
 const selectedTimelineBuildResult = computed(() => {
   return buildRemoteDbSubmissionBatch(selectedTimelineItems.value.map((item) => ({
@@ -247,6 +254,10 @@ const timelineSubmitDisabled = computed(() => {
 
 const timelineSubmitButtonText = computed(() => {
   return timelineBatchSubmitState.value === 'submitting' ? 'Submitting...' : 'Submit';
+});
+
+const selectAllButtonText = computed(() => {
+  return allTimelineTweetsSelected.value ? 'Clear All' : 'Select All';
 });
 
 const timelineActionMetaText = computed(() => {
@@ -343,6 +354,20 @@ function toggleTimelineTweetSelection(tweetId: string): void {
   clearTimelineBatchMessage();
 }
 
+function toggleAllTimelineTweetSelection(): void {
+  if (allTimelineTweetsSelected.value) {
+    clearTimelineSelection();
+    clearTimelineBatchMessage();
+    return;
+  }
+
+  timelineMultiSelectActive.value = true;
+  for (const tweetId of timelineTweetIds.value) {
+    selectedTimelineTweetIds.add(tweetId);
+  }
+  clearTimelineBatchMessage();
+}
+
 function selectTimelineTweet(tweetId: string): void {
   if (timelineMultiSelectActive.value && shouldShowTimelineRemoteActions.value) {
     toggleTimelineTweetSelection(tweetId);
@@ -386,9 +411,9 @@ watch(
 );
 
 watch(
-  () => timelineItems.value.map((item) => item.tweet.id).join('|'),
+  () => timelineTweetIds.value.join('|'),
   () => {
-    const currentIds = new Set(timelineItems.value.map((item) => item.tweet.id));
+    const currentIds = new Set(timelineTweetIds.value);
     for (const tweetId of [...selectedTimelineTweetIds]) {
       if (!currentIds.has(tweetId)) {
         selectedTimelineTweetIds.delete(tweetId);
@@ -490,6 +515,14 @@ watch(
           @click="toggleTimelineMultiSelect"
         >
           {{ timelineMultiSelectActive ? 'Cancel' : 'Select' }}
+        </button>
+        <button
+          class="xd-btn xd-btn--sm"
+          :class="{ 'xd-btn--accent': allTimelineTweetsSelected }"
+          :disabled="timelineItems.length === 0"
+          @click="toggleAllTimelineTweetSelection"
+        >
+          {{ selectAllButtonText }}
         </button>
         <button
           class="xd-btn xd-btn--sm xd-btn--accent"
