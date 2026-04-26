@@ -17,10 +17,13 @@ const SUMMARY_MEDIA_HEIGHT = 100;
 const SUMMARY_STAT_MIN_WIDTH = 56;
 const SUMMARY_STAT_GAP = 4;
 
+type TweetSummaryRemoteSyncStatus = 'in_sync' | 'missing' | 'mismatch' | 'failed';
+
 const props = defineProps<{
   tweet: DbTweetRecord;
   author: DbUserRecord | undefined;
   media: DbMediaRecord[];
+  remoteSyncStatus?: TweetSummaryRemoteSyncStatus;
 }>();
 
 const emit = defineEmits<{
