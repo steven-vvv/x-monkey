@@ -24,6 +24,7 @@ const props = defineProps<{
   author: DbUserRecord | undefined;
   media: DbMediaRecord[];
   remoteSyncStatus?: TweetSummaryRemoteSyncStatus;
+  selected?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -126,7 +127,10 @@ const remoteSyncStatusClass = computed(() => {
   <div
     ref="cardElement"
     class="xd-tweet-summary-card xd-list-item--clickable"
-    :class="{ 'xd-tweet-summary-card--no-avatar': !hasLeadCell }"
+    :class="{
+      'xd-tweet-summary-card--no-avatar': !hasLeadCell,
+      'xd-tweet-summary-card--selected': props.selected,
+    }"
     @click="emit('select', tweet.id)"
   >
     <div v-if="hasLeadCell" class="xd-tweet-summary-card-visual">

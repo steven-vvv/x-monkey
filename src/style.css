@@ -365,6 +365,10 @@
     "stats";
 }
 
+.xd-tweet-summary-card--selected {
+  border-color: var(--xd-accent);
+}
+
 .xd-tweet-summary-card:last-child {
   margin-bottom: 0;
 }
@@ -782,6 +786,14 @@
 .xd-tab-meta {
   font-size: 11px;
   color: var(--xd-text-secondary);
+}
+
+.xd-tab-meta--error {
+  color: var(--xd-error);
+}
+
+.xd-tab-meta--success {
+  color: var(--xd-success);
 }
 
 .xd-context-label {

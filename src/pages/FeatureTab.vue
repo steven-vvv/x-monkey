@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, reactive, ref, watch } from 'vue';
 import type { DbMedia, DbTweet, DbUser } from '../lib/db-service';
 import {
   dbVersion,
+  enqueueRemoteTweetSyncStatusRefresh,
   getDbTweet,
   getDbUser,
   getMediaForTweet,
@@ -15,7 +16,12 @@ import { getTimelineTweetIdsByAlias, getTimelineVersionByAlias } from '../lib/ti
 import { featureNavigateTo, featureRoute, type FeatureRoute } from '../lib/store';
 import { GM_openInTab } from '$';
 import { getTweetOpenUrl, getUserOpenUrl } from '../lib/tweet-selectors';
-import { isRemoteDbTweetApiReady } from '../lib/remote-db';
+import {
+  buildRemoteDbSubmissionBatch,
+  isRemoteDbTweetApiReady,
+  RemoteDbHttpError,
+  submitRemoteDbSubmission,
+} from '../lib/remote-db';
 import TweetDetailView from '../components/TweetDetailView.vue';
 import UserDetailCard from '../components/UserDetailCard.vue';
 import TweetSummaryCard from '../components/TweetSummaryCard.vue';
@@ -32,7 +38,13 @@ interface FeatureTimelineContext {
   username?: string;
 }
 
+type TimelineBatchSubmitState = 'idle' | 'submitting' | 'success' | 'error';
+
 const route = featureRoute;
+const timelineMultiSelectActive = ref(false);
+const selectedTimelineTweetIds = reactive(new Set<string>());
+const timelineBatchSubmitState = ref<TimelineBatchSubmitState>('idle');
+const timelineBatchSubmitMessage = ref<string | null>(null);
 
 function getRouteTimelineContext(value: FeatureRoute): FeatureTimelineContext | null {
   if (value.page === 'timeline') {
@@ -185,87 +197,319 @@ const focalRemoteSyncTweets = computed(() => {
 const shouldShowRemoteDbPanel = computed(() => {
   return isRemoteDbTweetApiReady();
 });
+
+const shouldShowTimelineRemoteActions = computed(() => {
+  return route.value.page === 'timeline' && isRemoteDbTweetApiReady();
+});
+
+const timelineRouteKey = computed(() => {
+  if (route.value.page !== 'timeline') return 'inactive';
+  return `${route.value.source}:${route.value.username ?? ''}`;
+});
+
+const selectedTimelineItems = computed(() => {
+  return timelineItems.value.filter((item) => selectedTimelineTweetIds.has(item.tweet.id));
+});
+
+const selectedTimelineCount = computed(() => selectedTimelineItems.value.length);
+
+const selectedTimelineBuildResult = computed(() => {
+  return buildRemoteDbSubmissionBatch(selectedTimelineItems.value.map((item) => ({
+    tweet: item.tweet,
+    author: item.author,
+    media: item.media,
+  })));
+});
+
+const selectedTimelineSubmitIssue = computed(() => {
+  if (selectedTimelineCount.value === 0) {
+    return 'Select tweets to submit';
+  }
+
+  const result = selectedTimelineBuildResult.value;
+  if (result.missingAuthorTweetIds.length > 0) {
+    return `Submit unavailable: author data is missing for ${result.missingAuthorTweetIds.join(', ')}`;
+  }
+  if (result.invalidUserCreatedAtIds.length > 0) {
+    return `Submit unavailable: invalid user time for ${result.invalidUserCreatedAtIds.join(', ')}`;
+  }
+  if (result.invalidTweetCreatedAtIds.length > 0) {
+    return `Submit unavailable: invalid tweet time for ${result.invalidTweetCreatedAtIds.join(', ')}`;
+  }
+  return null;
+});
+
+const timelineSubmitDisabled = computed(() => {
+  return timelineBatchSubmitState.value === 'submitting'
+    || selectedTimelineCount.value === 0
+    || !selectedTimelineBuildResult.value.submission;
+});
+
+const timelineSubmitButtonText = computed(() => {
+  return timelineBatchSubmitState.value === 'submitting' ? 'Submitting...' : 'Submit';
+});
+
+const timelineActionMetaText = computed(() => {
+  if (timelineBatchSubmitMessage.value) {
+    return timelineBatchSubmitMessage.value;
+  }
+
+  if (timelineMultiSelectActive.value && selectedTimelineCount.value > 0 && selectedTimelineSubmitIssue.value) {
+    return selectedTimelineSubmitIssue.value;
+  }
+
+  return `${selectedTimelineCount.value} selected`;
+});
+
+function firstSubmitIssue(
+  result: Awaited<ReturnType<typeof submitRemoteDbSubmission>>,
+): string | null {
+  for (const collection of [result.users, result.tweets, result.media]) {
+    for (const item of collection) {
+      if (item.error) {
+        return item.error;
+      }
+
+      const failedOperation = item.operations.find((operation) => operation.status === 'failed');
+      if (failedOperation?.reason) {
+        return `${item.id ?? 'unknown'}: ${failedOperation.reason}`;
+      }
+    }
+  }
+
+  return null;
+}
+
+function formatSubmitMessage(
+  result: Awaited<ReturnType<typeof submitRemoteDbSubmission>>,
+): string {
+  const summary = result.summary;
+  const issue = firstSubmitIssue(result);
+  return issue
+    ? `Submit accepted ${summary.accepted}, skipped ${summary.skipped}, partial ${summary.partial}, failed ${summary.failed}. First issue: ${issue}`
+    : `Submit accepted ${summary.accepted}, skipped ${summary.skipped}, partial ${summary.partial}, failed ${summary.failed}.`;
+}
+
+function toRemoteSubmitErrorMessage(error: unknown): string {
+  if (error instanceof RemoteDbHttpError) {
+    if (error.status === 401) {
+      return 'Remote database session expired. Open Settings and sign in again.';
+    }
+
+    if (error.status === 403) {
+      return 'Remote database sync requires an administrator account.';
+    }
+  }
+
+  if (error instanceof Error && error.message.trim()) {
+    return error.message;
+  }
+
+  return 'Failed to submit selected tweets to remote database';
+}
+
+function clearTimelineSelection(): void {
+  selectedTimelineTweetIds.clear();
+}
+
+function clearTimelineBatchMessage(): void {
+  timelineBatchSubmitState.value = 'idle';
+  timelineBatchSubmitMessage.value = null;
+}
+
+function resetTimelineMultiSelect(): void {
+  timelineMultiSelectActive.value = false;
+  clearTimelineSelection();
+  clearTimelineBatchMessage();
+}
+
+function toggleTimelineMultiSelect(): void {
+  if (timelineMultiSelectActive.value) {
+    resetTimelineMultiSelect();
+    return;
+  }
+
+  timelineMultiSelectActive.value = true;
+  clearTimelineBatchMessage();
+}
+
+function toggleTimelineTweetSelection(tweetId: string): void {
+  if (selectedTimelineTweetIds.has(tweetId)) {
+    selectedTimelineTweetIds.delete(tweetId);
+  } else {
+    selectedTimelineTweetIds.add(tweetId);
+  }
+
+  clearTimelineBatchMessage();
+}
+
+function selectTimelineTweet(tweetId: string): void {
+  if (timelineMultiSelectActive.value && shouldShowTimelineRemoteActions.value) {
+    toggleTimelineTweetSelection(tweetId);
+    return;
+  }
+
+  openTweet(tweetId);
+}
+
+async function submitSelectedTimelineTweets(): Promise<void> {
+  const selectedIds = selectedTimelineItems.value.map((item) => item.tweet.id);
+  const submission = selectedTimelineBuildResult.value.submission;
+
+  if (!submission) {
+    timelineBatchSubmitState.value = 'error';
+    timelineBatchSubmitMessage.value = selectedTimelineSubmitIssue.value ?? 'Unable to build selected tweet submission';
+    return;
+  }
+
+  timelineBatchSubmitState.value = 'submitting';
+  timelineBatchSubmitMessage.value = null;
+
+  try {
+    const result = await submitRemoteDbSubmission(submission);
+    enqueueRemoteTweetSyncStatusRefresh(selectedIds);
+    clearTimelineSelection();
+    timelineMultiSelectActive.value = false;
+    timelineBatchSubmitState.value = 'success';
+    timelineBatchSubmitMessage.value = formatSubmitMessage(result);
+  } catch (error) {
+    timelineBatchSubmitState.value = 'error';
+    timelineBatchSubmitMessage.value = toRemoteSubmitErrorMessage(error);
+  }
+}
+
+watch(
+  () => [timelineRouteKey.value, shouldShowTimelineRemoteActions.value] as const,
+  () => {
+    resetTimelineMultiSelect();
+  },
+);
+
+watch(
+  () => timelineItems.value.map((item) => item.tweet.id).join('|'),
+  () => {
+    const currentIds = new Set(timelineItems.value.map((item) => item.tweet.id));
+    for (const tweetId of [...selectedTimelineTweetIds]) {
+      if (!currentIds.has(tweetId)) {
+        selectedTimelineTweetIds.delete(tweetId);
+      }
+    }
+  },
+);
 </script>
 
 <template>
-  <div class="xd-body">
-    <template v-if="route.page === 'none'">
-      <div class="xd-empty">No feature available for this page</div>
-    </template>
+  <div class="xd-tab-wrapper">
+    <div class="xd-body">
+      <template v-if="route.page === 'none'">
+        <div class="xd-empty">No feature available for this page</div>
+      </template>
 
-    <template v-else-if="route.page === 'home-root'">
-      <div v-for="entry in homeEntryCards" :key="entry.source" class="xd-list-item xd-list-item--clickable" @click="openHomeTimeline(entry.source)">
-        <div class="xd-list-item-info">
-          <div class="xd-list-item-title">{{ entry.label }}</div>
-          <div class="xd-list-item-meta">{{ entry.count }} tweets captured</div>
+      <template v-else-if="route.page === 'home-root'">
+        <div v-for="entry in homeEntryCards" :key="entry.source" class="xd-list-item xd-list-item--clickable" @click="openHomeTimeline(entry.source)">
+          <div class="xd-list-item-info">
+            <div class="xd-list-item-title">{{ entry.label }}</div>
+            <div class="xd-list-item-meta">{{ entry.count }} tweets captured</div>
+          </div>
         </div>
+      </template>
+
+      <template v-else-if="route.page === 'status'">
+        <div v-if="!focalTweet" class="xd-empty">Waiting for tweet data...</div>
+        <template v-else>
+          <TweetDetailView
+            :tweet="focalTweet"
+            :parents="focalParents"
+            :replies="focalReplies"
+            show-parents
+            @open-user="openUser"
+            @open-original="openOriginal"
+            @open-media="openMediaUrl"
+            @open-tweet="openTweet"
+          >
+            <template #after-detail>
+              <RemoteDbTweetPanel
+                v-if="shouldShowRemoteDbPanel"
+                :tweet="focalTweet"
+                :batch-sync-tweets="focalRemoteSyncTweets"
+              />
+            </template>
+          </TweetDetailView>
+        </template>
+      </template>
+
+      <template v-else-if="route.page === 'timeline'">
+        <div v-if="timelineItems.length === 0" class="xd-empty">{{ getTimelineWaitingText(route.source) }}</div>
+        <TweetSummaryCard
+          v-for="item in timelineItems"
+          :key="item.tweet.id"
+          :tweet="item.tweet"
+          :author="item.author"
+          :media="item.media"
+          :remote-sync-status="getRemoteTweetSyncStatus(item.tweet.id)"
+          :selected="selectedTimelineTweetIds.has(item.tweet.id)"
+          @select="selectTimelineTweet"
+        />
+      </template>
+
+      <template v-else-if="route.page === 'tweet'">
+        <div v-if="!detailTweet" class="xd-empty">Tweet not found</div>
+        <template v-else>
+          <TweetDetailView
+            :tweet="detailTweet"
+            :replies="detailReplies"
+            @open-user="openUser"
+            @open-original="openOriginal"
+            @open-media="openMediaUrl"
+            @open-tweet="openTweet"
+          >
+            <template #after-detail>
+              <RemoteDbTweetPanel
+                v-if="shouldShowRemoteDbPanel"
+                :tweet="detailTweet"
+                :batch-sync-tweets="detailRemoteSyncTweets"
+              />
+            </template>
+          </TweetDetailView>
+        </template>
+      </template>
+
+      <template v-else-if="route.page === 'user'">
+        <div v-if="!detailUser" class="xd-empty">User not found</div>
+        <template v-else>
+          <UserDetailCard :user="detailUser" @open-profile="openProfile" />
+        </template>
+      </template>
+    </div>
+
+    <div v-if="shouldShowTimelineRemoteActions" class="xd-tab-actions">
+      <div class="xd-tab-actions-left">
+        <button
+          class="xd-btn xd-btn--sm"
+          :class="{ 'xd-btn--accent': timelineMultiSelectActive }"
+          @click="toggleTimelineMultiSelect"
+        >
+          {{ timelineMultiSelectActive ? 'Cancel' : 'Select' }}
+        </button>
+        <button
+          class="xd-btn xd-btn--sm xd-btn--accent"
+          :disabled="timelineSubmitDisabled"
+          @click="submitSelectedTimelineTweets"
+        >
+          {{ timelineSubmitButtonText }}
+        </button>
       </div>
-    </template>
-
-    <template v-else-if="route.page === 'status'">
-      <div v-if="!focalTweet" class="xd-empty">Waiting for tweet data...</div>
-      <template v-else>
-        <TweetDetailView
-          :tweet="focalTweet"
-          :parents="focalParents"
-          :replies="focalReplies"
-          show-parents
-          @open-user="openUser"
-          @open-original="openOriginal"
-          @open-media="openMediaUrl"
-          @open-tweet="openTweet"
+      <div class="xd-tab-actions-right">
+        <span
+          class="xd-tab-meta"
+          :class="{
+            'xd-tab-meta--error': timelineBatchSubmitState === 'error' || (timelineMultiSelectActive && selectedTimelineCount > 0 && selectedTimelineSubmitIssue),
+            'xd-tab-meta--success': timelineBatchSubmitState === 'success',
+          }"
         >
-          <template #after-detail>
-            <RemoteDbTweetPanel
-              v-if="shouldShowRemoteDbPanel"
-              :tweet="focalTweet"
-              :batch-sync-tweets="focalRemoteSyncTweets"
-            />
-          </template>
-        </TweetDetailView>
-      </template>
-    </template>
-
-    <template v-else-if="route.page === 'timeline'">
-      <div v-if="timelineItems.length === 0" class="xd-empty">{{ getTimelineWaitingText(route.source) }}</div>
-      <TweetSummaryCard
-        v-for="item in timelineItems"
-        :key="item.tweet.id"
-        :tweet="item.tweet"
-        :author="item.author"
-        :media="item.media"
-        :remote-sync-status="getRemoteTweetSyncStatus(item.tweet.id)"
-        @select="openTweet"
-      />
-    </template>
-
-    <template v-else-if="route.page === 'tweet'">
-      <div v-if="!detailTweet" class="xd-empty">Tweet not found</div>
-      <template v-else>
-        <TweetDetailView
-          :tweet="detailTweet"
-          :replies="detailReplies"
-          @open-user="openUser"
-          @open-original="openOriginal"
-          @open-media="openMediaUrl"
-          @open-tweet="openTweet"
-        >
-          <template #after-detail>
-            <RemoteDbTweetPanel
-              v-if="shouldShowRemoteDbPanel"
-              :tweet="detailTweet"
-              :batch-sync-tweets="detailRemoteSyncTweets"
-            />
-          </template>
-        </TweetDetailView>
-      </template>
-    </template>
-
-    <template v-else-if="route.page === 'user'">
-      <div v-if="!detailUser" class="xd-empty">User not found</div>
-      <template v-else>
-        <UserDetailCard :user="detailUser" @open-profile="openProfile" />
-      </template>
-    </template>
+          {{ timelineActionMetaText }}
+        </span>
+      </div>
+    </div>
   </div>
 </template>
