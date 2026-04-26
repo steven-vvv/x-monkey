@@ -89,6 +89,7 @@ onUpdated(() => {
 const previewText = computed(() => getTweetSummaryText(props.tweet));
 const dateText = computed(() => formatTweetDateTime(props.tweet.createdAt));
 const hasAvatar = computed(() => Boolean(props.author?.profile.avatarUrl));
+const hasLeadCell = computed(() => hasAvatar.value || Boolean(props.remoteSyncStatus));
 const visibleMediaCount = computed(() => resolveVisibleMediaCount(mediaWidth.value));
 const visibleMedia = computed(() => props.media.slice(0, visibleMediaCount.value));
 const visibleMediaItems = computed(() => visibleMedia.value.map((item) => ({
@@ -107,21 +108,43 @@ const visibleStats = computed(() => summaryStats.value.slice(0, visibleStatCount
 const statsGridStyle = computed<Record<string, string>>(() => ({
   '--xd-summary-stat-columns': String(visibleStats.value.length),
 }));
+const remoteSyncStatusText = computed(() => {
+  if (props.remoteSyncStatus === 'in_sync') return 'Remote database in sync';
+  if (props.remoteSyncStatus === 'missing') return 'Remote database missing';
+  if (props.remoteSyncStatus === 'mismatch') return 'Remote database mismatch';
+  if (props.remoteSyncStatus === 'failed') return 'Remote database failed';
+  return undefined;
+});
+const remoteSyncStatusClass = computed(() => {
+  return props.remoteSyncStatus
+    ? `xd-tweet-summary-card-sync-dot--${props.remoteSyncStatus.replace('_', '-')}`
+    : undefined;
+});
 </script>
 
 <template>
   <div
     ref="cardElement"
     class="xd-tweet-summary-card xd-list-item--clickable"
-    :class="{ 'xd-tweet-summary-card--no-avatar': !hasAvatar }"
+    :class="{ 'xd-tweet-summary-card--no-avatar': !hasLeadCell }"
     @click="emit('select', tweet.id)"
   >
-    <img
-      v-if="author?.profile.avatarUrl"
-      class="xd-tweet-summary-card-avatar"
-      :src="avatarFull(author.profile.avatarUrl)"
-      loading="lazy"
-    />
+    <div v-if="hasLeadCell" class="xd-tweet-summary-card-visual">
+      <img
+        v-if="author?.profile.avatarUrl"
+        class="xd-tweet-summary-card-avatar"
+        :src="avatarFull(author.profile.avatarUrl)"
+        loading="lazy"
+      />
+      <span
+        v-if="remoteSyncStatus"
+        class="xd-tweet-summary-card-sync-dot"
+        :class="remoteSyncStatusClass"
+        :title="remoteSyncStatusText"
+        :aria-label="remoteSyncStatusText"
+        role="img"
+      ></span>
+    </div>
 
     <div class="xd-tweet-summary-card-main">
       <div class="xd-tweet-summary-card-head">

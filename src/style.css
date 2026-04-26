@@ -11,6 +11,7 @@
   --xd-error: #e05555;
   --xd-error-hover: #d04444;
   --xd-success: #4caf60;
+  --xd-warning: #d69a3a;
   --xd-radius: 4px;
   --xd-font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 
@@ -35,6 +36,7 @@
   --xd-error: #d04444;
   --xd-error-hover: #c03333;
   --xd-success: #3a9e50;
+  --xd-warning: #b97818;
 }
 
 :host *, :host *::before, :host *::after {
@@ -451,14 +453,49 @@
   flex-shrink: 0;
 }
 
-.xd-tweet-summary-card-avatar {
+.xd-tweet-summary-card-visual {
   grid-area: avatar;
+  position: relative;
   width: 36px;
   height: 36px;
+}
+
+.xd-tweet-summary-card-avatar {
+  display: block;
+  width: 100%;
+  height: 100%;
   border-radius: 50%;
   border: 1px solid var(--xd-border);
   object-fit: cover;
   background: var(--xd-bg-primary);
+}
+
+.xd-tweet-summary-card-sync-dot {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 8px;
+  height: 8px;
+  border: 1px solid var(--xd-bg-secondary);
+  border-radius: 50%;
+  background: var(--xd-text-muted);
+  pointer-events: none;
+}
+
+.xd-tweet-summary-card-sync-dot--in-sync {
+  background: var(--xd-success);
+}
+
+.xd-tweet-summary-card-sync-dot--missing {
+  background: var(--xd-accent);
+}
+
+.xd-tweet-summary-card-sync-dot--mismatch {
+  background: var(--xd-warning);
+}
+
+.xd-tweet-summary-card-sync-dot--failed {
+  background: var(--xd-error);
 }
 
 .xd-tweet-summary-card-main {
