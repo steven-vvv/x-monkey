@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, reactive, watch } from 'vue';
 import type { DbTweet } from '../lib/db-service';
-import { getDbUser, getMediaForTweet } from '../lib/db-service';
+import { enqueueRemoteTweetSyncStatusRefresh, getDbUser, getMediaForTweet } from '../lib/db-service';
 import {
   buildRemoteDbSubmissionBatch,
   compareRemoteDbTweetBundle,
@@ -337,6 +337,11 @@ async function submitBatch(
     state.syncState = 'success';
     state.syncMessage = formatSubmitMessage(mode === 'single' ? 'Sync' : 'Sync All', result);
     await loadRemoteStatus();
+    enqueueRemoteTweetSyncStatusRefresh(
+      mode === 'single'
+        ? [props.tweet.id]
+        : batchSyncTweets.value.map((tweet) => tweet.id),
+    );
   } catch (error) {
     state.syncState = 'error';
     state.syncMessage = toErrorMessage(

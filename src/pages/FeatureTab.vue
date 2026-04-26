@@ -1,27 +1,25 @@
 <script setup lang="ts">
-import { computed, reactive, watch } from 'vue';
+import { computed } from 'vue';
 import type { DbMedia, DbTweet, DbUser } from '../lib/db-service';
-import { dbVersion, getDbTweet, getDbUser, getMediaForTweet, getParentChain, getReplies } from '../lib/db-service';
+import {
+  dbVersion,
+  getDbTweet,
+  getDbUser,
+  getMediaForTweet,
+  getParentChain,
+  getRemoteTweetSyncStatus,
+  getReplies,
+} from '../lib/db-service';
 import { HOME_FEATURE_TIMELINE_SOURCES, getFeatureTimelineLabel, getFeatureTimelineOperation, type FeatureTimelineSource } from '../lib/feature-timeline';
 import { getTimelineTweetIdsByAlias, getTimelineVersionByAlias } from '../lib/timeline-store';
 import { featureNavigateTo, featureRoute, type FeatureRoute } from '../lib/store';
 import { GM_openInTab } from '$';
 import { getTweetOpenUrl, getUserOpenUrl } from '../lib/tweet-selectors';
-import {
-  compareRemoteDbTweetBundle,
-  getRemoteDbClientState,
-  isRemoteDbTweetApiReady,
-  queryRemoteDbTweetBundles,
-  type RemoteDbStatusComparison,
-  type RemoteDbTweetBundle,
-} from '../lib/remote-db';
+import { isRemoteDbTweetApiReady } from '../lib/remote-db';
 import TweetDetailView from '../components/TweetDetailView.vue';
 import UserDetailCard from '../components/UserDetailCard.vue';
 import TweetSummaryCard from '../components/TweetSummaryCard.vue';
 import RemoteDbTweetPanel from '../components/RemoteDbTweetPanel.vue';
-
-const REMOTE_STATUS_BATCH_SIZE = 50;
-const REMOTE_DB_MISSING_SELECTOR_RESULT_ERROR = 'Remote database response is missing this selector result';
 
 interface TweetSummaryCardItem {
   tweet: DbTweet;
@@ -34,11 +32,7 @@ interface FeatureTimelineContext {
   username?: string;
 }
 
-type TweetSummaryRemoteSyncStatus = RemoteDbStatusComparison['overallStatus'];
-
 const route = featureRoute;
-const remoteDbState = getRemoteDbClientState();
-const timelineRemoteSyncStatuses = reactive<Record<string, TweetSummaryRemoteSyncStatus>>({});
 
 function getRouteTimelineContext(value: FeatureRoute): FeatureTimelineContext | null {
   if (value.page === 'timeline') {
@@ -122,21 +116,6 @@ const timelineItems = computed(() => {
   return buildTimelineCardItems(route.value.source, route.value.username);
 });
 
-const timelineRemoteQueryKey = computed(() => {
-  if (route.value.page !== 'timeline') return 'inactive';
-
-  return [
-    route.value.source,
-    route.value.username ?? '',
-    ...timelineItems.value.map((item) => [
-      item.tweet.id,
-      item.tweet._ts,
-      item.author?._ts ?? 0,
-      item.media.map((media) => `${media.id}:${media._ts}`).join(','),
-    ].join(':')),
-  ].join('|');
-});
-
 const homeEntryCards = computed(() => {
   return HOME_FEATURE_TIMELINE_SOURCES.map((source) => {
     const operationName = getFeatureTimelineOperation(source);
@@ -206,75 +185,6 @@ const focalRemoteSyncTweets = computed(() => {
 const shouldShowRemoteDbPanel = computed(() => {
   return isRemoteDbTweetApiReady();
 });
-
-function clearTimelineRemoteSyncStatuses(): void {
-  for (const tweetId of Object.keys(timelineRemoteSyncStatuses)) {
-    delete timelineRemoteSyncStatuses[tweetId];
-  }
-}
-
-function hasRemoteTweetSelectorResult(bundle: RemoteDbTweetBundle): boolean {
-  return bundle.tweet.status !== 'failed'
-    || bundle.tweet.error !== REMOTE_DB_MISSING_SELECTOR_RESULT_ERROR;
-}
-
-let remoteSyncQueryToken = 0;
-
-async function loadTimelineRemoteSyncStatuses(): Promise<void> {
-  remoteSyncQueryToken += 1;
-  const currentToken = remoteSyncQueryToken;
-  clearTimelineRemoteSyncStatuses();
-
-  if (route.value.page !== 'timeline' || !isRemoteDbTweetApiReady()) return;
-
-  const items = timelineItems.value;
-  if (items.length === 0) return;
-
-  for (let index = 0; index < items.length; index += REMOTE_STATUS_BATCH_SIZE) {
-    const batchItems = items.slice(index, index + REMOTE_STATUS_BATCH_SIZE);
-
-    try {
-      const bundles = await queryRemoteDbTweetBundles({
-        items: batchItems.map((item) => ({
-          tweetId: item.tweet.id,
-          authorId: item.author?.id,
-          mediaIds: item.media.map((media) => media.id),
-        })),
-      });
-
-      if (currentToken !== remoteSyncQueryToken) return;
-
-      for (const [bundleIndex, bundle] of bundles.entries()) {
-        const item = batchItems[bundleIndex];
-        if (!item || !hasRemoteTweetSelectorResult(bundle)) continue;
-
-        timelineRemoteSyncStatuses[item.tweet.id] = compareRemoteDbTweetBundle(
-          item.tweet,
-          item.author,
-          item.media,
-          bundle,
-        ).overallStatus;
-      }
-    } catch {
-      if (currentToken !== remoteSyncQueryToken) return;
-      return;
-    }
-  }
-}
-
-watch(
-  () => [
-    timelineRemoteQueryKey.value,
-    remoteDbState.baseUrl ?? '',
-    remoteDbState.lifecycle,
-    remoteDbState.sessionState,
-    String(remoteDbState.runtimeEnabled),
-  ] as const,
-  () => {
-    void loadTimelineRemoteSyncStatuses();
-  },
-  { immediate: true },
-);
 </script>
 
 <template>
@@ -324,7 +234,7 @@ watch(
         :tweet="item.tweet"
         :author="item.author"
         :media="item.media"
-        :remote-sync-status="timelineRemoteSyncStatuses[item.tweet.id]"
+        :remote-sync-status="getRemoteTweetSyncStatus(item.tweet.id)"
         @select="openTweet"
       />
     </template>
