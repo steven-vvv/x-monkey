@@ -508,6 +508,10 @@ export interface RemoteDbTweetBundle {
   media: Array<RemoteDbQueryObjectResult<RemoteDbQueryMediaData>>;
 }
 
+export interface RemoteDbTweetBundleBatchQuery {
+  items: RemoteDbTweetBundleQuery[];
+}
+
 export type RemoteDbLifecycleState =
   | 'disabled'
   | 'paused'

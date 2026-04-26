@@ -7,6 +7,7 @@ import type {
   RemoteDbQueryObjectResult,
   RemoteDbQueryRequest,
   RemoteDbQueryResponse,
+  RemoteDbQuerySummary,
   RemoteDbQueryTweetData,
   RemoteDbQueryUserData,
   RemoteDbSessionResponse,
@@ -14,6 +15,7 @@ import type {
   RemoteDbSessionState,
   RemoteDbSubmissionEnvelope,
   RemoteDbSubmitResponse,
+  RemoteDbTweetBundleBatchQuery,
   RemoteDbTweetBundle,
   RemoteDbTweetBundleQuery,
 } from './types';
@@ -306,6 +308,23 @@ function findResult<T>(
   };
 }
 
+function createQuerySummary(results: Array<RemoteDbQueryObjectResult<unknown>>): RemoteDbQuerySummary {
+  return results.reduce<RemoteDbQuerySummary>(
+    (summary, item) => {
+      summary.total += 1;
+      if (item.status === 'found') summary.found += 1;
+      else if (item.status === 'missing') summary.missing += 1;
+      else summary.failed += 1;
+      return summary;
+    },
+    { total: 0, found: 0, missing: 0, failed: 0 },
+  );
+}
+
+function uniqueValues(values: Array<string | null | undefined>): string[] {
+  return [...new Set(values.filter(Boolean) as string[])];
+}
+
 export function getRemoteDbClientState(): RemoteDbClientState {
   return remoteDbState;
 }
@@ -391,6 +410,61 @@ export async function queryRemoteDbTweetBundle(
       author: query.authorId ? findResult(payload.users, query.authorId) : null,
       media: normalizedMediaIds.map((id) => findResult(payload.media, id)),
     };
+  } catch (error) {
+    return handleProtectedRequestError(error);
+  }
+}
+
+export async function queryRemoteDbTweetBundles(
+  query: RemoteDbTweetBundleBatchQuery,
+): Promise<RemoteDbTweetBundle[]> {
+  if (!isRemoteDbTweetApiReady()) {
+    throw new Error('Remote database client is not ready for tweet queries');
+  }
+
+  const normalizedItems = query.items
+    .filter((item) => item.tweetId)
+    .map((item) => ({
+      tweetId: item.tweetId,
+      authorId: item.authorId ?? null,
+      mediaIds: uniqueValues(item.mediaIds ?? []),
+    }));
+
+  if (normalizedItems.length === 0) {
+    return [];
+  }
+
+  try {
+    const body: RemoteDbQueryRequest = {
+      users: uniqueValues(normalizedItems.map((item) => item.authorId)).map((id) => ({ id })),
+      tweets: uniqueValues(normalizedItems.map((item) => item.tweetId)).map((id) => ({ id })),
+      media: uniqueValues(normalizedItems.flatMap((item) => item.mediaIds)).map((id) => ({ id })),
+    };
+    const payload = await requestJson<RemoteDbQueryResponse>({
+      method: 'POST',
+      path: '/api/v1/tweet/query',
+      body,
+    });
+
+    remoteDbState.lastError = null;
+
+    return normalizedItems.map((item) => {
+      const tweet = findResult(payload.tweets, item.tweetId);
+      const author = item.authorId ? findResult(payload.users, item.authorId) : null;
+      const media = item.mediaIds.map((id) => findResult(payload.media, id));
+      const summary = createQuerySummary([
+        tweet,
+        ...(author ? [author] : []),
+        ...media,
+      ]);
+
+      return {
+        summary,
+        tweet,
+        author,
+        media,
+      };
+    });
   } catch (error) {
     return handleProtectedRequestError(error);
   }
