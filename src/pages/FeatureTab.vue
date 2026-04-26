@@ -18,6 +18,7 @@ import {
 import TweetDetailView from '../components/TweetDetailView.vue';
 import UserDetailCard from '../components/UserDetailCard.vue';
 import TweetSummaryCard from '../components/TweetSummaryCard.vue';
+import RemoteDbTweetPanel from '../components/RemoteDbTweetPanel.vue';
 
 const REMOTE_STATUS_BATCH_SIZE = 50;
 const REMOTE_DB_MISSING_SELECTOR_RESULT_ERROR = 'Remote database response is missing this selector result';
@@ -101,6 +102,11 @@ const detailReplies = computed(() => {
   void dbVersion.value;
   if (!detailTweet.value) return [];
   return getReplies(detailTweet.value.id);
+});
+
+const detailRemoteSyncTweets = computed(() => {
+  if (!detailTweet.value) return [];
+  return [detailTweet.value, ...detailReplies.value];
 });
 
 const detailUser = computed(() => {
@@ -190,6 +196,15 @@ const focalReplies = computed(() => {
   void dbVersion.value;
   if (!focalTweet.value) return [];
   return getReplies(focalTweet.value.id);
+});
+
+const focalRemoteSyncTweets = computed(() => {
+  if (!focalTweet.value) return [];
+  return [...focalParents.value, focalTweet.value, ...focalReplies.value];
+});
+
+const shouldShowRemoteDbPanel = computed(() => {
+  return isRemoteDbTweetApiReady();
 });
 
 function clearTimelineRemoteSyncStatuses(): void {
@@ -289,7 +304,15 @@ watch(
           @open-original="openOriginal"
           @open-media="openMediaUrl"
           @open-tweet="openTweet"
-        />
+        >
+          <template #after-detail>
+            <RemoteDbTweetPanel
+              v-if="shouldShowRemoteDbPanel"
+              :tweet="focalTweet"
+              :batch-sync-tweets="focalRemoteSyncTweets"
+            />
+          </template>
+        </TweetDetailView>
       </template>
     </template>
 
@@ -316,7 +339,15 @@ watch(
           @open-original="openOriginal"
           @open-media="openMediaUrl"
           @open-tweet="openTweet"
-        />
+        >
+          <template #after-detail>
+            <RemoteDbTweetPanel
+              v-if="shouldShowRemoteDbPanel"
+              :tweet="detailTweet"
+              :batch-sync-tweets="detailRemoteSyncTweets"
+            />
+          </template>
+        </TweetDetailView>
       </template>
     </template>
 
