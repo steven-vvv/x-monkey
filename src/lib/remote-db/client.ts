@@ -196,6 +196,7 @@ function gmRequest(url: string, options: JsonRequestOptions): Promise<string> {
         : {
             Accept: 'application/json',
             'Content-Type': 'application/json',
+            'X-Tweet-DB-Client': 'x-monkey',
           },
       data: options.body === undefined ? undefined : JSON.stringify(options.body),
       responseType: 'text',
