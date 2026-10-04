@@ -39,6 +39,8 @@ interface RemoteSyncSnapshot {
 export type DbRemoteTweetSyncStatus = RemoteDbStatusComparison['overallStatus'];
 
 const REMOTE_STATUS_BATCH_SIZE = 50;
+const REMOTE_SYNC_RETRY_INITIAL_MS = 1000;
+const REMOTE_SYNC_RETRY_MAX_MS = 60_000;
 const REMOTE_DB_MISSING_SELECTOR_RESULT_ERROR = 'Remote database response is missing this selector result';
 
 const db = reactive<Db>({
@@ -56,6 +58,7 @@ let batchDirty = false;
 let remoteSyncScheduled = false;
 let remoteSyncRunning = false;
 let remoteSyncEpoch = 0;
+let remoteSyncRetryDelayMs = REMOTE_SYNC_RETRY_INITIAL_MS;
 
 function bump() {
   changeCounter.value += 1;
@@ -229,6 +232,7 @@ function getTweetIdsForMedia(mediaId: string, originTweetId?: string): string[] 
 
 function clearRemoteTweetSyncStatuses(): void {
   remoteSyncEpoch += 1;
+  remoteSyncRetryDelayMs = REMOTE_SYNC_RETRY_INITIAL_MS;
   remoteSyncPendingTweetIds.clear();
   for (const tweetId of Object.keys(remoteTweetSyncStatuses)) {
     delete remoteTweetSyncStatuses[tweetId];
@@ -276,7 +280,7 @@ function isRemoteSyncSnapshotCurrent(snapshot: RemoteSyncSnapshot): boolean {
   return current?.signature === snapshot.signature;
 }
 
-function scheduleRemoteTweetSyncStatusRefresh(): void {
+function scheduleRemoteTweetSyncStatusRefresh(delayMs = 0): void {
   if (remoteSyncScheduled || remoteSyncRunning || remoteSyncPendingTweetIds.size === 0) {
     return;
   }
@@ -285,7 +289,7 @@ function scheduleRemoteTweetSyncStatusRefresh(): void {
   window.setTimeout(() => {
     remoteSyncScheduled = false;
     void processRemoteTweetSyncQueue();
-  }, 0);
+  }, delayMs);
 }
 
 async function processRemoteTweetSyncQueue(): Promise<void> {
@@ -322,12 +326,23 @@ async function processRemoteTweetSyncQueue(): Promise<void> {
           })),
         });
       } catch {
+        // Keep this batch pending. A transient network, 401 refresh, or 5xx
+        // must not silently erase the status checks for these tweets.
+        for (const tweetId of tweetIds) {
+          if (db.tweets.has(tweetId)) remoteSyncPendingTweetIds.add(tweetId);
+        }
+        remoteSyncRetryDelayMs = Math.min(REMOTE_SYNC_RETRY_MAX_MS, remoteSyncRetryDelayMs * 2);
         return;
       }
 
       if (epoch !== remoteSyncEpoch) {
+        for (const snapshot of snapshots) {
+          if (db.tweets.has(snapshot.tweet.id)) remoteSyncPendingTweetIds.add(snapshot.tweet.id);
+        }
         continue;
       }
+
+      remoteSyncRetryDelayMs = REMOTE_SYNC_RETRY_INITIAL_MS;
 
       for (const [index, bundle] of bundles.entries()) {
         const snapshot = snapshots[index];
@@ -349,7 +364,9 @@ async function processRemoteTweetSyncQueue(): Promise<void> {
   } finally {
     remoteSyncRunning = false;
     if (remoteSyncPendingTweetIds.size > 0 && isRemoteDbTweetApiReady()) {
-      scheduleRemoteTweetSyncStatusRefresh();
+      scheduleRemoteTweetSyncStatusRefresh(
+        remoteSyncRetryDelayMs === REMOTE_SYNC_RETRY_INITIAL_MS ? 0 : remoteSyncRetryDelayMs,
+      );
     }
   }
 }
