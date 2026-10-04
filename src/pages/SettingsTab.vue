@@ -24,12 +24,16 @@ const isDirty = computed(() => dirtyFields.size > 0);
 const remoteDbFeatureEnabled = REMOTE_DB_BUILD.enabled;
 const remoteDbConfigurable = remoteDbFeatureEnabled && REMOTE_DB_BUILD.configurable;
 
+function copyConfigField<K extends keyof AppConfig>(key: K, source: AppConfig) {
+  draft[key] = source[key];
+}
+
 watch(
   () => ({ ...cfg }),
   (newCfg) => {
     for (const key of Object.keys(newCfg) as (keyof AppConfig)[]) {
       if (!dirtyFields.has(key)) {
-        (draft as AppConfig)[key] = newCfg[key];
+        copyConfigField(key, newCfg);
       }
     }
   },

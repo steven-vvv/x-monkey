@@ -87,7 +87,7 @@ function getTimelineWaitingText(source: FeatureTimelineSource): string {
   return 'Waiting for HomeLatestTimeline data...';
 }
 
-function createRouteWithCurrentTimelineContext<T extends FeatureRoute>(fallbackRoute: T, withContext: (context: FeatureTimelineContext) => T): T {
+function createRouteWithCurrentTimelineContext(fallbackRoute: FeatureRoute, withContext: (context: FeatureTimelineContext) => FeatureRoute): FeatureRoute {
   const context = getRouteTimelineContext(route.value);
   return context ? withContext(context) : fallbackRoute;
 }

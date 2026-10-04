@@ -17,22 +17,25 @@ A lightweight userscript panel for continuously capturing and browsing X (Twitte
 
 - Vue 3 + TypeScript
 - Vite + `vite-plugin-monkey`
-- Bun (runtime and package manager)
+- Node.js and pnpm
 
 ## Development
 
 ```bash
-bun install
-bun run dev
+pnpm install
+pnpm run dev
 ```
 
 ## Build
 
 ```bash
-bun run build
+pnpm run build
 ```
 
 Build output is generated in `dist/` as a userscript bundle.
+
+The parser and raw-schema verification scripts use local `dumps/` fixtures.
+Those dumps are gitignored and must be present to run the fixture checks.
 
 ## Remote Database Build Options
 
@@ -112,18 +115,18 @@ Examples:
 VITE_XD_REMOTE_DB_ENABLED=true \
 VITE_XD_REMOTE_DB_CONFIGURABLE=false \
 VITE_XD_REMOTE_DB_BASE_URL=http://127.0.0.1:3001 \
-bun run build
+pnpm run build
 ```
 
 ```bash
 VITE_XD_REMOTE_DB_ENABLED=true \
 VITE_XD_REMOTE_DB_CONFIGURABLE=true \
 VITE_XD_REMOTE_DB_BASE_URL= \
-bun run build
+pnpm run build
 ```
 
 Contract verification against the adjacent tweet-db checkout:
 
 ```bash
-bun run scripts/verify-remote-db-contract.ts
+pnpm run verify:remote-db-contract
 ```
