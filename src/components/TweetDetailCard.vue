@@ -2,7 +2,7 @@
 import { computed } from 'vue';
 import type { Post } from '../archive/model';
 import { getDbMedia, getDbPost, getDbUser, getMediaForPost } from '../lib/db-service';
-import { formatDateTime, formatCount, toTweetStats } from '../lib/view-format';
+import { formatDateTime, toTweetStats } from '../lib/view-format';
 import { formatUrlForDisplay, getAvatarUrl, getPlainText, getRichTextSegments } from '../lib/post-view';
 import StatGrid from './StatGrid.vue';
 import MediaThumbGrid from './MediaThumbGrid.vue';
@@ -29,8 +29,11 @@ const verificationTag = computed(() => {
   return verified?.type ?? (verified?.blue ? 'Blue' : null);
 });
 
-const card = computed(() => props.post.card);
-const pollTotal = computed(() => card.value?.poll?.choices.reduce((sum, choice) => sum + (choice.count ?? 0), 0) ?? 0);
+// Only cards with something to show; unsupported types keep their raw values in `extra`.
+const card = computed(() => {
+  const value = props.post.card;
+  return value && (value.title || value.image || value.player) ? value : undefined;
+});
 const article = computed(() => props.post.article);
 const articleCover = computed(() => article.value?.coverMediaId ? getDbMedia(article.value.coverMediaId) : undefined);
 const articleText = computed(() => {
@@ -99,19 +102,11 @@ const policyLines = computed(() => {
     </div>
 
     <div v-if="card" class="xd-detail-ref">
-      <div class="xd-detail-ref-label">{{ card.poll ? 'Poll' : (card.domain ?? card.type) }}</div>
-      <template v-if="card.poll">
-        <div v-for="choice in card.poll.choices" :key="choice.label" class="xd-detail-line">
-          {{ choice.label }}<template v-if="choice.count !== undefined"> · {{ formatCount(choice.count) }}{{ pollTotal > 0 ? ` (${Math.round(choice.count / pollTotal * 100)}%)` : '' }}</template>
-        </div>
-        <div v-if="card.poll.endsAt" class="xd-detail-line">{{ card.poll.final ? 'Ended' : 'Ends' }} {{ formatDateTime(card.poll.endsAt) }}</div>
-      </template>
-      <template v-else>
-        <img v-if="card.image" class="xd-detail-ref-image" :src="card.image.url" :alt="card.image.alt" loading="lazy" />
-        <div v-if="card.title" class="xd-detail-ref-title">{{ card.title }}</div>
-        <div v-if="card.description" class="xd-detail-ref-text">{{ card.description }}</div>
-        <div v-if="card.player" class="xd-detail-line">{{ formatUrlForDisplay(card.player.url) }}</div>
-      </template>
+      <div class="xd-detail-ref-label">{{ card.domain ?? card.type }}</div>
+      <img v-if="card.image" class="xd-detail-ref-image" :src="card.image.url" :alt="card.image.alt" loading="lazy" />
+      <div v-if="card.title" class="xd-detail-ref-title">{{ card.title }}</div>
+      <div v-if="card.description" class="xd-detail-ref-text">{{ card.description }}</div>
+      <div v-if="card.player" class="xd-detail-line">{{ formatUrlForDisplay(card.player.url) }}</div>
     </div>
 
     <div
@@ -120,7 +115,7 @@ const policyLines = computed(() => {
       @click="emit('open-tweet', quotePostId)"
     >
       <div class="xd-detail-ref-label">Quote</div>
-      <div class="xd-detail-ref-text">
+      <div class="xd-detail-ref-text xd-detail-ref-text--clamped">
         <template v-if="quotePost">
           {{ quoteAuthor?.name ?? '?' }} · {{ getPlainText(quotePost.text) || quotePost.article?.title || '(no text)' }}
         </template>

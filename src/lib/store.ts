@@ -90,7 +90,6 @@ const PROFILE_TAB_SOURCES: Record<string, FeatureTimelineSource> = {
   with_replies: 'user-replies',
   reposts: 'user-reposts',
   articles: 'user-articles',
-  subs: 'user-subs',
 };
 
 const SORTABLE_SOURCES = new Set<FeatureTimelineSource>(['user-posts', 'user-all', 'user-highlights']);

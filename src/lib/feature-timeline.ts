@@ -7,7 +7,6 @@ export type FeatureTimelineSource =
   | 'user-replies'
   | 'user-reposts'
   | 'user-articles'
-  | 'user-subs'
   | 'user-videos'
   | 'user-photos'
   | 'bookmarks'
@@ -30,7 +29,6 @@ const FEATURE_TIMELINE_DESCRIPTORS: Record<FeatureTimelineSource, FeatureTimelin
   'user-replies': { operationName: 'UserRepliesTimeline', label: 'Replies' },
   'user-reposts': { operationName: 'UserRepostsTimeline', label: 'Reposts' },
   'user-articles': { operationName: 'UserArticlesTweets', label: 'Articles' },
-  'user-subs': { operationName: 'UserSuperFollowTweets', label: 'Subscriptions' },
   'user-videos': { operationName: 'UserVideoTimeline', label: 'Videos' },
   'user-photos': { operationName: 'UserPhotoTimeline', label: 'Photos' },
   'bookmarks': { operationName: 'Bookmarks', label: 'Bookmarks' },

@@ -103,8 +103,6 @@ export const UserSchema = strictObject({
   pinnedPostIds: z.array(IdSchema).min(1).optional(),
   protected: z.boolean().optional(),
   sensitive: z.boolean().optional(),
-  /** 账号警示页类型，如 `sensitive_media`、`fake_account`。 */
-  interstitial: z.string().optional(),
   verified: strictObject({
     blue: z.boolean().optional(),
     /** `Business`、`Government`。 */
@@ -161,7 +159,7 @@ export const MediaSchema = strictObject({
 export type Media = z.infer<typeof MediaSchema>;
 
 export const CardSchema = strictObject({
-  /** 卡片模板名：`summary`、`summary_large_image`、`player`、`poll2choice_text_only` 等。 */
+  /** 卡片模板名，样本值：`summary`、`summary_large_image`、`player`、`unified_card`。 */
   type: z.string(),
   /** 卡片对应的 t.co 链接，与正文中的 `url` 实体对应。 */
   url: z.string(),
@@ -181,13 +179,8 @@ export const CardSchema = strictObject({
     width: count.optional(),
     height: count.optional(),
   }).optional(),
-  poll: strictObject({
-    choices: z.array(strictObject({ label: z.string(), count: count.optional() })).min(2),
-    endsAt: InstantSchema.optional(),
-    final: z.boolean().optional(),
-  }).optional(),
-  /** 其余未建模的绑定值，保证信息不丢。 */
-  extra: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])).optional(),
+  /** 其余未建模的字符串绑定值（如 `app_*`、`unified_card`），保证信息不丢。 */
+  extra: z.record(z.string(), z.string()).optional(),
 });
 export type Card = z.infer<typeof CardSchema>;
 

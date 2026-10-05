@@ -66,10 +66,8 @@ interface InstructionCandidate {
 
 const TIMELINE_INSTRUCTION_CANDIDATES: InstructionCandidate[] = [
   { path: 'data.user.result.timeline.timeline.instructions', read: (r) => r?.data?.user?.result?.timeline?.timeline?.instructions },
-  { path: 'data.user.result.timeline_v2.timeline.instructions', read: (r) => r?.data?.user?.result?.timeline_v2?.timeline?.instructions },
   { path: 'data.home.home_timeline_urt.instructions', read: (r) => r?.data?.home?.home_timeline_urt?.instructions },
   { path: 'data.bookmark_timeline_v2.timeline.instructions', read: (r) => r?.data?.bookmark_timeline_v2?.timeline?.instructions },
-  { path: 'data.search_by_raw_query.search_timeline.timeline.instructions', read: (r) => r?.data?.search_by_raw_query?.search_timeline?.timeline?.instructions },
 ];
 
 const TWEET_DETAIL_INSTRUCTION_CANDIDATES: InstructionCandidate[] = [

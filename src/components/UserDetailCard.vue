@@ -19,7 +19,6 @@ const labels = computed(() => [
   props.user.affiliation?.name,
   props.user.parody,
   props.user.protected ? 'Protected' : null,
-  props.user.interstitial ? `Warning: ${props.user.interstitial}` : null,
 ].filter(Boolean) as string[]);
 </script>
 

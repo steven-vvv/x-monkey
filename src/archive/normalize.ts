@@ -320,7 +320,7 @@ function normalizeAffiliation(user: Json): User['affiliation'] {
  */
 export function collectUser(input: unknown, path: string, collector: ArchiveCollector): string | undefined {
   const node = asObject(read(input, 'result')) ?? asObject(input);
-  if (!node || node.__typename === 'UserUnavailable') return undefined;
+  if (!node) return undefined;
 
   const id = asId(node.rest_id);
   const legacy = asObject(node.legacy);
@@ -357,7 +357,6 @@ export function collectUser(input: unknown, path: string, collector: ArchiveColl
         .map(asId).filter((value): value is string => !!value)),
       protected: asBoolean(read(node, 'privacy', 'protected')) ?? asBoolean(legacy?.protected),
       sensitive: asBoolean(node.possibly_sensitive) ?? asBoolean(legacy?.possibly_sensitive),
-      interstitial: asText(read(node, 'profile_metadata', 'profile_interstitial_type')) ?? asText(legacy?.profile_interstitial_type),
       verified: compact({
         blue: asBoolean(node.is_blue_verified),
         type: asText(read(node, 'verification', 'verified_type')),
@@ -435,8 +434,7 @@ function collectMedia(input: unknown, path: string, collector: ArchiveCollector)
       unavailable: availability && availability !== 'Available' ? availability : undefined,
       title: asText(read(item, 'additional_media_info', 'title')),
       description: asText(read(item, 'additional_media_info', 'description')),
-      link: asText(read(item, 'additional_media_info', 'call_to_actions', 'visit_site', 'url'))
-        ?? asText(read(item, 'additional_media_info', 'call_to_actions', 'watch_now', 'url')),
+      link: asText(read(item, 'additional_media_info', 'call_to_actions', 'visit_site', 'url')),
     }),
   };
   if (media.video && !media.video.variants) delete media.video;
@@ -444,15 +442,15 @@ function collectMedia(input: unknown, path: string, collector: ArchiveCollector)
   return collector.addMedia(media, path) ? id : undefined;
 }
 
-/** Article images arrive as `ApiImage` references rather than tweet media. */
+/** Article images arrive as `ApiImage` references rather than tweet media; other kinds are not seen yet. */
 function collectArticleMedia(input: unknown, path: string, collector: ArchiveCollector): string | undefined {
   const id = asId(read(input, 'media_id'));
   const info = asObject(read(input, 'media_info'));
   const url = asText(info?.original_img_url);
-  if (!id || !url) return undefined;
+  if (!id || !url || info?.__typename !== 'ApiImage') return undefined;
   const media: Media = {
     id,
-    type: info?.__typename === 'ApiVideo' ? 'video' : 'photo',
+    type: 'photo',
     url,
     ...compact({ width: asCount(info?.original_img_width), height: asCount(info?.original_img_height) }),
   };
@@ -461,7 +459,7 @@ function collectArticleMedia(input: unknown, path: string, collector: ArchiveCol
 
 // --- Cards ---
 
-type BindingValue = { type: 'string'; value: string } | { type: 'boolean'; value: boolean }
+type BindingValue = { type: 'string'; value: string }
   | { type: 'image'; url: string; width?: number; height?: number; alt?: string }
   | { type: 'user'; id: string } | { type: 'other' };
 
@@ -469,9 +467,6 @@ function readBinding(value: unknown): BindingValue {
   const kind = asString(read(value, 'type'));
   if (kind === 'STRING' && asString(read(value, 'string_value')) !== undefined) {
     return { type: 'string', value: asString(read(value, 'string_value'))! };
-  }
-  if (kind === 'BOOLEAN' && asBoolean(read(value, 'boolean_value')) !== undefined) {
-    return { type: 'boolean', value: asBoolean(read(value, 'boolean_value'))! };
   }
   if (kind === 'IMAGE' && asText(read(value, 'image_value', 'url'))) {
     return {
@@ -491,7 +486,7 @@ function readBinding(value: unknown): BindingValue {
 /** Preferred card image groups; every group repeats one picture at several sizes. */
 const CARD_IMAGE_PREFERENCE = ['photo_image_full_size', 'summary_photo_image', 'player_image', 'thumbnail_image'];
 const CARD_IMAGE_SUFFIX = /_(original|x_large|large|small|color|alt_text)$/;
-const CARD_CONSUMED_KEYS = new Set(['title', 'description', 'domain', 'vanity_url', 'card_url', 'site', 'creator', 'player_url', 'player_width', 'player_height', 'end_datetime_utc', 'counts_are_final']);
+const CARD_CONSUMED_KEYS = new Set(['title', 'description', 'domain', 'vanity_url', 'card_url', 'site', 'creator', 'player_url', 'player_width', 'player_height']);
 
 type CardImage = Extract<BindingValue, { type: 'image' }>;
 
@@ -542,20 +537,14 @@ function collectCard(input: unknown, path: string, collector: ArchiveCollector):
     ? compact({ url: imageBinding.url, width: imageBinding.width, height: imageBinding.height, alt: text(`${imageGroup}_alt_text`) ?? imageBinding.alt })
     : undefined;
 
-  const choices: Array<{ label: string; count?: number }> = [];
-  for (let index = 1; text(`choice${index}_label`) !== undefined; index += 1) {
-    choices.push(compact({ label: text(`choice${index}_label`)!, count: asCount(text(`choice${index}_count`)) })!);
-  }
-  const finalBinding = bindings.get('counts_are_final');
-
   const playerUrl = text('player_url');
   const domain = text('domain') ?? text('vanity_url');
-  const extra: Record<string, string | number | boolean> = {};
+  const extra: Record<string, string> = {};
   for (const [key, binding] of bindings) {
-    if (CARD_CONSUMED_KEYS.has(key) || /^choice\d+_(label|count)$/.test(key)) continue;
+    if (CARD_CONSUMED_KEYS.has(key)) continue;
     // Renditions, colors and alt texts belong to an image group handled below.
     if (images.has(key.replace(CARD_IMAGE_SUFFIX, ''))) continue;
-    if (binding.type === 'string' || binding.type === 'boolean') extra[key] = binding.value;
+    if (binding.type === 'string') extra[key] = binding.value;
     else if (binding.type === 'user') extra[key] = binding.id;
   }
   for (const [group, binding] of images) {
@@ -577,9 +566,6 @@ function collectCard(input: unknown, path: string, collector: ArchiveCollector):
       siteUserId: userId('site'),
       creatorUserId: userId('creator'),
       player: playerUrl ? compact({ url: playerUrl, width: asCount(text('player_width')), height: asCount(text('player_height')) }) : undefined,
-      poll: choices.length >= 2
-        ? compact({ choices, endsAt: toInstant(text('end_datetime_utc')), final: finalBinding?.type === 'boolean' ? finalBinding.value : undefined })
-        : undefined,
       extra: Object.keys(extra).length > 0 ? extra : undefined,
     }),
   } as Card;
@@ -692,7 +678,7 @@ function unwrapTweetResult(input: unknown): Json | undefined {
   const node = asObject(input);
   if (!node) return undefined;
   if (node.__typename === 'TweetWithVisibilityResults') return asObject(node.tweet);
-  if (node.__typename === 'TweetTombstone' || node.__typename === 'TweetUnavailable') return undefined;
+  if (node.__typename === 'TweetTombstone') return undefined;
   return node;
 }
 

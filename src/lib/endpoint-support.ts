@@ -23,7 +23,6 @@ export const SUPPORTED_ENDPOINTS = [
   { operationName: 'UserRepliesTimeline', kind: 'timeline', scope: 'user' },
   { operationName: 'UserRepostsTimeline', kind: 'timeline', scope: 'user' },
   { operationName: 'UserArticlesTweets', kind: 'timeline', scope: 'user' },
-  { operationName: 'UserSuperFollowTweets', kind: 'timeline', scope: 'user' },
   { operationName: 'UserVideoTimeline', kind: 'timeline', scope: 'user' },
   { operationName: 'UserPhotoTimeline', kind: 'timeline', scope: 'user' },
 ] as const satisfies readonly EndpointSupportRecord[];

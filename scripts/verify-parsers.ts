@@ -225,19 +225,16 @@ function assertCardScenarios(): void {
   check(card.domain === 'example.com' && card.siteUserId === '7' && card.title === 'Title', 'card fields');
   check(JSON.stringify(card.extra) === '{"app_name":"App"}', 'unknown bindings stay in extra, duplicates do not');
 
-  const poll = collect(rawTweet('51', '1', {}, { card: { rest_id: 'https://t.co/p', legacy: {
+  // Card types without samples (polls, for example) are not parsed; their raw string values are kept.
+  const unsupported = collect(rawTweet('51', '1', {}, { card: { rest_id: 'https://t.co/p', legacy: {
     name: 'poll2choice_text_only',
     url: 'https://t.co/p',
     binding_values: [
       { key: 'choice1_label', value: { type: 'STRING', string_value: 'Yes' } },
-      { key: 'choice1_count', value: { type: 'STRING', string_value: '3' } },
-      { key: 'choice2_label', value: { type: 'STRING', string_value: 'No' } },
-      { key: 'choice2_count', value: { type: 'STRING', string_value: '1' } },
-      { key: 'end_datetime_utc', value: { type: 'STRING', string_value: '2030-01-02T00:00:00Z' } },
       { key: 'counts_are_final', value: { type: 'BOOLEAN', boolean_value: true } },
     ],
   } } })).posts.get('51')!.card!;
-  check(JSON.stringify(poll.poll) === '{"choices":[{"label":"Yes","count":3},{"label":"No","count":1}],"endsAt":"2030-01-02T00:00:00Z","final":true}', 'poll card');
+  check(JSON.stringify(unsupported) === '{"type":"poll2choice_text_only","url":"https://t.co/p","extra":{"choice1_label":"Yes"}}', 'unsupported card keeps raw strings only');
   check(collect(rawTweet('52', '1', {}, { card: { rest_id: 'https://t.co/u' } })).posts.get('52')!.card === undefined, 'unexpanded card is dropped');
 }
 

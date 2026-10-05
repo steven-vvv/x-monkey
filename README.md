@@ -58,7 +58,6 @@ Supported operations, as used by the X web client in 2026-10:
 | `/<user>/with_replies` | `UserRepliesTimeline` |
 | `/<user>/reposts` | `UserRepostsTimeline` |
 | `/<user>/articles` | `UserArticlesTweets` |
-| `/<user>/subs` | `UserSuperFollowTweets` |
 | `/<user>/media` | `UserVideoTimeline` |
 | `/<user>/media?filter=photo` | `UserPhotoTimeline` |
 | `/i/history`, `/i/bookmarks` | `Bookmarks` |
@@ -67,6 +66,9 @@ Supported operations, as used by the X web client in 2026-10:
 | `/<user>/status/<id>` | `TweetDetail` |
 
 `?sort=popular` on the Posts, All and Highlights tabs is kept as a separate timeline.
+Pages and payload shapes that have not been captured yet (subscriber-only
+posts, polls and other card types, search) are not supported; an unsupported
+card keeps its raw string values in `extra`.
 
 ## Remote Database Build Options
 
