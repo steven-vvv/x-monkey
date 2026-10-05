@@ -2,7 +2,7 @@
 import { computed } from 'vue';
 import type { Post } from '../archive/model';
 import { getDbMedia, getDbPost, getDbUser, getMediaForPost } from '../lib/db-service';
-import { formatDateTime, toTweetStats } from '../lib/view-format';
+import { formatDateTime, toPollLines, toTweetStats } from '../lib/view-format';
 import { formatUrlForDisplay, getAvatarUrl, getPlainText, getRichTextSegments } from '../lib/post-view';
 import StatGrid from './StatGrid.vue';
 import MediaThumbGrid from './MediaThumbGrid.vue';
@@ -32,8 +32,9 @@ const verificationTag = computed(() => {
 // Only cards with something to show; unsupported types keep their raw values in `extra`.
 const card = computed(() => {
   const value = props.post.card;
-  return value && (value.title || value.image || value.player) ? value : undefined;
+  return value && (value.title || value.image || value.player || value.poll) ? value : undefined;
 });
+const pollLines = computed(() => card.value?.poll ? toPollLines(card.value.poll) : []);
 const article = computed(() => props.post.article);
 const articleCover = computed(() => article.value?.coverMediaId ? getDbMedia(article.value.coverMediaId) : undefined);
 const articleText = computed(() => {
@@ -102,7 +103,11 @@ const policyLines = computed(() => {
     </div>
 
     <div v-if="card" class="xd-detail-ref">
-      <div class="xd-detail-ref-label">{{ card.domain ?? card.type }}</div>
+      <div class="xd-detail-ref-label">{{ card.poll ? 'Poll' : (card.domain ?? card.type) }}</div>
+      <template v-if="card.poll">
+        <div v-for="(line, index) in pollLines" :key="index" class="xd-detail-ref-text">{{ line }}</div>
+        <div v-if="card.poll.endsAt" class="xd-detail-line">{{ card.poll.final ? 'Ended' : 'Ends' }} {{ formatDateTime(card.poll.endsAt) }}</div>
+      </template>
       <img v-if="card.image" class="xd-detail-ref-image" :src="card.image.url" :alt="card.image.alt" loading="lazy" />
       <div v-if="card.title" class="xd-detail-ref-title">{{ card.title }}</div>
       <div v-if="card.description" class="xd-detail-ref-text">{{ card.description }}</div>

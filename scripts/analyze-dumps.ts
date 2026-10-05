@@ -47,6 +47,8 @@ function recordTweetFeatures(result: Json, features: Map<string, number>): void 
   if (legacy.retweeted_status_result) bump(features, 'repost');
   if (legacy.in_reply_to_status_id_str) bump(features, 'reply');
   if (tweet.birdwatch_pivot) bump(features, 'community_note');
+  if (tweet.cashtag_attachments?.length) bump(features, 'cashtag_attachment');
+  if (tweet.core?.user_results?.result?.profile_metadata?.profile_interstitial_type) bump(features, 'user:interstitial');
   if (legacy.place) bump(features, 'place');
   if ((tweet.edit_control?.edit_control_initial ?? tweet.edit_control)?.edit_tweet_ids?.length > 1) bump(features, 'edited');
   if (tweet.content_disclosure?.ai_generated_disclosure) bump(features, 'ai_disclosure');

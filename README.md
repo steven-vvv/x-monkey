@@ -69,8 +69,9 @@ Supported operations, as used by the X web client in 2026-10:
 `?sort=popular` on the Posts, All and Highlights tabs is kept as a separate timeline.
 Search results are kept per query and tab; the People and Lists tabs are not post lists.
 Pages and payload shapes that have not been captured yet (subscriber-only
-posts, polls and other card types, list timelines) are not supported; an
-unsupported card keeps its raw string values in `extra`.
+posts, two- and three-choice polls, other card types, list timelines) are not
+supported; an unsupported card keeps its raw values in `extra`. The samples
+still missing are listed in section 8 of the design note.
 
 ## Remote Database Build Options
 
@@ -90,7 +91,7 @@ Runtime behavior in the userscript:
 - `Refresh` queries the remote state for the current post, author, and media.
 - `Sync` submits the current post with its author, media, and the reposted or quoted post.
 - `Sync All` submits the current post plus captured replies (and the thread above it on status pages).
-- Status `Older Counts` means only counters such as likes or views are newer locally.
+- Status `Older Counts` means only counters such as likes, views or the votes of an open poll differ.
 - Query requires a registered tweet-db session; submit requires an administrator session.
 
 The integration can be configured in two ways:

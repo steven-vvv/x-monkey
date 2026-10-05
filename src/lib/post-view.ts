@@ -36,10 +36,17 @@ function entityHref(entity: Entity, text: string): string | undefined {
     case 'hashtag':
       return `https://x.com/hashtag/${encodeURIComponent(text.replace(/^[#＃]/, ''))}`;
     case 'cashtag':
-      return `https://x.com/search?q=${encodeURIComponent(text)}`;
+      return `https://x.com/search?q=${encodeURIComponent(entity.ticker ? `$${entity.ticker} OR ${text}` : text)}`;
     default:
       return undefined;
   }
+}
+
+/** What X shows for an entity: the shortened link, or `$TICKER` for a tagged asset identifier. */
+function entityText(entity: Entity, text: string): string {
+  if (entity.type === 'url') return formatUrlForDisplay(entity.expanded);
+  if (entity.type === 'cashtag' && entity.ticker) return `$${entity.ticker}`;
+  return text;
 }
 
 /**
@@ -83,7 +90,7 @@ export function getRichTextSegments(value: RichText): TextSegment[] {
     const raw = points.slice(entity.range[0], entity.range[1]).join('');
     push({
       kind: entity.type,
-      text: entity.type === 'url' ? formatUrlForDisplay(entity.expanded) : raw,
+      text: entityText(entity, raw),
       href: entityHref(entity, raw),
       ...flagsAt(entity.range[0]),
     });

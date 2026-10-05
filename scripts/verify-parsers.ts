@@ -182,6 +182,7 @@ function assertUserScenarios(): void {
     },
     pinned_items: { tweet_ids_str: ['40'] },
     possibly_sensitive: true,
+    profile_metadata: { profile_interstitial_type: 'sensitive_media' },
   }) } } })).users.get('1')!;
   const legacy = collect(rawTweet('41', '1', {}, { core: { user_results: { result: {
     __typename: 'User',
@@ -196,12 +197,15 @@ function assertUserScenarios(): void {
       profile_banner_url: 'https://pbs.twimg.com/profile_banners/1/2',
       pinned_tweet_ids_str: ['40'],
       possibly_sensitive: true,
+      profile_interstitial_type: 'sensitive_media',
     },
   } } } })).users.get('1')!;
   check(JSON.stringify(current) === JSON.stringify(legacy), 'current and legacy user payloads normalize identically');
   check(current.website === 'https://site.example/' && current.bio?.entities?.[0].type === 'url', 'user website and bio links');
   check(current.counts?.posts === 3 && current.bannerUrl && current.pinnedPostIds?.[0] === '40', 'user counts, banner, pinned');
-  check(collect(rawTweet('42', '1')).users.get('1')!.bannerUrl === undefined, 'empty banner is absent');
+  check(current.interstitial === 'sensitive_media', 'profile warning type');
+  const plain = collect(rawTweet('42', '1', {}, { core: { user_results: { result: rawUser('1', { profile_metadata: { profile_interstitial_type: '' } }) } } })).users.get('1')!;
+  check(plain.bannerUrl === undefined && plain.interstitial === undefined, 'empty banner and empty warning type are absent');
 }
 
 function assertCardScenarios(): void {
@@ -225,17 +229,82 @@ function assertCardScenarios(): void {
   check(card.domain === 'example.com' && card.siteUserId === '7' && card.title === 'Title', 'card fields');
   check(JSON.stringify(card.extra) === '{"app_name":"App"}', 'unknown bindings stay in extra, duplicates do not');
 
-  // Card types without samples (polls, for example) are not parsed; their raw string values are kept.
-  const unsupported = collect(rawTweet('51', '1', {}, { card: { rest_id: 'https://t.co/p', legacy: {
-    name: 'poll2choice_text_only',
-    url: 'https://t.co/p',
-    binding_values: [
-      { key: 'choice1_label', value: { type: 'STRING', string_value: 'Yes' } },
-      { key: 'counts_are_final', value: { type: 'BOOLEAN', boolean_value: true } },
-    ],
+  const text = (key: string, value: string) => ({ key, value: { type: 'STRING', string_value: value } });
+  const pollBindings = [
+    text('choice1_label', 'A'), text('choice1_count', '3'), text('choice2_label', 'B'), text('choice2_count', '1'),
+    text('choice3_label', 'C'), text('choice3_count', '0'), text('choice4_label', 'D'), text('choice4_count', '0'),
+    text('end_datetime_utc', '2030-01-02T00:00:00Z'), text('last_updated_datetime_utc', '2030-01-01T12:00:00Z'),
+    { key: 'counts_are_final', value: { type: 'BOOLEAN', boolean_value: false } },
+    // The vote endpoint, the duration, the placeholder URL and the viewer's own vote are not content.
+    text('api', 'capi://passthrough/1'), text('duration_minutes', '1440'), text('selected_choice', '2'),
+    { key: 'card_url', value: { type: 'STRING', string_value: 'https://twitter.com', scribe_key: 'card_url' } },
+  ];
+  const poll = collect(rawTweet('51', '1', {}, { card: { rest_id: 'card://9', legacy: {
+    name: 'poll4choice_text_only', url: 'card://9', binding_values: pollBindings,
   } } })).posts.get('51')!.card!;
-  check(JSON.stringify(unsupported) === '{"type":"poll2choice_text_only","url":"https://t.co/p","extra":{"choice1_label":"Yes"}}', 'unsupported card keeps raw strings only');
+  check(JSON.stringify(poll) === '{"type":"poll4choice_text_only","url":"card://9","poll":{"choices":[{"label":"A","count":3},{"label":"B","count":1},{"label":"C","count":0},{"label":"D","count":0}],"endsAt":"2030-01-02T00:00:00Z","final":false,"updatedAt":"2030-01-01T12:00:00Z"}}', 'four-choice poll card');
+
+  // Card types without samples (two-choice polls, for example) are not parsed; their raw values are kept.
+  const unsupported = collect(rawTweet('53', '1', {}, { card: { rest_id: 'card://8', legacy: {
+    name: 'poll2choice_text_only', url: 'card://8', binding_values: pollBindings.slice(0, 4).concat(pollBindings.slice(10)),
+  } } })).posts.get('53')!.card!;
+  check(JSON.stringify(unsupported) === '{"type":"poll2choice_text_only","url":"card://8","extra":{"choice1_label":"A","choice1_count":"3","choice2_label":"B","choice2_count":"1","counts_are_final":false,"api":"capi://passthrough/1","duration_minutes":"1440"}}', 'unsupported card keeps raw values only');
   check(collect(rawTweet('52', '1', {}, { card: { rest_id: 'https://t.co/u' } })).posts.get('52')!.card === undefined, 'unexpanded card is dropped');
+}
+
+function assertVisibilityScenarios(): void {
+  // A reply restriction names the conversation owner by handle only, so there is no user record to collect.
+  const restricted = collect({
+    __typename: 'TweetWithVisibilityResults',
+    limitedActionResults: { limited_actions: [{ action: 'Reply', prompt: { __typename: 'CtaLimitedActionPrompt', cta_type: 'SeeConversation' } }] },
+    tweet: rawTweet('59', '1', { conversation_control: { policy: 'Community', conversation_owner_results: { result: { __typename: 'User', core: { screen_name: 'user_1' } } } } }),
+  });
+  check(restricted.posts.get('59')?.replyPolicy === 'Community' && restricted.users.size === 1, 'reply restriction on a wrapped post');
+}
+
+function assertTaggedTextScenarios(): void {
+  // X writes an asset identifier into the text and tags it; readers see `$BTC`.
+  const smartTag = { indices: [3, 17], text: 'bitcoin:native', tag: { info: { info: { name: 'Bitcoin', ticker: 'BTC' } } } };
+  const tagged = collect(rawTweet('54', '1', {
+    full_text: 'up bitcoin:native #BTC',
+    display_text_range: [0, 22],
+    entities: { hashtags: [{ text: 'BTC', indices: [18, 22] }], smarttags: [smartTag] },
+  }, { cashtag_attachments: [{ rest_id: 'bitcoin:native' }] })).posts.get('54')!.text!;
+  check(JSON.stringify(tagged.entities) === '[{"type":"cashtag","range":[3,17],"name":"Bitcoin","ticker":"BTC"},{"type":"hashtag","range":[18,22]}]', 'smart tag becomes a cashtag with its ticker');
+  check(getPlainText(tagged) === 'up $BTC #BTC', 'tagged asset is shown as its ticker');
+
+  // In a long reply the tag sits in the note text, after the mention prefix.
+  const note = collect(rawTweet('55', '1', {
+    full_text: '@a up…',
+    display_text_range: [3, 6],
+    in_reply_to_status_id_str: '9',
+    entities: { user_mentions: [{ id_str: '2', screen_name: 'a', name: 'A', indices: [0, 2] }] },
+  }, {
+    note_tweet: { note_tweet_results: { result: { text: 'up bitcoin:native', entity_set: { smarttags: [smartTag], symbols: [] } } } },
+    cashtag_attachments: [{ rest_id: 'bitcoin:native' }],
+  })).posts.get('55')!.text!;
+  check(note.entities!.map((entity) => `${entity.type}@${entity.range}`).join(' ') === 'mention@0,2 cashtag@6,20', 'note smart tag is shifted past the reply prefix');
+  check(getPlainText(note) === 'up $BTC', 'note smart tag is shown as its ticker');
+
+  const symbol = collect(rawTweet('56', '1', {
+    full_text: '$BTC up',
+    display_text_range: [0, 7],
+    entities: { symbols: [{ indices: [0, 4], text: 'BTC', tag: { info: { info: { name: 'Bitcoin', ticker: 'BTC' } } } }] },
+  })).posts.get('56')!.text!;
+  check(JSON.stringify(symbol.entities) === '[{"type":"cashtag","range":[0,4],"name":"Bitcoin"}]', 'a symbol the text spells out keeps only its name');
+
+  const untagged = new ArchiveCollector();
+  collectTweet(rawTweet('57', '1', {}, { cashtag_attachments: [{ rest_id: 'bitcoin:native' }] }), 'inline', untagged);
+  check(untagged.warnings.length === 1 && untagged.posts.has('57'), 'an attachment the text does not tag is reported');
+
+  // Community note links: the text shows a shortened form, the reference has the destination.
+  const noted = collect(rawTweet('58', '1', {}, { birdwatch_pivot: {
+    destinationUrl: 'https://twitter.com/i/birdwatch/n/9',
+    title: 'Readers added context',
+    note: { rest_id: '9', language: 'en' },
+    subtitle: { text: 'See example.com/a…', entities: [{ fromIndex: 4, toIndex: 18, ref: { type: 'TimelineUrl', url: 'https://t.co/n', expandedUrl: 'https://example.com/article', urlType: 'ExternalUrl' } }] },
+  } })).posts.get('58')!.communityNote!;
+  check(JSON.stringify(noted) === '{"id":"9","title":"Readers added context","text":{"text":"See example.com/a…","entities":[{"type":"url","range":[4,18],"expanded":"https://example.com/article"}]},"lang":"en","url":"https://twitter.com/i/birdwatch/n/9"}', 'community note with expanded links');
 }
 
 function assertTraversalScenarios(): void {
@@ -302,6 +371,23 @@ function assertRemoteScenarios(): void {
   check(compareArchiveBatch(batch, response).status === 'stale', 'extra remote fields do not mismatch');
   response.media = [];
   check(compareArchiveBatch(batch, response).status === 'failed', 'missing results fail');
+
+  // An open poll: a later capture differs in its tally only.
+  const poll = (votes: number, updatedAt: string, label = 'A') => PostSchema.parse({
+    id: '73', authorId: '1', createdAt: '2030-01-01T00:00:00Z',
+    card: { type: 'poll4choice_text_only', url: 'card://9', poll: { choices: [{ label, count: votes }, { label: 'B', count: 1 }], endsAt: '2030-01-02T00:00:00Z', final: false, updatedAt } },
+  });
+  const comparePoll = (local: Post, remote: Post) => compareArchiveBatch(
+    { users: [], posts: [local], media: [] },
+    { users: [], posts: [{ id: '73', status: 'found', data: remote }], media: [] },
+  ).status;
+  const stored = poll(3, '2030-01-01T10:00:00Z');
+  check(comparePoll(stored, structuredClone(stored)) === 'in_sync', 'identical polls are in sync');
+  check(comparePoll(poll(5, '2030-01-01T12:00:00Z'), stored) === 'stale', 'a newer poll tally is stale, not a mismatch');
+  check(comparePoll(poll(3, '2030-01-01T10:00:00Z', 'Renamed'), stored) === 'mismatch', 'a different poll choice mismatches');
+  const closed = poll(5, '2030-01-02T00:00:01Z');
+  closed.card!.poll!.final = true;
+  check(comparePoll(closed, stored) === 'mismatch', 'a poll that ended since mismatches');
 }
 
 function assertStoreScenarios(): void {
@@ -348,6 +434,8 @@ function main(): void {
   assertRelationScenarios();
   assertUserScenarios();
   assertCardScenarios();
+  assertVisibilityScenarios();
+  assertTaggedTextScenarios();
   assertTraversalScenarios();
   assertMergeScenarios();
   assertRemoteScenarios();

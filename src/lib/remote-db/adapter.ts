@@ -69,7 +69,7 @@ export function toArchiveQuery(batch: ArchiveBatch): RemoteDbQueryRequest {
 
 /**
  * - `in_sync`: submitting would change nothing
- * - `stale`: only counters (likes, views, followers …) are newer locally
+ * - `stale`: only counters (likes, views, followers, poll votes …) differ
  * - `mismatch`: submitting would change stored content
  */
 export type RemoteRecordStatus = 'in_sync' | 'stale' | 'mismatch' | 'missing' | 'failed';
@@ -88,7 +88,26 @@ export interface RemoteBatchComparison {
 
 const STATUS_PRECEDENCE: RemoteRecordStatus[] = ['failed', 'missing', 'mismatch', 'stale', 'in_sync'];
 
-function compareRecord<T extends { id: string; counts?: object }>(
+type ComparableRecord = { id: string; counts?: object; card?: { poll?: { choices: Array<{ count?: number }>; updatedAt?: string } } };
+
+/**
+ * Splits a record into its content and its counters. Counters change from one
+ * capture to the next: the engagement counts, and the tally of a poll (the
+ * vote counts and the time X last updated them).
+ */
+function splitCounters(record: ComparableRecord): { content: Record<string, unknown>; counters: Record<string, unknown> } {
+  const { counts, ...content } = cloneRecord(record);
+  const counters: Record<string, unknown> = counts ? { counts } : {};
+  const poll = content.card?.poll;
+  if (poll) {
+    counters.poll = { votes: poll.choices.map((choice) => choice.count ?? null), updatedAt: poll.updatedAt };
+    for (const choice of poll.choices) delete choice.count;
+    delete poll.updatedAt;
+  }
+  return { content, counters };
+}
+
+function compareRecord<T extends ComparableRecord>(
   kind: RemoteRecordComparison['kind'],
   local: T,
   result: RemoteDbQueryResult<T> | undefined,
@@ -100,13 +119,12 @@ function compareRecord<T extends { id: string; counts?: object }>(
 
   // The server merges submissions with the same rules, so a record is in sync
   // exactly when merging the local copy into the stored one changes nothing.
-  const { counts: localCounts, ...localContent } = local;
-  const { counts: remoteCounts, ...remoteContent } = cloneRecord(result.data);
-  if (mergeArchiveRecord(remoteContent as Record<string, unknown>, localContent as Record<string, unknown>)) {
+  const localParts = splitCounters(local);
+  const remoteParts = splitCounters(result.data);
+  if (mergeArchiveRecord(remoteParts.content, localParts.content)) {
     return { kind, id: local.id, status: 'mismatch' };
   }
-  const counts = { ...(remoteCounts ?? {}) } as Record<string, unknown>;
-  const stale = localCounts !== undefined && mergeArchiveRecord(counts, localCounts as Record<string, unknown>);
+  const stale = mergeArchiveRecord(remoteParts.counters, localParts.counters);
   return { kind, id: local.id, status: stale ? 'stale' : 'in_sync' };
 }
 

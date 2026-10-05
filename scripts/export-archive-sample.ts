@@ -1,6 +1,6 @@
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
-import type { Media, Post, User } from '../src/archive/model';
+import type { ArchiveBatch, Media, Post, User } from '../src/archive/model';
 import { mergeArchiveRecord } from '../src/archive/merge';
 import { getSupportedEndpoint } from '../src/lib/endpoint-support';
 import { parseTimelineResponse, parseTweetDetailResponse } from '../src/lib/parser';
@@ -11,10 +11,18 @@ import { loadDumpFixtures } from './dump-fixtures';
  * Writes a small archive batch built from real captures into tweet-db-v2's
  * projection testdata, so the Go projection is tested against what x-monkey
  * actually submits. Only public profile timelines and post details are used:
- * likes, bookmarks and home feeds describe the capturing account.
+ * likes, bookmarks, home feeds and searches describe the capturing account,
+ * whose own posts are left out as well.
  */
 const PUBLIC_SOURCES = /^(User[A-Za-z]*|TweetDetail)$/;
 const DEFAULT_OUTPUT = '../tweet-db-v2/internal/projection/testdata/x-monkey-batch.json';
+
+const fixtures = loadDumpFixtures();
+/** Likes are private, so a captured Likes request names the capturing account. */
+const viewerIds = new Set(fixtures
+  .filter((fixture) => fixture.operationName === 'Likes')
+  .map((fixture) => fixture.variables?.userId)
+  .filter((id): id is string => typeof id === 'string'));
 
 const posts = new Map<string, Post>();
 const users = new Map<string, User>();
@@ -28,7 +36,7 @@ function addAll<T extends { id: string }>(target: Map<string, T>, source: Map<st
   }
 }
 
-for (const fixture of loadDumpFixtures()) {
+for (const fixture of fixtures) {
   const endpoint = getSupportedEndpoint(fixture.operationName);
   if (!endpoint || !PUBLIC_SOURCES.test(fixture.operationName) || fixture.operationName === 'Likes') continue;
   const parsed = endpoint.kind === 'tweet-detail' ? parseTweetDetailResponse(fixture.response) : parseTimelineResponse(fixture.response);
@@ -45,6 +53,8 @@ const FEATURES: Array<[string, (post: Post) => boolean]> = [
   ['reply with hidden mention prefix', (post) => !!post.replyTo && (post.text?.visible?.[0] ?? 0) > 0],
   ['link card', (post) => post.card?.type === 'summary_large_image' && !!post.card.image],
   ['player card', (post) => post.card?.type === 'player'],
+  ['finished poll', (post) => post.card?.poll?.final === true],
+  ['open poll', (post) => post.card?.poll?.final === false],
   ['full article', (post) => !!post.article?.blocks],
   ['article preview', (post) => !!post.article && !post.article.blocks],
   ['repost', (post) => !!post.repostOf && posts.has(post.repostOf)],
@@ -53,15 +63,25 @@ const FEATURES: Array<[string, (post: Post) => boolean]> = [
   ['several photos', (post) => mediaOf(post).filter((item) => item.type === 'photo').length > 1],
   ['video timestamps', (post) => !!post.text?.entities?.some((entity) => entity.type === 'timestamp')],
   ['hashtag', (post) => !!post.text?.entities?.some((entity) => entity.type === 'hashtag')],
+  ['asset tag', (post) => !!post.text?.entities?.some((entity) => entity.type === 'cashtag' && entity.ticker)],
+  ['community note', (post) => !!post.communityNote],
   ['edited', (post) => !!post.editIds],
   ['ai disclosure', (post) => !!post.aiGenerated],
   ['place', (post) => !!post.place],
 ];
 
-const ordered = [...posts.values()].sort((left, right) => left.id.localeCompare(right.id));
+const output = resolve(process.cwd(), process.argv[2] ?? DEFAULT_OUTPUT);
+// Posts of the current sample are kept while they still show their feature, so new captures only add to it.
+const current = new Set<string>(existsSync(output)
+  ? (JSON.parse(readFileSync(output, 'utf8')) as ArchiveBatch).posts.map((post) => post.id)
+  : []);
+
+const ordered = [...posts.values()]
+  .filter((post) => !viewerIds.has(post.authorId))
+  .sort((left, right) => left.id.localeCompare(right.id));
 const picked: string[] = [];
 for (const [feature, matches] of FEATURES) {
-  const post = ordered.find(matches);
+  const post = ordered.find((item) => current.has(item.id) && matches(item)) ?? ordered.find(matches);
   if (!post) {
     console.log(`- ${feature}: no sample`);
     continue;
@@ -76,7 +96,10 @@ const { batch } = buildArchiveBatch([...new Set(picked)], {
   getMedia: (id) => media.get(id),
 });
 
-const output = resolve(process.cwd(), process.argv[2] ?? DEFAULT_OUTPUT);
+if (batch.users.some((user) => viewerIds.has(user.id))) {
+  throw new Error('the sample would include the capturing account through a quoted or reposted post');
+}
+
 mkdirSync(dirname(output), { recursive: true });
 writeFileSync(output, `${JSON.stringify(batch, null, 1)}\n`);
 console.log(`wrote ${batch.posts.length} posts, ${batch.users.length} users, ${batch.media.length} media to ${output}`);

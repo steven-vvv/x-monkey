@@ -38,12 +38,15 @@ export type Rect = z.infer<typeof RectSchema>;
 
 /**
  * 正文实体。能从 `text[range]` 推出的信息（t.co 短链、hashtag 文本、@handle、时间戳秒数）不存。
+ *
+ * `cashtag` 带 `ticker` 时，区间内是 X 写入正文的资产标识（如 `bitcoin:native`），展示为 `$ticker`；
+ * 不带时区间内就是 `$TICKER` 本身。
  */
 export const EntitySchema = z.discriminatedUnion('type', [
   strictObject({ type: z.literal('url'), range: RangeSchema, expanded: z.string() }),
   strictObject({ type: z.literal('mention'), range: RangeSchema, userId: IdSchema }),
   strictObject({ type: z.literal('hashtag'), range: RangeSchema }),
-  strictObject({ type: z.literal('cashtag'), range: RangeSchema, name: z.string().optional() }),
+  strictObject({ type: z.literal('cashtag'), range: RangeSchema, name: z.string().optional(), ticker: z.string().optional() }),
   strictObject({ type: z.literal('timestamp'), range: RangeSchema }),
 ]);
 export type Entity = z.infer<typeof EntitySchema>;
@@ -103,6 +106,8 @@ export const UserSchema = strictObject({
   pinnedPostIds: z.array(IdSchema).min(1).optional(),
   protected: z.boolean().optional(),
   sensitive: z.boolean().optional(),
+  /** 打开主页前的警示页类型，样本值 `sensitive_media`。 */
+  interstitial: z.string().optional(),
   verified: strictObject({
     blue: z.boolean().optional(),
     /** `Business`、`Government`。 */
@@ -158,10 +163,20 @@ export const MediaSchema = strictObject({
 });
 export type Media = z.infer<typeof MediaSchema>;
 
+export const PollSchema = strictObject({
+  choices: z.array(strictObject({ label: z.string(), count: count.optional() })).min(2),
+  endsAt: InstantSchema.optional(),
+  /** 票数是否为最终结果。 */
+  final: z.boolean().optional(),
+  /** X 给出的票数更新时间（`last_updated_datetime_utc`），不是采集时间。 */
+  updatedAt: InstantSchema.optional(),
+});
+export type Poll = z.infer<typeof PollSchema>;
+
 export const CardSchema = strictObject({
-  /** 卡片模板名，样本值：`summary`、`summary_large_image`、`player`、`unified_card`。 */
+  /** 卡片模板名，样本值：`summary`、`summary_large_image`、`player`、`unified_card`、`poll4choice_text_only`。 */
   type: z.string(),
-  /** 卡片对应的 t.co 链接，与正文中的 `url` 实体对应。 */
+  /** 卡片对应的 t.co 链接，与正文中的 `url` 实体对应；投票卡片为 `card://<id>`。 */
   url: z.string(),
   title: z.string().optional(),
   description: z.string().optional(),
@@ -179,8 +194,10 @@ export const CardSchema = strictObject({
     width: count.optional(),
     height: count.optional(),
   }).optional(),
-  /** 其余未建模的字符串绑定值（如 `app_*`、`unified_card`），保证信息不丢。 */
-  extra: z.record(z.string(), z.string()).optional(),
+  /** 仅 `poll4choice_text_only` 解析；其他投票模板的值留在 `extra`。 */
+  poll: PollSchema.optional(),
+  /** 其余未建模的字符串与布尔绑定值（如 `app_*`、`unified_card`），保证信息不丢。 */
+  extra: z.record(z.string(), z.union([z.string(), z.boolean()])).optional(),
 });
 export type Card = z.infer<typeof CardSchema>;
 
@@ -269,6 +286,7 @@ export const PostSchema = strictObject({
     id: IdSchema.optional(),
     title: z.string().optional(),
     text: RichTextSchema,
+    lang: z.string().optional(),
     url: z.string().optional(),
   }).optional(),
   sensitive: z.boolean().optional(),

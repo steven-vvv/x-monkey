@@ -37,6 +37,8 @@ export type TimelineMentionResults = z.infer<typeof TimelineMentionResultsSchema
 
 /** 富文本中的 URL / 深链引用。 */
 export const TimelineRefSchema = strictObject({
+  /** 社区附注正文链接的完整地址；此时 `url` 是 t.co 短链。 */
+  expandedUrl: z.string().optional(),
   mention_results: TimelineMentionResultsSchema.optional(),
   screen_name: z.string().optional(),
   type: z.string(),
@@ -71,6 +73,10 @@ export type CallToAction = z.infer<typeof CallToActionSchema>;
 
 /** 社区注释元信息。 */
 export const BirdwatchNoteSchema = strictObject({
+  /** 样本中恒为不可用；出现译文内容时让覆盖检查报警。 */
+  grok_translated_community_note_with_availability: strictObject({
+    is_available: z.boolean().optional(),
+  }).optional(),
   is_community_note_translatable: z.boolean().optional(),
   language: z.string().optional(),
   rest_id: z.string().optional(),
@@ -189,6 +195,62 @@ export const SymbolEntitySchema = strictObject({
   text: z.string().optional(),
 });
 export type SymbolEntity = z.infer<typeof SymbolEntitySchema>;
+
+/** 资产标识实体（2026-10 起）：`text` 形如 `bitcoin:native`，`tag` 给出展示用的 ticker。 */
+export const SmartTagEntitySchema = strictObject({
+  indices: z.array(z.number()),
+  tag: SymbolTagSchema,
+  text: z.string(),
+});
+export type SmartTagEntity = z.infer<typeof SmartTagEntitySchema>;
+
+/** 帖子下方的行情卡片，`rest_id` 与正文中的资产标识相同。 */
+export const CashtagAttachmentSchema = strictObject({
+  rest_id: z.string(),
+});
+export type CashtagAttachment = z.infer<typeof CashtagAttachmentSchema>;
+
+/** 视频时间戳实体。 */
+export const TimestampEntitySchema = strictObject({
+  indices: z.array(z.number()),
+  seconds: z.number(),
+  text: z.string(),
+});
+export type TimestampEntity = z.infer<typeof TimestampEntitySchema>;
+
+/** 帖子内哈希标签。 */
+export const HashtagEntitySchema = strictObject({
+  indices: z.array(z.number()),
+  text: z.string(),
+});
+export type HashtagEntity = z.infer<typeof HashtagEntitySchema>;
+
+/** 简介自动翻译中的提及，比帖子里的多一个与 `id_str` 相同的 `id`。 */
+export const TranslatedBioMentionSchema = strictObject({
+  id: z.string().optional(),
+  id_str: z.string(),
+  indices: z.array(z.number()),
+  name: z.string(),
+  screen_name: z.string(),
+});
+export type TranslatedBioMention = z.infer<typeof TranslatedBioMentionSchema>;
+
+/** 简介自动翻译（搜索结果带 `withGrokTranslatedBio` 时下发）。 */
+export const GrokTranslatedBioSchema = strictObject({
+  data: strictObject({
+    destination_language: z.string().optional(),
+    entities: strictObject({
+      hashtags: z.array(HashtagEntitySchema).optional(),
+      symbols: z.array(SymbolEntitySchema).optional(),
+      urls: z.array(UrlEntitySchema).optional(),
+      user_mentions: z.array(TranslatedBioMentionSchema).optional(),
+    }).optional(),
+    source_language: z.string().optional(),
+    translation: z.string().optional(),
+  }).optional(),
+  is_available: z.boolean().optional(),
+});
+export type GrokTranslatedBio = z.infer<typeof GrokTranslatedBioSchema>;
 
 /** 用户资料中的 URL 集合。 */
 export const UrlContainerSchema = strictObject({
@@ -342,6 +404,10 @@ export const UserSchema = strictObject({
   relationship_counts: strictObject({ followers: z.number().optional(), following: z.number().optional() }).optional(),
   tweet_counts: strictObject({ media_tweets: z.number().optional(), tweets: z.number().optional() }).optional(),
   website: strictObject({ url: z.string() }).optional(),
+  grok_translated_bio_with_availability: GrokTranslatedBioSchema.optional(),
+  verified_user_profiles: strictObject({
+    super_follows_user_profile: strictObject({ is_active: z.boolean().optional() }).optional(),
+  }).optional(),
 });
 export type User = z.infer<typeof UserSchema>;
 
@@ -350,13 +416,6 @@ export const UserResultContainerSchema = strictObject({
   result: UserSchema,
 });
 export type UserResultContainer = z.infer<typeof UserResultContainerSchema>;
-
-/** 帖子内哈希标签。 */
-export const HashtagEntitySchema = strictObject({
-  indices: z.array(z.number()),
-  text: z.string(),
-});
-export type HashtagEntity = z.infer<typeof HashtagEntitySchema>;
 
 /** 帖子内提及用户。 */
 export const UserMentionSchema = strictObject({
@@ -533,9 +592,9 @@ export type QuotedStatusPermalink = z.infer<typeof QuotedStatusPermalinkSchema>;
 export const TweetEntitiesSchema = strictObject({
   hashtags: z.array(HashtagEntitySchema).optional(),
   media: z.array(MediaSchema).optional(),
-  smarttags: z.array(z.unknown()).optional(),
+  smarttags: z.array(SmartTagEntitySchema).optional(),
   symbols: z.array(SymbolEntitySchema).optional(),
-  timestamps: z.array(z.unknown()).optional(),
+  timestamps: z.array(TimestampEntitySchema).optional(),
   urls: z.array(UrlEntitySchema).optional(),
   user_mentions: z.array(UserMentionSchema).optional(),
 });
@@ -558,9 +617,9 @@ export type NoteTweetRichText = z.infer<typeof NoteTweetRichTextSchema>;
 /** Note Tweet 中复用的实体集合。 */
 export const NoteTweetEntitySetSchema = strictObject({
   hashtags: z.array(HashtagEntitySchema).optional(),
-  smarttags: z.array(z.unknown()).optional(),
-  symbols: z.array(z.unknown()).optional(),
-  timestamps: z.array(z.unknown()).optional(),
+  smarttags: z.array(SmartTagEntitySchema).optional(),
+  symbols: z.array(SymbolEntitySchema).optional(),
+  timestamps: z.array(TimestampEntitySchema).optional(),
   urls: z.array(UrlEntitySchema).optional(),
   user_mentions: z.array(UserMentionSchema).optional(),
 });
@@ -966,8 +1025,7 @@ function createTweetDataShape() {
   article: ArticleSchema.optional(),
   birdwatch_pivot: BirdwatchPivotSchema.optional(),
   card: CardSchema.optional(),
-  /** 当前样本恒为空数组；出现内容时让覆盖检查报警。 */
-  cashtag_attachments: z.array(z.never()).optional(),
+  cashtag_attachments: z.array(CashtagAttachmentSchema).optional(),
   content_disclosure: ContentDisclosureSchema.optional(),
   core: TweetCoreSchema,
   edit_control: EditControlSchema.optional(),
@@ -1085,7 +1143,7 @@ export interface TweetData {
   article?: Article;
   birdwatch_pivot?: BirdwatchPivot;
   card?: Card;
-  cashtag_attachments?: never[];
+  cashtag_attachments?: CashtagAttachment[];
   content_disclosure?: ContentDisclosure;
   core: TweetCore;
   edit_control?: EditControl;

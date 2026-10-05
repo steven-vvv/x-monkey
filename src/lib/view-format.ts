@@ -1,4 +1,4 @@
-import type { Media, Post, PostCounts, User } from '../archive/model';
+import type { Media, Poll, Post, PostCounts, User } from '../archive/model';
 import { getPlainText } from './post-view';
 
 export interface StatItem {
@@ -103,6 +103,16 @@ export function toTweetCompactCardItem(post: Post, author: User | undefined): Tw
     text: getPlainText(post.text) || post.article?.title || '(no text)',
     mediaCount: post.mediaIds?.length ?? 0,
   };
+}
+
+/** One line per poll choice, with its share of the votes when counts are known. */
+export function toPollLines(poll: Poll): string[] {
+  const total = poll.choices.reduce((sum, choice) => sum + (choice.count ?? 0), 0);
+  return poll.choices.map((choice) => {
+    if (choice.count === undefined) return choice.label;
+    const share = total > 0 ? ` (${(choice.count / total * 100).toFixed(1)}%)` : '';
+    return `${choice.label} · ${formatCount(choice.count)}${share}`;
+  });
 }
 
 export function toTweetStats(counts: PostCounts | undefined): StatItem[] {
