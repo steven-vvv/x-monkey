@@ -24,6 +24,7 @@ function findInstructions(response: Json): Json[] {
     response?.data?.user?.result?.timeline?.timeline?.instructions,
     response?.data?.home?.home_timeline_urt?.instructions,
     response?.data?.bookmark_timeline_v2?.timeline?.instructions,
+    response?.data?.search_by_raw_query?.search_timeline?.timeline?.instructions,
     response?.data?.threaded_conversation_with_injections_v2?.instructions,
   ];
   return candidates.find(Array.isArray) ?? [];

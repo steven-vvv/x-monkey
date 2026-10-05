@@ -47,7 +47,7 @@ interface TimelineCardItem {
 
 interface FeatureTimelineContext {
   source: FeatureTimelineSource;
-  username?: string;
+  scope?: string;
   sort?: FeatureTimelineSort;
 }
 
@@ -61,13 +61,13 @@ const timelineBatchSubmitMessage = ref<string | null>(null);
 
 function getRouteTimelineContext(value: FeatureRoute): FeatureTimelineContext | null {
   if (value.page === 'timeline' || ((value.page === 'tweet' || value.page === 'user') && value.source)) {
-    return { source: value.source!, username: value.username, sort: value.sort };
+    return { source: value.source!, scope: value.scope, sort: value.sort };
   }
   return null;
 }
 
 function buildTimelineCardItems(context: FeatureTimelineContext): TimelineCardItem[] {
-  const postIds = getTimelinePostIdsByAlias(getFeatureTimelineNamespace(context.source, context.sort), context.username ?? null);
+  const postIds = getTimelinePostIdsByAlias(getFeatureTimelineNamespace(context.source, context.sort), context.scope ?? null);
   return postIds.flatMap((id) => {
     const entry = getDbPost(id);
     if (!entry) return [];
@@ -117,8 +117,8 @@ const detailUser = computed(() => {
 const timelineItems = computed(() => {
   if (route.value.page !== 'timeline') return [];
   void dbVersion.value;
-  const context = { source: route.value.source, username: route.value.username, sort: route.value.sort };
-  void getTimelineVersionByAlias(getFeatureTimelineNamespace(context.source, context.sort), context.username ?? null);
+  const context = { source: route.value.source, scope: route.value.scope, sort: route.value.sort };
+  void getTimelineVersionByAlias(getFeatureTimelineNamespace(context.source, context.sort), context.scope ?? null);
   return buildTimelineCardItems(context);
 });
 
@@ -189,7 +189,7 @@ const shouldShowTimelineRemoteActions = computed(() => route.value.page === 'tim
 
 const timelineRouteKey = computed(() => {
   if (route.value.page !== 'timeline') return 'inactive';
-  return `${route.value.source}:${route.value.username ?? ''}:${route.value.sort ?? ''}`;
+  return `${route.value.source}:${route.value.scope ?? ''}:${route.value.sort ?? ''}`;
 });
 
 const timelineEntryIds = computed(() => timelineItems.value.map((item) => item.id));

@@ -11,6 +11,9 @@ export type FeatureTimelineSource =
   | 'user-photos'
   | 'bookmarks'
   | 'likes'
+  | 'search-top'
+  | 'search-latest'
+  | 'search-media'
   | 'home-timeline'
   | 'home-latest-timeline';
 
@@ -20,6 +23,8 @@ export type FeatureTimelineSort = 'popular';
 interface FeatureTimelineDescriptor {
   operationName: SupportedTimelineOperationName;
   label: string;
+  /** The search product, which selects one of the lists `SearchTimeline` serves. */
+  variant?: string;
 }
 
 const FEATURE_TIMELINE_DESCRIPTORS: Record<FeatureTimelineSource, FeatureTimelineDescriptor> = {
@@ -33,6 +38,9 @@ const FEATURE_TIMELINE_DESCRIPTORS: Record<FeatureTimelineSource, FeatureTimelin
   'user-photos': { operationName: 'UserPhotoTimeline', label: 'Photos' },
   'bookmarks': { operationName: 'Bookmarks', label: 'Bookmarks' },
   'likes': { operationName: 'Likes', label: 'Likes' },
+  'search-top': { operationName: 'SearchTimeline', label: 'Search · Top', variant: 'Top' },
+  'search-latest': { operationName: 'SearchTimeline', label: 'Search · Latest', variant: 'Latest' },
+  'search-media': { operationName: 'SearchTimeline', label: 'Search · Media', variant: 'Media' },
   'home-timeline': { operationName: 'HomeTimeline', label: 'For You' },
   'home-latest-timeline': { operationName: 'HomeLatestTimeline', label: 'Following' },
 };
@@ -43,7 +51,8 @@ export const HOME_FEATURE_TIMELINE_SOURCES = [
 ] as const satisfies readonly FeatureTimelineSource[];
 
 export function getFeatureTimelineNamespace(source: FeatureTimelineSource, sort?: FeatureTimelineSort): string {
-  return getTimelineNamespace(FEATURE_TIMELINE_DESCRIPTORS[source].operationName, sort);
+  const descriptor = FEATURE_TIMELINE_DESCRIPTORS[source];
+  return getTimelineNamespace(descriptor.operationName, descriptor.variant ?? sort);
 }
 
 export function getFeatureTimelineLabel(source: FeatureTimelineSource, sort?: FeatureTimelineSort): string {

@@ -3,8 +3,11 @@ export type EndpointKind = 'timeline' | 'tweet-detail';
 export interface EndpointSupportRecord {
   operationName: string;
   kind: EndpointKind;
-  /** `user` timelines belong to the profile in `variables.userId`; `global` ones are a single list. */
-  scope?: 'user' | 'global';
+  /**
+   * `user` timelines belong to the profile in `variables.userId`, `query` ones
+   * to the search in `variables.rawQuery`; `global` ones are a single list.
+   */
+  scope?: 'user' | 'global' | 'query';
   /** New pages land on top (home feeds) instead of being appended. */
   prepend?: boolean;
 }
@@ -25,6 +28,7 @@ export const SUPPORTED_ENDPOINTS = [
   { operationName: 'UserArticlesTweets', kind: 'timeline', scope: 'user' },
   { operationName: 'UserVideoTimeline', kind: 'timeline', scope: 'user' },
   { operationName: 'UserPhotoTimeline', kind: 'timeline', scope: 'user' },
+  { operationName: 'SearchTimeline', kind: 'timeline', scope: 'query' },
 ] as const satisfies readonly EndpointSupportRecord[];
 
 export type SupportedEndpoint = (typeof SUPPORTED_ENDPOINTS)[number];
@@ -37,9 +41,10 @@ export function getSupportedEndpoint(operationName: string): EndpointSupportReco
 }
 
 /**
- * Identifies one ordered list. `sortByMostLiked` (the `?sort=popular` views)
- * returns the same posts in another order, so it gets its own list.
+ * Identifies one ordered list. An operation serves several lists when a
+ * variable selects one: `popular` for `sortByMostLiked` (the `?sort=popular`
+ * views) and the search `product` (`Top`, `Latest`, `Media`).
  */
-export function getTimelineNamespace(operationName: string, sort?: 'popular'): string {
-  return sort === 'popular' ? `${operationName}#popular` : operationName;
+export function getTimelineNamespace(operationName: string, variant?: string): string {
+  return variant ? `${operationName}#${variant}` : operationName;
 }

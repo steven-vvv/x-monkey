@@ -12,14 +12,15 @@ export type TabId = 'feature' | 'database' | 'settings' | 'tools';
 
 interface FeatureTimelineContext {
   source?: FeatureTimelineSource;
-  username?: string;
+  /** What the list belongs to: a profile handle or a search query; absent for global lists. */
+  scope?: string;
   sort?: FeatureTimelineSort;
 }
 
 export type FeatureRoute =
   | { page: 'status'; tweetId: string }
   | { page: 'home-root' }
-  | ({ page: 'timeline' } & Required<Pick<FeatureTimelineContext, 'source'>> & Pick<FeatureTimelineContext, 'username' | 'sort'>)
+  | ({ page: 'timeline' } & Required<Pick<FeatureTimelineContext, 'source'>> & Pick<FeatureTimelineContext, 'scope' | 'sort'>)
   | ({ page: 'tweet'; tweetId: string } & FeatureTimelineContext)
   | ({ page: 'user'; userId: string } & FeatureTimelineContext)
   | { page: 'none' };
@@ -94,6 +95,13 @@ const PROFILE_TAB_SOURCES: Record<string, FeatureTimelineSource> = {
 
 const SORTABLE_SOURCES = new Set<FeatureTimelineSource>(['user-posts', 'user-all', 'user-highlights']);
 
+/** Search tabs by their `f` parameter; `/search` without it opens Top. */
+const SEARCH_TAB_SOURCES: Record<string, FeatureTimelineSource> = {
+  top: 'search-top',
+  live: 'search-latest',
+  media: 'search-media',
+};
+
 function resolveInitialHomeSource(): FeatureTimelineSource {
   const homeTimelineOrder = getTimelineCreatedOrderByAlias(getFeatureTimelineNamespace('home-timeline'));
   const homeLatestOrder = getTimelineCreatedOrderByAlias(getFeatureTimelineNamespace('home-latest-timeline'));
@@ -131,6 +139,12 @@ function resolveFeatureStack(url: string): FeatureRoute[] {
     ];
   }
 
+  if (segments.length === 1 && segments[0] === 'search') {
+    const query = params.get('q')?.trim();
+    const source = SEARCH_TAB_SOURCES[params.get('f') ?? 'top'];
+    return query && source ? [{ page: 'timeline', source, scope: query }] : [{ page: 'none' }];
+  }
+
   if (segments.length === 0 || segments.length > 2 || RESERVED_USER_ROOTS.has(segments[0])) {
     return [{ page: 'none' }];
   }
@@ -144,7 +158,7 @@ function resolveFeatureStack(url: string): FeatureRoute[] {
   if (!source) return [{ page: 'none' }];
 
   const sort = SORTABLE_SOURCES.has(source) && params.get('sort') === 'popular' ? 'popular' : undefined;
-  return [{ page: 'timeline', source, username, sort }];
+  return [{ page: 'timeline', source, scope: username, sort }];
 }
 
 export function syncFeatureRoute(): void {

@@ -112,29 +112,37 @@ function ingestEntities(parsed: ParsedResponse): void {
 }
 
 /**
- * User timelines are requested by `variables.userId`; the profile handle used
- * in feature routes is added as an alias once the owner's record is known.
+ * Finds the list a response belongs to. User timelines are requested by
+ * `variables.userId`; the profile handle used in feature routes is added as an
+ * alias once the owner's record is known. Search results belong to their query
+ * and product.
  */
-function resolveTimelineScope(
+function resolveTimelineIdentity(
   endpoint: EndpointSupportRecord,
   request: GraphqlRequestContext,
   parsed: TimelineParsedResponse,
-): { scope: string | null; aliases: string[] } {
-  if (endpoint.scope !== 'user') return { scope: null, aliases: [] };
+): { variant?: string; scope: string | null; aliases: string[] } {
+  if (endpoint.scope === 'query') {
+    const query = readStringVariable(request.variables, ['rawQuery']);
+    return { variant: readStringVariable(request.variables, ['product']) ?? undefined, scope: query, aliases: query ? [query] : [] };
+  }
+
+  const variant = request.variables?.sortByMostLiked === true ? 'popular' : undefined;
+  if (endpoint.scope !== 'user') return { variant, scope: null, aliases: [] };
 
   const ownerId = readStringVariable(request.variables, ['userId', 'rest_id']);
   const screenName = readStringVariable(request.variables, ['screen_name', 'screenName']);
   const owner = ownerId ? parsed.users.get(ownerId) ?? getDbUser(ownerId) : undefined;
   const aliases = [ownerId, screenName, owner?.handle].filter((alias): alias is string => !!alias);
-  return { scope: ownerId ?? screenName, aliases };
+  return { variant, scope: ownerId ?? screenName, aliases };
 }
 
 function ingestTimelineResponse(endpoint: EndpointSupportRecord, request: GraphqlRequestContext, parsed: TimelineParsedResponse): void {
   const label = endpoint.operationName;
   logParseWarnings(label, parsed);
 
-  const namespace = getTimelineNamespace(label, request.variables?.sortByMostLiked === true ? 'popular' : undefined);
-  const { scope, aliases } = resolveTimelineScope(endpoint, request, parsed);
+  const { variant, scope, aliases } = resolveTimelineIdentity(endpoint, request, parsed);
+  const namespace = getTimelineNamespace(label, variant);
   const timelineKey = buildTimelineRecordKey(namespace, scope);
 
   if (parsed.postIds.length === 0 && parsed.posts.size === 0) {

@@ -9,7 +9,7 @@ A lightweight userscript panel for continuously capturing and browsing X (Twitte
   [`../design/x-archive-model.md`](../design/x-archive-model.md)) held in an
   in-memory database. Promoted posts are skipped.
 - Shows a draggable/resizable Vue panel with four tabs:
-  - **Feature**: the timeline of the current page (profile tabs, bookmarks, likes, home feeds) and post details, backed by the in-memory database.
+  - **Feature**: the timeline of the current page (profile tabs, bookmarks, likes, search results, home feeds) and post details, backed by the in-memory database.
   - **Database**: full captured post list and entity detail views.
   - **Tools**: XHR capture; selected requests can be exported with their page URL, request and response.
   - **Settings**: panel size, scale, theme mode, and behavior options.
@@ -62,13 +62,15 @@ Supported operations, as used by the X web client in 2026-10:
 | `/<user>/media?filter=photo` | `UserPhotoTimeline` |
 | `/i/history`, `/i/bookmarks` | `Bookmarks` |
 | `/i/history/likes` | `Likes` |
+| `/search?q=…` (`f=top`, `f=live`, `f=media`) | `SearchTimeline` |
 | `/home` | `HomeTimeline`, `HomeLatestTimeline` |
 | `/<user>/status/<id>` | `TweetDetail` |
 
 `?sort=popular` on the Posts, All and Highlights tabs is kept as a separate timeline.
+Search results are kept per query and tab; the People and Lists tabs are not post lists.
 Pages and payload shapes that have not been captured yet (subscriber-only
-posts, polls and other card types, search) are not supported; an unsupported
-card keeps its raw string values in `extra`.
+posts, polls and other card types, list timelines) are not supported; an
+unsupported card keeps its raw string values in `extra`.
 
 ## Remote Database Build Options
 

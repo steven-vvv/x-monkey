@@ -250,6 +250,14 @@ function assertTraversalScenarios(): void {
 
   const bookmarks = parseTimelineResponse({ data: { bookmark_timeline_v2: { timeline: { instructions: [{ entries: [entry(rawTweet('64', '1'))] }] } } } });
   check(bookmarks.meta.instructionPath === 'data.bookmark_timeline_v2.timeline.instructions' && bookmarks.postIds.join() === '64', 'bookmarks path');
+
+  // Search: plain entries, a relevance prompt without a post, and the media tab's grid module.
+  const search = parseTimelineResponse({ data: { search_by_raw_query: { search_timeline: { timeline: { instructions: [{ type: 'TimelineAddEntries', entries: [
+    entry(rawTweet('65', '1')),
+    { content: { itemContent: { itemType: 'TimelinePrompt', content: { contentType: 'TimelineRelevancePrompt' } } } },
+    { content: { displayType: 'VerticalGrid', items: [{ item: { itemContent: { tweet_results: { result: rawTweet('66', '1') } } } }] } },
+  ] }] } } } } });
+  check(search.postIds.join() === '65,66' && search.meta.warnings.length === 0, 'search results path');
 }
 
 function assertMergeScenarios(): void {
