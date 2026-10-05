@@ -34,11 +34,19 @@ function notifyListeners() {
 // --- XHR capture broadcast (fan-out to multiple subscribers) ---
 export interface CapturedXhr {
   id: string;
+  /** Time the response finished loading. */
   timestamp: number;
+  /** Time `send()` was called. */
+  startedAt: number;
+  /** Page URL at the time `send()` was called. */
+  pageUrl: string;
   method: string;
   url: string;
   graphqlId: string;
   operationName: string;
+  /** Headers in `setRequestHeader()` call order, including sensitive values. */
+  requestHeaders: Array<[string, string]>;
+  requestBody: string | null;
   status: number;
   statusText: string;
   responseHeaders: string;
@@ -70,6 +78,15 @@ interface GraphqlRequestContext {
   graphqlId: string;
   operationName: string;
   variables: Record<string, unknown> | null;
+}
+
+interface TrackedXhrRequest {
+  method: string;
+  url: string;
+  requestHeaders: Array<[string, string]>;
+  requestBody: string | null;
+  pageUrl: string;
+  startedAt: number;
 }
 
 interface EndpointHandler<TParsed extends ParsedResponse> {
@@ -277,61 +294,100 @@ function handleGraphqlResponse(request: GraphqlRequestContext, responseBody: str
   }
 }
 
+function describeRequestBody(body: unknown): string | null {
+  if (body == null) return null;
+  if (typeof body === 'string') return body;
+  // Non-text bodies are not used by X GraphQL requests; keep only their type.
+  return `[${Object.prototype.toString.call(body).slice(8, -1)}]`;
+}
+
 export function installXhrInterceptor(): void {
   const XHR = unsafeWindow.XMLHttpRequest.prototype;
   const nativeOpen = XHR.open;
+  const nativeSetRequestHeader = XHR.setRequestHeader;
   const nativeSend = XHR.send;
 
-  const trackedUrls = new WeakMap<XMLHttpRequest, { url: string; method: string }>();
+  // State is reset on every open() so reused XHR objects never leak data between requests.
+  const trackedRequests = new WeakMap<XMLHttpRequest, TrackedXhrRequest>();
+  const listenedXhrs = new WeakSet<XMLHttpRequest>();
+
+  function handleTrackedLoad(this: XMLHttpRequest) {
+    if (this.readyState !== 4) return;
+    const tracked = trackedRequests.get(this);
+    if (!tracked) return;
+    trackedRequests.delete(this);
+
+    const match = GRAPHQL_RE.exec(tracked.url);
+    if (!match) return;
+    const request: GraphqlRequestContext = {
+      method: tracked.method,
+      url: tracked.url,
+      graphqlId: match[1],
+      operationName: match[2],
+      variables: extractRequestVariables(tracked.url),
+    };
+
+    const responseBody = this.responseText;
+    const responseHeaders = this.getAllResponseHeaders();
+
+    // Broadcast to all XHR capture listeners
+    broadcastXhrCapture({
+      id: String(++captureIdCounter),
+      timestamp: Date.now(),
+      startedAt: tracked.startedAt,
+      pageUrl: tracked.pageUrl,
+      method: tracked.method,
+      url: tracked.url,
+      graphqlId: request.graphqlId,
+      operationName: request.operationName,
+      requestHeaders: tracked.requestHeaders,
+      requestBody: tracked.requestBody,
+      status: this.status,
+      statusText: this.statusText,
+      responseHeaders,
+      responseBody,
+      responseSize: responseBody.length,
+    });
+
+    if (this.status === 200) {
+      handleGraphqlResponse(request, responseBody);
+    }
+  }
 
   XHR.open = function (this: XMLHttpRequest, ...args: any[]) {
     const method = String(args[0]).toUpperCase();
     const url = String(args[1]);
     if (GRAPHQL_RE.test(url)) {
-      trackedUrls.set(this, { url, method });
+      trackedRequests.set(this, {
+        method,
+        url,
+        requestHeaders: [],
+        requestBody: null,
+        pageUrl: '',
+        startedAt: 0,
+      });
+    } else {
+      trackedRequests.delete(this);
     }
     return nativeOpen.apply(this, args as any);
   };
 
+  XHR.setRequestHeader = function (this: XMLHttpRequest, name: string, value: string) {
+    const result = nativeSetRequestHeader.call(this, name, value);
+    trackedRequests.get(this)?.requestHeaders.push([String(name), String(value)]);
+    return result;
+  };
+
   XHR.send = function (this: XMLHttpRequest, ...args: any[]) {
-    const tracked = trackedUrls.get(this);
+    const tracked = trackedRequests.get(this);
     if (tracked) {
-      this.addEventListener('load', function () {
-        if (this.readyState === 4) {
-          const { url, method } = tracked;
-          const match = GRAPHQL_RE.exec(url);
-          if (!match) return;
-          const request: GraphqlRequestContext = {
-            method,
-            url,
-            graphqlId: match[1],
-            operationName: match[2],
-            variables: extractRequestVariables(url),
-          };
-
-          const responseBody = this.responseText;
-          const responseHeaders = this.getAllResponseHeaders();
-
-          // Broadcast to all XHR capture listeners
-          broadcastXhrCapture({
-            id: String(++captureIdCounter),
-            timestamp: Date.now(),
-            method,
-            url,
-            graphqlId: request.graphqlId,
-            operationName: request.operationName,
-            status: this.status,
-            statusText: this.statusText,
-            responseHeaders,
-            responseBody,
-            responseSize: responseBody.length,
-          });
-
-          if (this.status === 200) {
-            handleGraphqlResponse(request, responseBody);
-          }
-        }
-      });
+      tracked.requestBody = describeRequestBody(args[0]);
+      tracked.pageUrl = unsafeWindow.location.href;
+      tracked.startedAt = Date.now();
+      if (!listenedXhrs.has(this)) {
+        listenedXhrs.add(this);
+        this.addEventListener('load', handleTrackedLoad);
+      }
     }
     return nativeSend.apply(this, args as any);
   };

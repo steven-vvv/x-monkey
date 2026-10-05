@@ -1,44 +1,70 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 import { toolsRoute, toolsNavigateTo } from '../lib/store';
 import {
-  captures, isCapturing, toggleCapture, clearCaptures, getCaptureById, hashHex,
+  captures, isCapturing, toggleCapture, clearCaptures, getCaptureById,
+  isSelectingCaptures, selectedCaptureIds, setCaptureSelectionMode, toggleCaptureSelection,
+  selectAllCaptures, getSelectedCaptures,
   type CapturedXhr,
 } from '../lib/xhr-capture-service';
+import {
+  buildXhrCaptureExport,
+  getCaptureRequestHeaders,
+  getXhrCaptureExportFilename,
+  readCaptureQueryParam,
+} from '../lib/xhr-capture-export';
 import { GM_download } from '$';
 
 const route = toolsRoute;
 
 const captureList = computed(() => captures.value.slice().reverse());
 
+const allCapturesSelected = computed(() => {
+  return captures.value.length > 0 && captures.value.every((c) => selectedCaptureIds.has(c.id));
+});
+
+const downloadError = ref<string | null>(null);
+
+const listMetaText = computed(() => {
+  if (downloadError.value) return downloadError.value;
+  if (isSelectingCaptures.value) return `${selectedCaptureIds.size} of ${captures.value.length} selected`;
+  return `${captures.value.length} requests`;
+});
+
 const detailCapture = computed<CapturedXhr | undefined>(() => {
   if (route.value.page === 'xhr-detail') return getCaptureById(route.value.captureId);
   return undefined;
 });
 
-const detailVariables = computed<string | null>(() => {
-  const cap = detailCapture.value;
+function formatQueryParam(cap: CapturedXhr | undefined, name: 'variables' | 'features' | 'fieldToggles'): string | null {
   if (!cap) return null;
-  try {
-    const u = new URL(cap.url);
-    const vars = u.searchParams.get('variables');
-    if (vars) return JSON.stringify(JSON.parse(vars), null, 2);
-  } catch { /* ignore */ }
-  return null;
-});
+  const value = readCaptureQueryParam(cap, name);
+  if (value === undefined) return null;
+  return typeof value === 'string' ? value : JSON.stringify(value, null, 2);
+}
 
-const detailFeatures = computed<string | null>(() => {
+const detailVariables = computed(() => formatQueryParam(detailCapture.value, 'variables'));
+const detailFeatures = computed(() => formatQueryParam(detailCapture.value, 'features'));
+const detailFieldToggles = computed(() => formatQueryParam(detailCapture.value, 'fieldToggles'));
+
+const detailRequestHeaders = computed<string>(() => {
   const cap = detailCapture.value;
-  if (!cap) return null;
-  try {
-    const u = new URL(cap.url);
-    const feat = u.searchParams.get('features');
-    if (feat) return JSON.stringify(JSON.parse(feat), null, 2);
-  } catch { /* ignore */ }
-  return null;
+  if (!cap) return '';
+  return Object.entries(getCaptureRequestHeaders(cap))
+    .map(([name, value]) => `${name}: ${value}`)
+    .join('\n');
 });
 
 const PREVIEW_LIMIT = 4000;
+
+const detailRequestBodyPreview = computed<string>(() => {
+  const body = detailCapture.value?.requestBody ?? '';
+  return body.slice(0, PREVIEW_LIMIT);
+});
+
+const isRequestBodyTruncated = computed(() => {
+  return (detailCapture.value?.requestBody?.length ?? 0) > PREVIEW_LIMIT;
+});
 
 const detailResponsePreview = computed<string>(() => {
   const cap = detailCapture.value;
@@ -61,8 +87,33 @@ function openDetail(id: string) {
   toolsNavigateTo({ page: 'xhr-detail', captureId: id });
 }
 
+function onCaptureClick(id: string) {
+  if (isSelectingCaptures.value) toggleCaptureSelection(id);
+  else openDetail(id);
+}
+
 function onClear() {
   clearCaptures();
+  downloadError.value = null;
+}
+
+function toggleSelectionMode() {
+  setCaptureSelectionMode(!isSelectingCaptures.value);
+  downloadError.value = null;
+}
+
+function toggleSelectAll() {
+  if (allCapturesSelected.value) selectedCaptureIds.clear();
+  else selectAllCaptures();
+}
+
+function formatPagePath(url: string): string {
+  try {
+    const u = new URL(url);
+    return `${u.pathname}${u.search}`;
+  } catch {
+    return url;
+  }
 }
 
 function formatSize(bytes: number): string {
@@ -76,17 +127,38 @@ function formatTime(ts: number): string {
   return d.toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
 }
 
-function downloadResponse() {
-  const cap = detailCapture.value;
-  if (!cap) return;
-  const hash = hashHex(cap.responseBody);
-  let isJson = false;
-  try { JSON.parse(cap.responseBody); isJson = true; } catch { /* ignore */ }
-  const ext = isJson ? 'json' : 'bin';
-  const filename = `${cap.operationName}-${hash}.${ext}`;
-  const blob = new Blob([cap.responseBody], { type: isJson ? 'application/json' : 'application/octet-stream' });
+function formatDuration(cap: CapturedXhr): string {
+  return `${Math.max(0, cap.timestamp - cap.startedAt)} ms`;
+}
+
+function downloadCaptures(items: CapturedXhr[]) {
+  if (items.length === 0) return;
+  downloadError.value = null;
+
+  const blob = new Blob([buildXhrCaptureExport(items)], { type: 'application/json' });
   const blobUrl = URL.createObjectURL(blob);
-  GM_download({ url: blobUrl, name: filename });
+  const release = () => URL.revokeObjectURL(blobUrl);
+  GM_download({
+    url: blobUrl,
+    name: getXhrCaptureExportFilename(items),
+    onload: release,
+    onerror: (event) => {
+      release();
+      downloadError.value = `Download failed: ${event.error}${event.details ? ` (${event.details})` : ''}`;
+    },
+    ontimeout: () => {
+      release();
+      downloadError.value = 'Download timed out';
+    },
+  });
+}
+
+function downloadSelected() {
+  downloadCaptures(getSelectedCaptures());
+}
+
+function downloadDetail() {
+  if (detailCapture.value) downloadCaptures([detailCapture.value]);
 }
 
 function statusClass(status: number): string {
@@ -120,7 +192,8 @@ function statusClass(status: number): string {
           v-for="cap in captureList"
           :key="cap.id"
           class="xd-list-item xd-list-item--clickable"
-          @click="openDetail(cap.id)"
+          :class="{ 'xd-list-item--selected': selectedCaptureIds.has(cap.id) }"
+          @click="onCaptureClick(cap.id)"
         >
           <div class="xd-list-item-info">
             <div class="xd-list-item-title">
@@ -130,21 +203,48 @@ function statusClass(status: number): string {
             <div class="xd-list-item-meta">
               {{ cap.method }} · {{ formatSize(cap.responseSize) }} · {{ formatTime(cap.timestamp) }}
             </div>
+            <div class="xd-list-item-meta xd-text-ellipsis" :title="cap.pageUrl">{{ formatPagePath(cap.pageUrl) }}</div>
           </div>
         </div>
       </div>
       <div class="xd-tab-actions">
         <div class="xd-tab-actions-left">
+          <template v-if="!isSelectingCaptures">
+            <button
+              class="xd-btn xd-btn--sm"
+              :class="isCapturing ? 'xd-btn--error' : 'xd-btn--accent'"
+              @click="toggleCapture"
+            >
+              {{ isCapturing ? 'Stop' : 'Start' }}
+            </button>
+            <button class="xd-btn xd-btn--sm" @click="onClear">Clear</button>
+          </template>
           <button
             class="xd-btn xd-btn--sm"
-            :class="isCapturing ? 'xd-btn--error' : 'xd-btn--accent'"
-            @click="toggleCapture"
+            :class="{ 'xd-btn--accent': isSelectingCaptures }"
+            @click="toggleSelectionMode"
           >
-            {{ isCapturing ? 'Stop' : 'Start' }}
+            {{ isSelectingCaptures ? 'Cancel' : 'Select' }}
           </button>
-          <button class="xd-btn xd-btn--sm" @click="onClear">Clear</button>
+          <template v-if="isSelectingCaptures">
+            <button
+              class="xd-btn xd-btn--sm"
+              :class="{ 'xd-btn--accent': allCapturesSelected }"
+              :disabled="captureList.length === 0"
+              @click="toggleSelectAll"
+            >
+              {{ allCapturesSelected ? 'Clear All' : 'Select All' }}
+            </button>
+            <button
+              class="xd-btn xd-btn--sm xd-btn--accent"
+              :disabled="selectedCaptureIds.size === 0"
+              @click="downloadSelected"
+            >
+              Download
+            </button>
+          </template>
         </div>
-        <span class="xd-tab-meta">{{ captureList.length }} requests</span>
+        <span class="xd-tab-meta" :class="{ 'xd-tab-meta--error': downloadError }">{{ listMetaText }}</span>
       </div>
     </template>
 
@@ -157,24 +257,25 @@ function statusClass(status: number): string {
           <section class="xd-detail-section">
             <div class="xd-detail-section-title">General</div>
             <div class="xd-detail-grid">
-              <span class="xd-detail-label">Method</span>
-              <span class="xd-detail-value">{{ detailCapture.method }}</span>
-              <span></span>
-              <span class="xd-detail-label">Status</span>
-              <span class="xd-detail-value" :class="statusClass(detailCapture.status)">{{ detailCapture.status }} {{ detailCapture.statusText }}</span>
-
               <span class="xd-detail-label">Operation</span>
               <span class="xd-detail-value">{{ detailCapture.operationName }}</span>
-              <span></span>
               <span class="xd-detail-label">GraphQL ID</span>
               <span class="xd-detail-value">{{ detailCapture.graphqlId }}</span>
-
+              <span class="xd-detail-label">Method</span>
+              <span class="xd-detail-value">{{ detailCapture.method }}</span>
+              <span class="xd-detail-label">Status</span>
+              <span class="xd-detail-value" :class="statusClass(detailCapture.status)">{{ detailCapture.status }} {{ detailCapture.statusText }}</span>
               <span class="xd-detail-label">Size</span>
               <span class="xd-detail-value">{{ formatSize(detailCapture.responseSize) }}</span>
-              <span></span>
               <span class="xd-detail-label">Time</span>
-              <span class="xd-detail-value">{{ formatTime(detailCapture.timestamp) }}</span>
+              <span class="xd-detail-value">{{ formatTime(detailCapture.timestamp) }} ({{ formatDuration(detailCapture) }})</span>
             </div>
+          </section>
+
+          <!-- Page URL when the request was sent -->
+          <section class="xd-detail-section">
+            <div class="xd-detail-section-title">Page URL</div>
+            <div class="xd-detail-pre">{{ detailCapture.pageUrl || '(unknown)' }}</div>
           </section>
 
           <!-- Request URL -->
@@ -193,6 +294,29 @@ function statusClass(status: number): string {
           <section v-if="detailFeatures" class="xd-detail-section">
             <div class="xd-detail-section-title">Features</div>
             <div class="xd-detail-pre">{{ detailFeatures }}</div>
+          </section>
+
+          <!-- Field toggles (decoded) -->
+          <section v-if="detailFieldToggles" class="xd-detail-section">
+            <div class="xd-detail-section-title">Field Toggles</div>
+            <div class="xd-detail-pre">{{ detailFieldToggles }}</div>
+          </section>
+
+          <!-- Request Headers (credentials redacted) -->
+          <section class="xd-detail-section">
+            <div class="xd-detail-section-title">Request Headers</div>
+            <div class="xd-detail-pre">{{ detailRequestHeaders || '(empty)' }}</div>
+          </section>
+
+          <!-- Request Body -->
+          <section v-if="detailCapture.requestBody != null" class="xd-detail-section">
+            <div class="xd-detail-section-title">
+              Request Body
+              <span v-if="isRequestBodyTruncated" class="xd-detail-section-note">
+                (truncated, download for full)
+              </span>
+            </div>
+            <div class="xd-detail-pre">{{ detailRequestBodyPreview }}</div>
           </section>
 
           <!-- Response Headers -->
@@ -214,8 +338,10 @@ function statusClass(status: number): string {
         </template>
       </div>
       <div v-if="detailCapture" class="xd-tab-actions">
-        <span class="xd-tab-meta">{{ detailCapture.operationName }}</span>
-        <button class="xd-btn xd-btn--sm xd-btn--accent" @click="downloadResponse">Download Response</button>
+        <span class="xd-tab-meta" :class="{ 'xd-tab-meta--error': downloadError }">
+          {{ downloadError ?? detailCapture.operationName }}
+        </span>
+        <button class="xd-btn xd-btn--sm xd-btn--accent" @click="downloadDetail">Download</button>
       </div>
     </template>
   </div>
