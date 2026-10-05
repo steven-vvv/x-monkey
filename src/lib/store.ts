@@ -1,6 +1,11 @@
 import { reactive, computed, ref } from 'vue';
 import { unsafeWindow } from '$';
-import { getFeatureTimelineLabel, getFeatureTimelineOperation, type FeatureTimelineSource } from './feature-timeline';
+import {
+  getFeatureTimelineLabel,
+  getFeatureTimelineNamespace,
+  type FeatureTimelineSort,
+  type FeatureTimelineSource,
+} from './feature-timeline';
 import { getTimelineCreatedOrderByAlias } from './timeline-store';
 
 export type TabId = 'feature' | 'database' | 'settings' | 'tools';
@@ -8,12 +13,13 @@ export type TabId = 'feature' | 'database' | 'settings' | 'tools';
 interface FeatureTimelineContext {
   source?: FeatureTimelineSource;
   username?: string;
+  sort?: FeatureTimelineSort;
 }
 
 export type FeatureRoute =
   | { page: 'status'; tweetId: string }
   | { page: 'home-root' }
-  | ({ page: 'timeline' } & Required<Pick<FeatureTimelineContext, 'source'>> & Pick<FeatureTimelineContext, 'username'>)
+  | ({ page: 'timeline' } & Required<Pick<FeatureTimelineContext, 'source'>> & Pick<FeatureTimelineContext, 'username' | 'sort'>)
   | ({ page: 'tweet'; tweetId: string } & FeatureTimelineContext)
   | ({ page: 'user'; userId: string } & FeatureTimelineContext)
   | { page: 'none' };
@@ -67,19 +73,31 @@ const RESERVED_USER_ROOTS = new Set([
   'i',
 ]);
 
-function getPathSegments(url: string): string[] {
+function parseXUrl(url: string): { segments: string[]; params: URLSearchParams } {
   try {
     const parsed = new URL(url);
-    if (parsed.origin !== 'https://x.com') return [];
-    return parsed.pathname.split('/').filter(Boolean);
+    if (parsed.origin !== 'https://x.com') return { segments: [], params: new URLSearchParams() };
+    return { segments: parsed.pathname.split('/').filter(Boolean), params: parsed.searchParams };
   } catch {
-    return [];
+    return { segments: [], params: new URLSearchParams() };
   }
 }
 
+/** Profile tabs: `/<user>` is Posts, `/<user>/<tab>` the others (2026-10 layout). */
+const PROFILE_TAB_SOURCES: Record<string, FeatureTimelineSource> = {
+  all: 'user-all',
+  highlights: 'user-highlights',
+  with_replies: 'user-replies',
+  reposts: 'user-reposts',
+  articles: 'user-articles',
+  subs: 'user-subs',
+};
+
+const SORTABLE_SOURCES = new Set<FeatureTimelineSource>(['user-posts', 'user-all', 'user-highlights']);
+
 function resolveInitialHomeSource(): FeatureTimelineSource {
-  const homeTimelineOrder = getTimelineCreatedOrderByAlias(getFeatureTimelineOperation('home-timeline'));
-  const homeLatestOrder = getTimelineCreatedOrderByAlias(getFeatureTimelineOperation('home-latest-timeline'));
+  const homeTimelineOrder = getTimelineCreatedOrderByAlias(getFeatureTimelineNamespace('home-timeline'));
+  const homeLatestOrder = getTimelineCreatedOrderByAlias(getFeatureTimelineNamespace('home-latest-timeline'));
 
   if (homeTimelineOrder == null && homeLatestOrder == null) {
     return 'home-timeline';
@@ -94,14 +112,17 @@ function resolveInitialHomeSource(): FeatureTimelineSource {
 }
 
 function resolveFeatureStack(url: string): FeatureRoute[] {
-  const segments = getPathSegments(url);
+  const { segments, params } = parseXUrl(url);
 
   if (segments.length >= 3 && segments[1] === 'status' && /^\d+$/.test(segments[2])) {
     return [{ page: 'status', tweetId: segments[2] }];
   }
 
-  if (segments.length === 2 && segments[0] === 'i' && segments[1] === 'bookmarks') {
-    return [{ page: 'timeline', source: 'bookmarks' }];
+  if (segments[0] === 'i') {
+    const path = segments.slice(1).join('/');
+    if (path === 'bookmarks' || path === 'history') return [{ page: 'timeline', source: 'bookmarks' }];
+    if (path === 'history/likes') return [{ page: 'timeline', source: 'likes' }];
+    return [{ page: 'none' }];
   }
 
   if (segments.length === 1 && segments[0] === 'home') {
@@ -111,15 +132,20 @@ function resolveFeatureStack(url: string): FeatureRoute[] {
     ];
   }
 
-  if (segments.length === 2 && segments[1] === 'media') {
-    return [{ page: 'timeline', source: 'user-media', username: segments[0] }];
+  if (segments.length === 0 || segments.length > 2 || RESERVED_USER_ROOTS.has(segments[0])) {
+    return [{ page: 'none' }];
   }
 
-  if (segments.length === 1 && !RESERVED_USER_ROOTS.has(segments[0])) {
-    return [{ page: 'timeline', source: 'user-tweets', username: segments[0] }];
-  }
+  const [username, tab] = segments;
+  const source: FeatureTimelineSource | undefined = tab === undefined
+    ? 'user-posts'
+    : tab === 'media'
+      ? (params.get('filter') === 'photo' ? 'user-photos' : 'user-videos')
+      : PROFILE_TAB_SOURCES[tab];
+  if (!source) return [{ page: 'none' }];
 
-  return [{ page: 'none' }];
+  const sort = SORTABLE_SOURCES.has(source) && params.get('sort') === 'popular' ? 'popular' : undefined;
+  return [{ page: 'timeline', source, username, sort }];
 }
 
 export function syncFeatureRoute(): void {
@@ -141,7 +167,7 @@ export const featureBreadcrumbs = computed<Breadcrumb[]>(() => {
     let label = 'Page';
     if (r.page === 'status') label = 'Status';
     else if (r.page === 'home-root') label = 'Home';
-    else if (r.page === 'timeline') label = getFeatureTimelineLabel(r.source);
+    else if (r.page === 'timeline') label = getFeatureTimelineLabel(r.source, r.sort);
     else if (r.page === 'tweet') label = 'Tweet';
     else if (r.page === 'user') label = 'User';
     else label = 'Feature';

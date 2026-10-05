@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { computed } from 'vue';
-import type { DbMediaRecord } from '../lib/types';
+import type { Media } from '../archive/model';
 import { getConfig } from '../lib/config-service';
-import { getMediaOpenUrl, getMediaThumbUrl } from '../lib/tweet-selectors';
+import { getMediaOpenUrl, getMediaThumbUrl } from '../lib/post-view';
 import { getMediaSensitivityOverlayText } from '../lib/view-format';
 
-const props = defineProps<{ media: DbMediaRecord[] }>();
+const props = defineProps<{ media: Media[] }>();
 
 const emit = defineEmits<{
   (e: 'open', url: string): void;

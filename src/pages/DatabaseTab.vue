@@ -1,28 +1,29 @@
 <script setup lang="ts">
 import { computed } from 'vue';
+import type { Post } from '../archive/model';
 import { dbRoute, dbNavigateTo } from '../lib/store';
-import {
-  getAllTweets, getDbTweet, getDbUser, getReplies,
-  dbVersion,
-} from '../lib/db-service';
+import { dbVersion, getAllPosts, getDbPost, getDbUser, getDisplayPost, getReplies } from '../lib/db-service';
 import { clearCaptureState } from '../lib/capture-state-service';
-import type { DbTweet } from '../lib/db-service';
 import { GM_openInTab } from '$';
-import { getTweetOpenUrl, getUserOpenUrl } from '../lib/tweet-selectors';
+import { getPostOpenUrl, getUserOpenUrl } from '../lib/post-view';
 import { toTweetCompactCardItem } from '../lib/view-format';
 import TweetCompactCard from '../components/TweetCompactCard.vue';
 import TweetDetailView from '../components/TweetDetailView.vue';
 import UserDetailCard from '../components/UserDetailCard.vue';
 import RemoteDbTweetPanel from '../components/RemoteDbTweetPanel.vue';
-import { isRemoteDbTweetApiReady } from '../lib/remote-db';
+import { isRemoteDbReady } from '../lib/remote-db';
 
 const route = dbRoute;
 
-const tweetListCards = computed(() => {
+// Pure reposts are listed through the original they point to.
+const postListCards = computed(() => {
   void dbVersion.value;
-  return getAllTweets()
-    .sort((a, b) => b._ts - a._ts)
-    .map((tweet) => toTweetCompactCardItem(tweet, getDbUser(tweet.authorId)));
+  const seen = new Set<string>();
+  return getAllPosts()
+    .map(getDisplayPost)
+    .filter((post) => !seen.has(post.id) && seen.add(post.id))
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    .map((post) => toTweetCompactCardItem(post, getDbUser(post.authorId)));
 });
 
 function openTweet(id: string) {
@@ -33,10 +34,8 @@ function openUser(id: string) {
   dbNavigateTo({ page: 'user', userId: id });
 }
 
-function openOriginal(t: DbTweet) {
-  const u = getDbUser(t.authorId);
-  const url = getTweetOpenUrl(t, u);
-  if (url) GM_openInTab(url, { active: true });
+function openOriginal(post: Post) {
+  GM_openInTab(getPostOpenUrl(post, getDbUser(post.authorId)), { active: true });
 }
 
 function openMediaUrl(url: string) {
@@ -44,38 +43,33 @@ function openMediaUrl(url: string) {
 }
 
 function openProfile(userId: string) {
-  const u = getDbUser(userId);
-  if (u) GM_openInTab(getUserOpenUrl(u), { active: true });
+  const user = getDbUser(userId);
+  if (user) GM_openInTab(getUserOpenUrl(user), { active: true });
 }
 
-// Detail tweet computeds
-const detailTweet = computed(() => {
+const detailPost = computed(() => {
   void dbVersion.value;
-  if (route.value.page === 'tweet') return getDbTweet(route.value.tweetId) ?? null;
-  return null;
+  if (route.value.page !== 'tweet') return null;
+  const post = getDbPost(route.value.tweetId);
+  return post ? getDisplayPost(post) : null;
 });
 
 const detailReplies = computed(() => {
   void dbVersion.value;
-  if (!detailTweet.value) return [];
-  return getReplies(detailTweet.value.id);
+  return detailPost.value ? getReplies(detailPost.value.id) : [];
 });
 
-const detailRemoteSyncTweets = computed(() => {
-  if (!detailTweet.value) return [];
-  return [detailTweet.value, ...detailReplies.value];
+const detailRemoteSyncPosts = computed(() => {
+  return detailPost.value ? [detailPost.value, ...detailReplies.value] : [];
 });
 
-// User detail computeds
 const detailUser = computed(() => {
   void dbVersion.value;
   if (route.value.page === 'user') return getDbUser(route.value.userId) ?? null;
   return null;
 });
 
-const shouldShowRemoteDbPanel = computed(() => {
-  return isRemoteDbTweetApiReady();
-});
+const shouldShowRemoteDbPanel = computed(() => isRemoteDbReady());
 </script>
 
 <template>
@@ -83,9 +77,9 @@ const shouldShowRemoteDbPanel = computed(() => {
     <div class="xd-body">
       <!-- List page -->
       <template v-if="route.page === 'list'">
-        <div v-if="tweetListCards.length === 0" class="xd-empty">Database is empty</div>
+        <div v-if="postListCards.length === 0" class="xd-empty">Database is empty</div>
         <TweetCompactCard
-          v-for="item in tweetListCards"
+          v-for="item in postListCards"
           :key="item.tweetId"
           :item="item"
           @select="openTweet"
@@ -94,10 +88,10 @@ const shouldShowRemoteDbPanel = computed(() => {
 
       <!-- Tweet detail -->
       <template v-else-if="route.page === 'tweet'">
-        <div v-if="!detailTweet" class="xd-empty">Tweet not found</div>
+        <div v-if="!detailPost" class="xd-empty">Post not found</div>
         <template v-else>
           <TweetDetailView
-            :tweet="detailTweet"
+            :post="detailPost"
             :replies="detailReplies"
             @open-user="openUser"
             @open-original="openOriginal"
@@ -107,8 +101,8 @@ const shouldShowRemoteDbPanel = computed(() => {
             <template #after-detail>
               <RemoteDbTweetPanel
                 v-if="shouldShowRemoteDbPanel"
-                :tweet="detailTweet"
-                :batch-sync-tweets="detailRemoteSyncTweets"
+                :post="detailPost"
+                :batch-sync-posts="detailRemoteSyncPosts"
               />
             </template>
           </TweetDetailView>
@@ -125,7 +119,7 @@ const shouldShowRemoteDbPanel = computed(() => {
     </div>
 
     <div class="xd-tab-actions">
-      <span class="xd-tab-meta">{{ tweetListCards.length }} tweets</span>
+      <span class="xd-tab-meta">{{ postListCards.length }} posts</span>
       <button class="xd-btn xd-btn--sm xd-btn--error" @click="clearCaptureState">Clear</button>
     </div>
   </div>

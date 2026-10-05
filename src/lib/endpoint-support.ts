@@ -1,90 +1,46 @@
-export type EndpointKind = 'timeline' | 'tweet-detail' | 'user';
+export type EndpointKind = 'timeline' | 'tweet-detail';
 
 export interface EndpointSupportRecord {
   operationName: string;
   kind: EndpointKind;
-  dumpDir: string;
-  extraDumpDirs?: readonly string[];
-  supportVersion: number;
+  /** `user` timelines belong to the profile in `variables.userId`; `global` ones are a single list. */
+  scope?: 'user' | 'global';
+  /** New pages land on top (home feeds) instead of being appended. */
+  prepend?: boolean;
 }
 
+/** GraphQL operations captured into the in-memory database (2026-10 web client). */
 export const SUPPORTED_ENDPOINTS = [
-  {
-    operationName: 'TweetDetail',
-    kind: 'tweet-detail',
-    dumpDir: 'dumps/TweetDetail',
-    supportVersion: 1,
-  },
-  {
-    operationName: 'Bookmarks',
-    kind: 'timeline',
-    dumpDir: 'dumps/Bookmarks',
-    supportVersion: 1,
-  },
-  {
-    operationName: 'HomeTimeline',
-    kind: 'timeline',
-    dumpDir: 'dumps/HomeTimeline',
-    supportVersion: 1,
-  },
-  {
-    operationName: 'HomeLatestTimeline',
-    kind: 'timeline',
-    dumpDir: 'dumps/HomeLatestTimeline',
-    supportVersion: 1,
-  },
-  {
-    operationName: 'UserTweets',
-    kind: 'timeline',
-    dumpDir: 'dumps/UserTweets',
-    supportVersion: 1,
-  },
-  {
-    operationName: 'UserMedia',
-    kind: 'timeline',
-    dumpDir: 'dumps/UserMedia',
-    supportVersion: 1,
-  },
+  { operationName: 'TweetDetail', kind: 'tweet-detail' },
+  { operationName: 'HomeTimeline', kind: 'timeline', scope: 'global', prepend: true },
+  { operationName: 'HomeLatestTimeline', kind: 'timeline', scope: 'global', prepend: true },
+  { operationName: 'Bookmarks', kind: 'timeline', scope: 'global' },
+  // Likes are private since 2024: the list always belongs to the signed-in account.
+  { operationName: 'Likes', kind: 'timeline', scope: 'global' },
+  { operationName: 'UserOriginalsTimeline', kind: 'timeline', scope: 'user' },
+  { operationName: 'UserTweetsAndReplies', kind: 'timeline', scope: 'user' },
+  { operationName: 'UserHighlightsTweets', kind: 'timeline', scope: 'user' },
+  { operationName: 'UserRepliesTimeline', kind: 'timeline', scope: 'user' },
+  { operationName: 'UserRepostsTimeline', kind: 'timeline', scope: 'user' },
+  { operationName: 'UserArticlesTweets', kind: 'timeline', scope: 'user' },
+  { operationName: 'UserSuperFollowTweets', kind: 'timeline', scope: 'user' },
+  { operationName: 'UserVideoTimeline', kind: 'timeline', scope: 'user' },
+  { operationName: 'UserPhotoTimeline', kind: 'timeline', scope: 'user' },
 ] as const satisfies readonly EndpointSupportRecord[];
 
-export const FIXTURE_ENDPOINTS = [
-  ...SUPPORTED_ENDPOINTS,
-  {
-    operationName: 'SearchTimeline',
-    kind: 'timeline',
-    dumpDir: 'dumps/SearchTimeline',
-    supportVersion: 1,
-  },
-  {
-    operationName: 'UserTweetsAndReplies',
-    kind: 'timeline',
-    dumpDir: 'dumps/UserTweetsAndReplies',
-    supportVersion: 1,
-  },
-  {
-    operationName: 'UserByScreenName',
-    kind: 'user',
-    dumpDir: 'dumps/UserByScreenName',
-    supportVersion: 1,
-  },
-  {
-    operationName: 'UsersByRestIds',
-    kind: 'user',
-    dumpDir: 'dumps/UsersByRestIds',
-    supportVersion: 1,
-  },
-] as const satisfies readonly EndpointSupportRecord[];
+export type SupportedEndpoint = (typeof SUPPORTED_ENDPOINTS)[number];
+export type SupportedTimelineOperationName = Extract<SupportedEndpoint, { kind: 'timeline' }>['operationName'];
 
-export type SupportedEndpointOperationName = (typeof SUPPORTED_ENDPOINTS)[number]['operationName'];
-export type SupportedTimelineOperationName = Extract<(typeof SUPPORTED_ENDPOINTS)[number], { kind: 'timeline' }>['operationName'];
-export type FixtureEndpointOperationName = (typeof FIXTURE_ENDPOINTS)[number]['operationName'];
+const endpointsByName = new Map<string, EndpointSupportRecord>(SUPPORTED_ENDPOINTS.map((item) => [item.operationName, item]));
 
-const supportedEndpointNameSet = new Set<string>(SUPPORTED_ENDPOINTS.map((item) => item.operationName));
-
-export function isSupportedEndpointOperation(value: string): value is SupportedEndpointOperationName {
-  return supportedEndpointNameSet.has(value);
+export function getSupportedEndpoint(operationName: string): EndpointSupportRecord | undefined {
+  return endpointsByName.get(operationName);
 }
 
-export function getEndpointFixtureDirs(endpoint: EndpointSupportRecord): readonly string[] {
-  return endpoint.extraDumpDirs ? [endpoint.dumpDir, ...endpoint.extraDumpDirs] : [endpoint.dumpDir];
+/**
+ * Identifies one ordered list. `sortByMostLiked` (the `?sort=popular` views)
+ * returns the same posts in another order, so it gets its own list.
+ */
+export function getTimelineNamespace(operationName: string, sort?: 'popular'): string {
+  return sort === 'popular' ? `${operationName}#popular` : operationName;
 }

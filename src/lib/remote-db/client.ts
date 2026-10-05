@@ -4,20 +4,13 @@ import { REMOTE_DB_BUILD, normalizeRemoteDbBaseUrl } from './build';
 import type {
   RemoteDbClientConfig,
   RemoteDbClientState,
-  RemoteDbQueryObjectResult,
   RemoteDbQueryRequest,
   RemoteDbQueryResponse,
-  RemoteDbQuerySummary,
-  RemoteDbQueryTweetData,
-  RemoteDbQueryUserData,
   RemoteDbSessionResponse,
   RemoteDbSessionResponseWire,
   RemoteDbSessionState,
-  RemoteDbSubmissionEnvelope,
+  RemoteDbSubmission,
   RemoteDbSubmitResponse,
-  RemoteDbTweetBundleBatchQuery,
-  RemoteDbTweetBundle,
-  RemoteDbTweetBundleQuery,
 } from './types';
 
 const REMOTE_DB_REQUEST_TIMEOUT_MS = 15000;
@@ -298,30 +291,6 @@ async function handleProtectedRequestError(error: unknown): Promise<never> {
   throw error;
 }
 
-function findResult<T>(
-  results: Array<RemoteDbQueryObjectResult<T>>,
-  id: string,
-): RemoteDbQueryObjectResult<T> {
-  return results.find((item) => item.id === id) ?? {
-    id,
-    status: 'failed',
-    error: 'Remote database response is missing this selector result',
-  };
-}
-
-function createQuerySummary(results: Array<RemoteDbQueryObjectResult<unknown>>): RemoteDbQuerySummary {
-  return results.reduce<RemoteDbQuerySummary>(
-    (summary, item) => {
-      summary.total += 1;
-      if (item.status === 'found') summary.found += 1;
-      else if (item.status === 'missing') summary.missing += 1;
-      else summary.failed += 1;
-      return summary;
-    },
-    { total: 0, found: 0, missing: 0, failed: 0 },
-  );
-}
-
 function uniqueValues(values: Array<string | null | undefined>): string[] {
   return [...new Set(values.filter(Boolean) as string[])];
 }
@@ -375,7 +344,7 @@ export async function refreshRemoteDbSession(): Promise<RemoteDbSessionResponse 
   return refreshSessionInternal(baseUrl, currentToken);
 }
 
-export function isRemoteDbTweetApiReady(): boolean {
+export function isRemoteDbReady(): boolean {
   return remoteDbState.enabled
     && remoteDbState.runtimeEnabled
     && remoteDbState.lifecycle === 'ready'
@@ -383,106 +352,39 @@ export function isRemoteDbTweetApiReady(): boolean {
     && Boolean(remoteDbState.baseUrl);
 }
 
-export async function queryRemoteDbTweetBundle(
-  query: RemoteDbTweetBundleQuery,
-): Promise<RemoteDbTweetBundle> {
-  if (!isRemoteDbTweetApiReady()) {
-    throw new Error('Remote database client is not ready for tweet queries');
+export async function queryRemoteDbArchive(request: RemoteDbQueryRequest): Promise<RemoteDbQueryResponse> {
+  if (!isRemoteDbReady()) {
+    throw new Error('Remote database client is not ready for queries');
   }
 
-  const normalizedMediaIds = [...new Set((query.mediaIds ?? []).filter(Boolean))];
   try {
-    const body: RemoteDbQueryRequest = {
-      users: query.authorId ? [{ id: query.authorId }] : [],
-      tweets: [{ id: query.tweetId }],
-      media: normalizedMediaIds.map((id) => ({ id })),
-    };
     const payload = await requestJson<RemoteDbQueryResponse>({
       method: 'POST',
-      path: '/api/v1/tweet/query',
-      body,
+      path: '/api/v1/archive/query',
+      body: {
+        users: uniqueValues(request.users),
+        posts: uniqueValues(request.posts),
+        media: uniqueValues(request.media),
+      } satisfies RemoteDbQueryRequest,
     });
 
     remoteDbState.lastError = null;
-
-    return {
-      summary: payload.summary,
-      tweet: findResult(payload.tweets, query.tweetId),
-      author: query.authorId ? findResult(payload.users, query.authorId) : null,
-      media: normalizedMediaIds.map((id) => findResult(payload.media, id)),
-    };
+    return payload;
   } catch (error) {
     return handleProtectedRequestError(error);
   }
 }
 
-export async function queryRemoteDbTweetBundles(
-  query: RemoteDbTweetBundleBatchQuery,
-): Promise<RemoteDbTweetBundle[]> {
-  if (!isRemoteDbTweetApiReady()) {
-    throw new Error('Remote database client is not ready for tweet queries');
-  }
-
-  const normalizedItems = query.items
-    .filter((item) => item.tweetId)
-    .map((item) => ({
-      tweetId: item.tweetId,
-      authorId: item.authorId ?? null,
-      mediaIds: uniqueValues(item.mediaIds ?? []),
-    }));
-
-  if (normalizedItems.length === 0) {
-    return [];
-  }
-
-  try {
-    const body: RemoteDbQueryRequest = {
-      users: uniqueValues(normalizedItems.map((item) => item.authorId)).map((id) => ({ id })),
-      tweets: uniqueValues(normalizedItems.map((item) => item.tweetId)).map((id) => ({ id })),
-      media: uniqueValues(normalizedItems.flatMap((item) => item.mediaIds)).map((id) => ({ id })),
-    };
-    const payload = await requestJson<RemoteDbQueryResponse>({
-      method: 'POST',
-      path: '/api/v1/tweet/query',
-      body,
-    });
-
-    remoteDbState.lastError = null;
-
-    return normalizedItems.map((item) => {
-      const tweet = findResult(payload.tweets, item.tweetId);
-      const author = item.authorId ? findResult(payload.users, item.authorId) : null;
-      const media = item.mediaIds.map((id) => findResult(payload.media, id));
-      const summary = createQuerySummary([
-        tweet,
-        ...(author ? [author] : []),
-        ...media,
-      ]);
-
-      return {
-        summary,
-        tweet,
-        author,
-        media,
-      };
-    });
-  } catch (error) {
-    return handleProtectedRequestError(error);
-  }
-}
-
-export async function submitRemoteDbSubmission(
-  payload: RemoteDbSubmissionEnvelope,
-): Promise<RemoteDbSubmitResponse> {
-  if (!isRemoteDbTweetApiReady()) {
+export async function submitRemoteDbArchive(submission: RemoteDbSubmission): Promise<RemoteDbSubmitResponse> {
+  if (!isRemoteDbReady()) {
     throw new Error('Remote database client is not ready for submissions');
   }
 
   try {
     const response = await requestJson<RemoteDbSubmitResponse>({
       method: 'POST',
-      path: '/api/v1/tweet/submit',
-      body: payload,
+      path: '/api/v1/archive/submit',
+      body: submission,
     });
 
     remoteDbState.lastError = null;
@@ -491,8 +393,3 @@ export async function submitRemoteDbSubmission(
     return handleProtectedRequestError(error);
   }
 }
-
-export type {
-  RemoteDbQueryTweetData,
-  RemoteDbQueryUserData,
-};

@@ -311,6 +311,11 @@ export const UserSchema = strictObject({
   professional: ProfessionalProfileSchema.optional(),
   profile_bio: strictObject({
     description: z.string(),
+    /** 2026-10 起取代 `legacy.entities`；`description` 可能是空对象。 */
+    entities: strictObject({
+      description: strictObject({ urls: z.array(UrlEntitySchema).optional() }).optional(),
+      url: UrlContainerSchema.optional(),
+    }).optional(),
   }).optional(),
   profile_description_language: z.string().optional(),
   profile_image_shape: z.string().optional(),
@@ -319,12 +324,24 @@ export const UserSchema = strictObject({
     blocking: z.boolean().optional(),
     followed_by: z.boolean().optional(),
     following: z.boolean().optional(),
+    live_following: z.boolean().optional(),
     muting: z.boolean().optional(),
   }).optional(),
   super_follow_eligible: z.boolean().optional(),
   super_followed_by: z.boolean().optional(),
   super_following: z.boolean().optional(),
   verification: UserVerificationSchema.optional(),
+  // 2026-10 起 `legacy` 不再下发，以下顶层对象取代其中的字段。
+  action_counts: strictObject({ favorites_count: z.number().optional() }).optional(),
+  banner: strictObject({ image_url: z.string() }).optional(),
+  notifications_settings: strictObject({ notifications_enabled: z.boolean().optional() }).optional(),
+  pinned_items: strictObject({ tweet_ids_str: z.array(z.string()).optional() }).optional(),
+  possibly_sensitive: z.boolean().optional(),
+  profile_metadata: strictObject({ profile_interstitial_type: z.string().optional() }).optional(),
+  profile_translation: strictObject({ translator_type: z.string().optional() }).optional(),
+  relationship_counts: strictObject({ followers: z.number().optional(), following: z.number().optional() }).optional(),
+  tweet_counts: strictObject({ media_tweets: z.number().optional(), tweets: z.number().optional() }).optional(),
+  website: strictObject({ url: z.string() }).optional(),
 });
 export type User = z.infer<typeof UserSchema>;
 
@@ -495,6 +512,8 @@ export const MediaSchema = strictObject({
   }).optional(),
   features: MediaFeaturesSchema.optional(),
   additional_media_info: AdditionalMediaInfoSchema.optional(),
+  /** 2026-10 起取代 `additional_media_info.source_user`。 */
+  source_user_results: UserResultContainerSchema.optional(),
   allow_download_status: strictObject({
     allow_download: z.boolean().optional(),
   }).optional(),
@@ -539,6 +558,7 @@ export type NoteTweetRichText = z.infer<typeof NoteTweetRichTextSchema>;
 /** Note Tweet 中复用的实体集合。 */
 export const NoteTweetEntitySetSchema = strictObject({
   hashtags: z.array(HashtagEntitySchema).optional(),
+  smarttags: z.array(z.unknown()).optional(),
   symbols: z.array(z.unknown()).optional(),
   timestamps: z.array(z.unknown()).optional(),
   urls: z.array(UrlEntitySchema).optional(),
@@ -612,6 +632,7 @@ export type GrokAnnotations = z.infer<typeof GrokAnnotationsSchema>;
 /** 自动翻译附带的数据内容。 */
 export const GrokTranslatedPostDataSchema = strictObject({
   associated_data: strictObject({}).optional(),
+  preview_translation: z.string().optional(),
   destination_language: z.string().optional(),
   entities: TweetEntitiesSchema.optional(),
   source_language: z.string().optional(),
@@ -654,6 +675,11 @@ export type PreviousCounts = z.infer<typeof PreviousCountsSchema>;
 export const ContentDisclosureSchema = strictObject({
   advertising_disclosure: strictObject({
     is_paid_promotion: z.boolean().optional(),
+  }).optional(),
+  ai_generated_disclosure: strictObject({
+    ai_generated_detection_source: z.string().optional(),
+    can_edit: z.boolean().optional(),
+    has_ai_generated_media: z.boolean().optional(),
   }).optional(),
 });
 export type ContentDisclosure = z.infer<typeof ContentDisclosureSchema>;
@@ -733,7 +759,9 @@ export type ArticleInlineStyleRange = z.infer<typeof ArticleInlineStyleRangeSche
 
 /** 文章正文中的 block。 */
 export const ArticleContentBlockSchema = strictObject({
-  data: strictObject({}).optional(),
+  data: strictObject({
+    urls: z.array(z.unknown()).optional(),
+  }).optional(),
   entityRanges: z.array(ArticleEntityRangeSchema).optional(),
   inlineStyleRanges: z.array(ArticleInlineStyleRangeSchema).optional(),
   key: z.string().optional(),
@@ -842,7 +870,8 @@ export type CardLegacy = z.infer<typeof CardLegacySchema>;
 
 /** 帖子卡片。 */
 export const CardSchema = strictObject({
-  legacy: CardLegacySchema,
+  /** 未展开的卡片只有 `rest_id`（t.co 链接）。 */
+  legacy: CardLegacySchema.optional(),
   rest_id: z.string(),
 });
 export type Card = z.infer<typeof CardSchema>;
@@ -856,7 +885,8 @@ export type TweetReference = z.infer<typeof TweetReferenceSchema>;
 
 /** 轻量帖子引用容器。 */
 export const TweetReferenceEnvelopeSchema = strictObject({
-  result: TweetReferenceSchema,
+  /** 被引帖子不可见时为空对象。 */
+  result: TweetReferenceSchema.optional(),
 });
 export type TweetReferenceEnvelope = z.infer<typeof TweetReferenceEnvelopeSchema>;
 
@@ -936,6 +966,8 @@ function createTweetDataShape() {
   article: ArticleSchema.optional(),
   birdwatch_pivot: BirdwatchPivotSchema.optional(),
   card: CardSchema.optional(),
+  /** 当前样本恒为空数组；出现内容时让覆盖检查报警。 */
+  cashtag_attachments: z.array(z.never()).optional(),
   content_disclosure: ContentDisclosureSchema.optional(),
   core: TweetCoreSchema,
   edit_control: EditControlSchema.optional(),
@@ -950,6 +982,8 @@ function createTweetDataShape() {
   quotedRefResult: TweetReferenceEnvelopeSchema.optional(),
   quick_promote_eligibility: QuickPromoteEligibilitySchema.optional(),
   quoted_status_result: OptionalTweetResultEnvelopeSchema.optional(),
+  /** 被引帖子自带的下一层引用（2026-10 起）。 */
+  nested_quoted_tweet_results: OptionalTweetResultEnvelopeSchema.optional(),
   rest_id: z.string(),
   source: z.string().optional(),
   unmention_data: UnmentionDataSchema.optional(),
@@ -1051,6 +1085,7 @@ export interface TweetData {
   article?: Article;
   birdwatch_pivot?: BirdwatchPivot;
   card?: Card;
+  cashtag_attachments?: never[];
   content_disclosure?: ContentDisclosure;
   core: TweetCore;
   edit_control?: EditControl;
@@ -1065,6 +1100,7 @@ export interface TweetData {
   quotedRefResult?: TweetReferenceEnvelope;
   quick_promote_eligibility?: QuickPromoteEligibility;
   quoted_status_result?: OptionalTweetResultEnvelope;
+  nested_quoted_tweet_results?: OptionalTweetResultEnvelope;
   rest_id: string;
   source?: string;
   unmention_data?: UnmentionData;

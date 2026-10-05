@@ -1,5 +1,5 @@
-import { getTweetDisplayText } from './tweet-selectors';
-import type { DbMediaRecord, DbTweetRecord, DbUserRecord } from './types';
+import type { Media, Post, PostCounts, User } from '../archive/model';
+import { getPlainText } from './post-view';
 
 export interface StatItem {
   label: string;
@@ -53,17 +53,8 @@ export function formatCount(value: number): string {
   return String(value);
 }
 
-function formatOptionalCount(value: number | string | undefined): string {
-  if (typeof value === 'number') {
-    return formatCount(value);
-  }
-
-  if (typeof value === 'string') {
-    const parsed = Number.parseInt(value, 10);
-    return Number.isNaN(parsed) ? value : formatCount(parsed);
-  }
-
-  return '-';
+function formatOptionalCount(value: number | undefined): string {
+  return value === undefined ? '-' : formatCount(value);
 }
 
 function toDisplayLabel(value: string): string {
@@ -95,63 +86,54 @@ export function formatMediaSensitivityWarnings(warnings: readonly string[]): str
   return labels;
 }
 
-export function getMediaSensitivityOverlayText(media: Pick<DbMediaRecord, 'sensitivityWarnings'>): string | null {
-  const warnings = media.sensitivityWarnings;
+export function getMediaSensitivityOverlayText(media: Pick<Media, 'sensitive'>): string | null {
+  const warnings = media.sensitive;
   if (!warnings?.length) return null;
 
   const labels = formatMediaSensitivityWarnings(warnings);
   return labels.length > 0 ? labels.join(', ') : null;
 }
 
-export function avatarFull(url: string): string {
-  return url.replace('_normal.', '_400x400.');
-}
-
-export function toTweetCompactCardItem(
-  tweet: Pick<DbTweetRecord, 'id' | 'createdAt' | 'content' | 'conversation'>,
-  author: Pick<DbUserRecord, 'profile'> | undefined,
-): TweetCompactCardItem {
+export function toTweetCompactCardItem(post: Post, author: User | undefined): TweetCompactCardItem {
   return {
-    tweetId: tweet.id,
-    displayName: author?.profile.displayName ?? '?',
-    userName: author?.profile.userName ?? '?',
-    dateText: formatTweetDateTime(tweet.createdAt),
-    text: getTweetDisplayText(tweet) || '(no text)',
-    mediaCount: tweet.content.mediaIds.length,
+    tweetId: post.id,
+    displayName: author?.name ?? '?',
+    userName: author?.handle ?? '?',
+    dateText: formatTweetDateTime(post.createdAt),
+    text: getPlainText(post.text) || post.article?.title || '(no text)',
+    mediaCount: post.mediaIds?.length ?? 0,
   };
 }
 
-export function toTweetStats(tweet: Pick<DbTweetRecord, 'stats'>): StatItem[] {
+export function toTweetStats(counts: PostCounts | undefined): StatItem[] {
   return [
-    { label: 'Views', value: formatOptionalCount(tweet.stats.views) },
-    { label: 'Likes', value: formatOptionalCount(tweet.stats.likes) },
-    { label: 'Reposts', value: formatOptionalCount(tweet.stats.reposts) },
-    { label: 'Replies', value: formatOptionalCount(tweet.stats.replies) },
-    { label: 'Quotes', value: formatOptionalCount(tweet.stats.quotes) },
-    { label: 'Bookmarks', value: formatOptionalCount(tweet.stats.bookmarks) },
+    { label: 'Views', value: formatOptionalCount(counts?.views) },
+    { label: 'Likes', value: formatOptionalCount(counts?.likes) },
+    { label: 'Reposts', value: formatOptionalCount(counts?.reposts) },
+    { label: 'Replies', value: formatOptionalCount(counts?.replies) },
+    { label: 'Quotes', value: formatOptionalCount(counts?.quotes) },
+    { label: 'Bookmarks', value: formatOptionalCount(counts?.bookmarks) },
   ];
 }
 
-export function toTweetSummaryStats(tweet: Pick<DbTweetRecord, 'stats'>): StatItem[] {
+export function toTweetSummaryStats(counts: PostCounts | undefined): StatItem[] {
   return [
-    { label: 'Replies', value: formatOptionalCount(tweet.stats.replies) },
-    { label: 'Reposts', value: formatOptionalCount(tweet.stats.reposts) },
-    { label: 'Likes', value: formatOptionalCount(tweet.stats.likes) },
-    { label: 'Views', value: formatOptionalCount(tweet.stats.views) },
-    { label: 'Quotes', value: formatOptionalCount(tweet.stats.quotes) },
-    { label: 'Bookmarks', value: formatOptionalCount(tweet.stats.bookmarks) },
+    { label: 'Replies', value: formatOptionalCount(counts?.replies) },
+    { label: 'Reposts', value: formatOptionalCount(counts?.reposts) },
+    { label: 'Likes', value: formatOptionalCount(counts?.likes) },
+    { label: 'Views', value: formatOptionalCount(counts?.views) },
+    { label: 'Quotes', value: formatOptionalCount(counts?.quotes) },
+    { label: 'Bookmarks', value: formatOptionalCount(counts?.bookmarks) },
   ];
 }
 
-export function toUserStats(user: Pick<DbUserRecord, 'stats'>): StatItem[] {
-  const stats = user.stats;
-
+export function toUserStats(user: Pick<User, 'counts'>): StatItem[] {
+  const counts = user.counts;
   return [
-    { label: 'Followers', value: formatOptionalCount(stats?.followers) },
-    { label: 'Following', value: formatOptionalCount(stats?.following) },
-    { label: 'Tweets', value: formatOptionalCount(stats?.tweets) },
-    { label: 'Likes', value: formatOptionalCount(stats?.likes) },
-    { label: 'Media', value: formatOptionalCount(stats?.mediaPosts) },
-    { label: 'Listed', value: formatOptionalCount(stats?.listed) },
+    { label: 'Followers', value: formatOptionalCount(counts?.followers) },
+    { label: 'Following', value: formatOptionalCount(counts?.following) },
+    { label: 'Posts', value: formatOptionalCount(counts?.posts) },
+    { label: 'Likes', value: formatOptionalCount(counts?.likes) },
+    { label: 'Media', value: formatOptionalCount(counts?.mediaPosts) },
   ];
 }

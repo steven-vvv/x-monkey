@@ -1,15 +1,15 @@
 <script setup lang="ts">
 import { computed } from 'vue';
-import type { DbTweet } from '../lib/db-service';
+import type { Post } from '../archive/model';
 import { getDbUser } from '../lib/db-service';
 import { toTweetCompactCardItem } from '../lib/view-format';
 import TweetDetailCard from './TweetDetailCard.vue';
 import TweetCompactCard from './TweetCompactCard.vue';
 
 const props = withDefaults(defineProps<{
-  tweet: DbTweet;
-  parents?: DbTweet[];
-  replies?: DbTweet[];
+  post: Post;
+  parents?: Post[];
+  replies?: Post[];
   showParents?: boolean;
 }>(), {
   parents: () => [],
@@ -19,13 +19,13 @@ const props = withDefaults(defineProps<{
 
 const emit = defineEmits<{
   (e: 'open-user', userId: string): void;
-  (e: 'open-original', tweet: DbTweet): void;
+  (e: 'open-original', post: Post): void;
   (e: 'open-media', url: string): void;
   (e: 'open-tweet', tweetId: string): void;
 }>();
 
-const parentCards = computed(() => props.parents.map((tweet) => toTweetCompactCardItem(tweet, getDbUser(tweet.authorId))));
-const replyCards = computed(() => props.replies.map((tweet) => toTweetCompactCardItem(tweet, getDbUser(tweet.authorId))));
+const parentCards = computed(() => props.parents.map((post) => toTweetCompactCardItem(post, getDbUser(post.authorId))));
+const replyCards = computed(() => props.replies.map((post) => toTweetCompactCardItem(post, getDbUser(post.authorId))));
 </script>
 
 <template>
@@ -41,14 +41,14 @@ const replyCards = computed(() => props.replies.map((tweet) => toTweetCompactCar
   </template>
 
   <TweetDetailCard
-    :tweet="props.tweet"
+    :post="props.post"
     @open-user="(userId) => emit('open-user', userId)"
-    @open-original="(tweet) => emit('open-original', tweet)"
+    @open-original="(post) => emit('open-original', post)"
     @open-media="(url) => emit('open-media', url)"
     @open-tweet="(tweetId) => emit('open-tweet', tweetId)"
   />
 
-  <slot name="after-detail" :tweet="props.tweet" :replies="props.replies" />
+  <slot name="after-detail" :post="props.post" :replies="props.replies" />
 
   <template v-if="replyCards.length > 0">
     <div class="xd-context-divider"></div>

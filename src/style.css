@@ -490,6 +490,10 @@
   background: var(--xd-success);
 }
 
+.xd-tweet-summary-card-sync-dot--stale {
+  background: color-mix(in srgb, var(--xd-success) 45%, var(--xd-bg-secondary));
+}
+
 .xd-tweet-summary-card-sync-dot--missing {
   background: var(--xd-accent);
 }
@@ -508,6 +512,11 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
+}
+
+.xd-tweet-summary-card-context {
+  color: var(--xd-text-muted);
+  font-size: 10px;
 }
 
 .xd-tweet-summary-card-head {

@@ -1,48 +1,38 @@
 <script setup lang="ts">
 import { computed } from 'vue';
-import type { DbUserRecord } from '../lib/types';
-import { avatarFull, toUserStats } from '../lib/view-format';
-import { getUserBioText } from '../lib/tweet-selectors';
+import type { User } from '../archive/model';
+import { toUserStats } from '../lib/view-format';
+import { formatUrlForDisplay, getAvatarUrl, getPlainText } from '../lib/post-view';
 import StatGrid from './StatGrid.vue';
 
-const props = defineProps<{ user: DbUserRecord }>();
+const props = defineProps<{ user: User }>();
 
 const emit = defineEmits<{
   (e: 'open-profile', userId: string): void;
 }>();
 
 const stats = computed(() => toUserStats(props.user));
-const bio = computed(() => getUserBioText(props.user));
-const disclosureLabel = computed(() => {
-  const disclosure = props.user.identity?.disclosure;
-  if (!disclosure) return null;
-  if (disclosure.subjectName) return disclosure.subjectName;
-  if (disclosure.subjectHandle) return `@${disclosure.subjectHandle}`;
-  return null;
-});
+const bio = computed(() => getPlainText(props.user.bio));
+const avatarUrl = computed(() => getAvatarUrl(props.user));
 const labels = computed(() => [
-  props.user.identity?.verification?.type,
-  disclosureLabel.value,
-  props.user.identity?.parodyLabel,
-  props.user.features?.canBeSubscribed ? 'Subscriptions' : null,
+  props.user.verified?.type,
+  props.user.affiliation?.name,
+  props.user.parody,
+  props.user.protected ? 'Protected' : null,
+  props.user.interstitial ? `Warning: ${props.user.interstitial}` : null,
 ].filter(Boolean) as string[]);
 </script>
 
 <template>
-  <div v-if="user.profile.bannerUrl" class="xd-user-banner">
-    <img :src="user.profile.bannerUrl + '/600x200'" loading="lazy" />
+  <div v-if="user.bannerUrl" class="xd-user-banner">
+    <img :src="user.bannerUrl + '/600x200'" loading="lazy" />
   </div>
 
   <div class="xd-user-card-head">
-    <img
-      v-if="user.profile.avatarUrl"
-      class="xd-user-avatar"
-      :src="avatarFull(user.profile.avatarUrl)"
-      loading="lazy"
-    />
+    <img v-if="avatarUrl" class="xd-user-avatar" :src="avatarUrl" loading="lazy" />
     <div class="xd-user-card-main">
-      <div class="xd-author-name">{{ user.profile.displayName }}</div>
-      <div class="xd-author-handle">@{{ user.profile.userName }}</div>
+      <div class="xd-author-name">{{ user.name }}</div>
+      <div class="xd-author-handle">@{{ user.handle }}</div>
       <div v-if="labels.length > 0" class="xd-user-labels">
         <span v-for="label in labels" :key="label" class="xd-user-label">{{ label }}</span>
       </div>
@@ -51,9 +41,9 @@ const labels = computed(() => [
 
   <div v-if="bio" class="xd-user-bio">{{ bio }}</div>
 
-  <div v-if="user.profile.location || user.profile.profileLinks.length > 0" class="xd-user-meta">
-    <div v-if="user.profile.location" class="xd-user-meta-row">{{ user.profile.location }}</div>
-    <div v-for="link in user.profile.profileLinks" :key="link.url" class="xd-user-meta-row xd-text-ellipsis">{{ link.expandedUrl }}</div>
+  <div v-if="user.location || user.website" class="xd-user-meta">
+    <div v-if="user.location" class="xd-user-meta-row">{{ user.location }}</div>
+    <div v-if="user.website" class="xd-user-meta-row xd-text-ellipsis">{{ formatUrlForDisplay(user.website) }}</div>
   </div>
 
   <StatGrid :stats="stats" />

@@ -1,945 +1,392 @@
-import { readdirSync, readFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
-import {
-  FIXTURE_ENDPOINTS,
-  getEndpointFixtureDirs,
-  type FixtureEndpointOperationName,
-} from '../src/lib/endpoint-support';
-import {
-  parseBookmarksResponse,
-  parseHomeLatestTimelineResponse,
-  parseHomeTimelineResponse,
-  parseSearchTimelineResponse,
-  parseTweetDetailResponse,
-  parseUserByScreenNameResponse,
-  parseUserMediaResponse,
-  parseUsersByRestIdsResponse,
-  parseUserTweetsAndRepliesResponse,
-  parseUserTweetsResponse,
-  type TimelineParsedResponse,
-} from '../src/lib/parser';
-import { clearDb, dbVersion, getTweetCount, runDbBatch, upsertMedia, upsertTweet, upsertUser } from '../src/lib/db-service';
+import { MediaSchema, PostSchema, UserSchema, type Post } from '../src/archive/model';
+import { ArchiveCollector, collectTweet } from '../src/archive/normalize';
+import { mergeArchiveRecord } from '../src/archive/merge';
+import { sliceCodePoints, unescapeXText } from '../src/archive/text';
+import { getSupportedEndpoint } from '../src/lib/endpoint-support';
+import { parseTimelineResponse, parseTweetDetailResponse, type TimelineParsedResponse } from '../src/lib/parser';
+import { getPlainText, getRichTextSegments } from '../src/lib/post-view';
+import { buildArchiveBatch, compareArchiveBatch } from '../src/lib/remote-db/adapter';
+import { clearDb, dbVersion, getPostCount, runDbBatch, upsertPost, upsertUser } from '../src/lib/db-service';
 import { clearCaptureState } from '../src/lib/capture-state-service';
 import {
   buildTimelineRecordKey,
   clearTimelineState,
-  getTimelineCreatedOrder,
-  getTimelineCreatedOrderByAlias,
-  getTimelineTweetIds,
-  getTimelineTweetIdsByAlias,
+  getTimelinePostIds,
+  getTimelinePostIdsByAlias,
   getTimelineVersion,
   ingestTimeline,
   resolveTimelineRecordKey,
 } from '../src/lib/timeline-store';
-import {
-  getAnnotatedTextSegments,
-  getMediaOriginTweetId,
-  getMediaOriginUserId,
-  getTweetLegacyText,
-  getTweetMediaIds,
-  getTweetNote,
-} from '../src/lib/tweet-selectors';
-import type { ParsedResponse, XMedia, XTweet, XUser } from '../src/lib/types';
-
-interface CaseConfig {
-  name: string;
-  dirs: readonly string[];
-  parse: (json: unknown) => ParsedResponse | TimelineParsedResponse;
-  ordered: boolean;
-  supportVersion: number;
-  requireTweets: boolean;
-  requireUsers: boolean;
-}
-
-const ROOT = resolve(process.cwd());
-const PARSERS: Record<FixtureEndpointOperationName, (json: unknown) => ParsedResponse | TimelineParsedResponse> = {
-  Bookmarks: parseBookmarksResponse,
-  HomeLatestTimeline: parseHomeLatestTimelineResponse,
-  HomeTimeline: parseHomeTimelineResponse,
-  SearchTimeline: parseSearchTimelineResponse,
-  TweetDetail: parseTweetDetailResponse,
-  UserByScreenName: parseUserByScreenNameResponse,
-  UserMedia: parseUserMediaResponse,
-  UserTweetsAndReplies: parseUserTweetsAndRepliesResponse,
-  UserTweets: parseUserTweetsResponse,
-  UsersByRestIds: parseUsersByRestIdsResponse,
-};
-
-const CASES: CaseConfig[] = FIXTURE_ENDPOINTS.map((endpoint) => ({
-  name: endpoint.operationName,
-  dirs: getEndpointFixtureDirs(endpoint),
-  parse: PARSERS[endpoint.operationName],
-  ordered: endpoint.kind === 'timeline',
-  supportVersion: endpoint.supportVersion,
-  requireTweets: endpoint.kind !== 'user',
-  requireUsers: true,
-}));
+import type { ParsedResponse } from '../src/lib/types';
+import { loadDumpFixtures } from './dump-fixtures';
 
 function fail(message: string): never {
   throw new Error(message);
 }
 
-function isIsoDateTime(value: string | undefined | null): boolean {
-  return typeof value === 'string'
-    && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(value);
+function check(condition: unknown, message: string): void {
+  if (!condition) fail(`[inline] ${message}`);
 }
 
-function isTimelineParsedResponse(parsed: ParsedResponse | TimelineParsedResponse): parsed is TimelineParsedResponse {
-  return Array.isArray((parsed as TimelineParsedResponse).tweetIds);
-}
+// --- Raw payload builders (2026-10 shapes) ---
 
-function assertTweetShape(tweet: XTweet, caseName: string) {
-  if (!tweet.id) fail(`[${caseName}] empty tweet id`);
-  if (!tweet.authorId) fail(`[${caseName}] tweet ${tweet.id} missing authorId`);
-  if (!isIsoDateTime(tweet.createdAt)) fail(`[${caseName}] tweet ${tweet.id} createdAt was not normalized to ISO`);
-  if (!tweet.conversation.conversationId) fail(`[${caseName}] tweet ${tweet.id} missing conversationId`);
-  if (!getTweetNote(tweet)?.text.text && !getTweetLegacyText(tweet).text) {
-    fail(`[${caseName}] tweet ${tweet.id} is missing both legacyText and note text`);
-  }
-  if (tweet.edit?.editableUntilAt && !isIsoDateTime(tweet.edit.editableUntilAt)) {
-    fail(`[${caseName}] tweet ${tweet.id} editableUntilAt was not normalized to ISO`);
-  }
-}
-
-function assertUserShape(user: XUser, caseName: string) {
-  if (!user.id) fail(`[${caseName}] empty user id`);
-  if (user.createdAt && !isIsoDateTime(user.createdAt)) {
-    fail(`[${caseName}] user ${user.id} createdAt was not normalized to ISO`);
-  }
-}
-
-function assertFixtureExpectations(
-  parsed: ParsedResponse | TimelineParsedResponse,
-  testCaseName: string,
-  file: string,
-) {
-  if (testCaseName !== 'TweetDetail' || file !== 'TweetDetail-d6dc09dc.json') return;
-
-  const tweet = parsed.tweets.get('2041408315671163341');
-  if (!tweet) {
-    fail(`[${testCaseName}/${file}] expected wrapped tweet 2041408315671163341 to be parsed`);
-  }
-
-  const limitedActionCount = tweet.policy?.availableActions?.length ?? 0;
-  if (limitedActionCount !== 15) {
-    fail(`[${testCaseName}/${file}] expected 15 limitedActions, received ${limitedActionCount}`);
-  }
-}
-
-function createEmptyTextEntities() {
-  return {
-    hashtags: [],
-    symbols: [],
-    urls: [],
-    mentions: [],
-    media: [],
-  };
-}
-
-function buildStoredUser(id: string): XUser {
-  return {
-    id,
-    createdAt: '2030-01-01T00:00:00.000Z',
-    profile: {
-      displayName: 'User',
-      userName: 'user',
-      avatarUrl: '',
-      avatarShape: 'Circle',
-      profileLinks: [],
-    },
-    pinnedTweetIds: [],
-    stats: {
-      followers: 1,
-      following: 1,
-      likes: 1,
-      mediaPosts: 1,
-      tweets: 1,
-      listed: 1,
-    },
-    features: {
-      isProtected: false,
-    },
-    identity: {
-      isPossiblySensitive: false,
-    },
-  };
-}
-
-function buildStoredTweet(id: string, authorId: string, mediaIds: string[] = []): XTweet {
-  return {
-    id,
-    createdAt: '2030-01-01T00:00:00.000Z',
-    source: 'Web',
-    authorId,
-    content: {
-      legacyText: {
-        text: 'db tweet',
-        entities: createEmptyTextEntities(),
-      },
-      mediaIds,
-    },
-    conversation: {
-      conversationId: id,
-    },
-    stats: {
-      views: '10',
-      replies: 1,
-      reposts: 1,
-      quotes: 1,
-      likes: 1,
-      bookmarks: 1,
-    },
-  };
-}
-
-function buildStoredMedia(id: string): XMedia {
-  return {
-    id,
-    type: 'photo',
-    mediaUrl: 'https://pbs.twimg.com/media/m-db.jpg',
-    geometry: {
-      width: 1200,
-      height: 800,
-      focusRects: [],
-    },
-    taggedUsers: [],
-  };
-}
-
-function buildUser(id: string): Record<string, any> {
+function rawUser(id: string, overrides: Record<string, any> = {}): Record<string, any> {
   return {
     __typename: 'User',
     rest_id: id,
-    core: {
-      name: `User ${id}`,
-      screen_name: `user_${id}`,
-      created_at: 'Tue Jan 01 00:00:00 +0000 2030',
-    },
-    legacy: {
-      description: '',
-      followers_count: 1,
-      friends_count: 2,
-      favourites_count: 3,
-      statuses_count: 4,
-      media_count: 5,
-      listed_count: 6,
-      pinned_tweet_ids_str: [],
-      entities: {
-        url: {
-          urls: [],
-        },
-      },
-    },
-    avatar: {
-      image_url: '',
-    },
-    location: {
-      location: '',
-    },
-    privacy: {
-      protected: false,
-    },
-    profile_image_shape: 'Circle',
-  };
-}
-
-function buildMedia(id: string, overrides: Record<string, any> = {}): Record<string, any> {
-  return {
-    id_str: id,
-    media_key: `3_${id}`,
-    media_url_https: `https://pbs.twimg.com/media/${id}.jpg`,
-    original_info: {
-      width: 1200,
-      height: 800,
-    },
-    type: 'photo',
+    core: { name: `User ${id}`, screen_name: `user_${id}`, created_at: 'Tue Jan 01 00:00:00 +0000 2030' },
+    avatar: { image_url: `https://pbs.twimg.com/profile_images/${id}/a_normal.jpg` },
+    banner: { image_url: '' },
+    profile_bio: { description: '' },
+    relationship_counts: { followers: 1, following: 2 },
+    tweet_counts: { tweets: 3, media_tweets: 4 },
+    action_counts: { favorites_count: 5 },
+    pinned_items: {},
+    privacy: { protected: false },
     ...overrides,
   };
 }
 
-function buildTweet(id: string, userId: string, overrides: Record<string, any> = {}): Record<string, any> {
-  const media = overrides.media === undefined ? [] : overrides.media;
+function rawMedia(id: string, overrides: Record<string, any> = {}): Record<string, any> {
+  return {
+    id_str: id,
+    type: 'photo',
+    media_url_https: `https://pbs.twimg.com/media/${id}.jpg`,
+    original_info: { width: 1200, height: 800, focus_rects: [] },
+    sizes: { large: { w: 1200, h: 800, resize: 'fit' } },
+    ext_media_availability: { status: 'Available' },
+    indices: [0, 0],
+    url: 'https://t.co/media',
+    expanded_url: `https://x.com/u/status/1/photo/1`,
+    display_url: 'pic.x.com/media',
+    ...overrides,
+  };
+}
 
+function rawTweet(id: string, userId: string, legacy: Record<string, any> = {}, extra: Record<string, any> = {}): Record<string, any> {
   return {
     __typename: 'Tweet',
     rest_id: id,
-    core: {
-      user_results: {
-        result: buildUser(userId),
-      },
-    },
+    core: { user_results: { result: rawUser(userId) } },
     legacy: {
       id_str: id,
       user_id_str: userId,
       conversation_id_str: id,
-      full_text: overrides.fullText ?? `tweet-${id}`,
-      lang: overrides.lang ?? 'en',
-      created_at: overrides.createdAt ?? 'Tue Jan 01 00:00:00 +0000 2030',
-      is_quote_status: overrides.isQuoteStatus ?? false,
-      favorite_count: overrides.favoriteCount ?? 1,
-      retweet_count: overrides.retweetCount ?? 2,
-      reply_count: overrides.replyCount ?? 3,
-      quote_count: overrides.quoteCount ?? 4,
-      bookmark_count: overrides.bookmarkCount ?? 5,
-      entities: {
-        media,
-      },
-      extended_entities: media.length > 0 ? { media } : undefined,
+      created_at: 'Tue Jan 01 00:00:00 +0000 2030',
+      full_text: `tweet ${id}`,
+      display_text_range: [0, `tweet ${id}`.length],
+      entities: {},
+      favorite_count: 1,
+      retweet_count: 2,
+      reply_count: 3,
+      quote_count: 4,
+      bookmark_count: 5,
+      is_quote_status: false,
+      lang: 'en',
+      ...legacy,
     },
-    source: overrides.source ?? '<a href="https://x.com" rel="nofollow">Web</a>',
-    unmention_data: overrides.unmentionData ?? {},
-    views: overrides.views ?? { count: '12' },
+    views: { count: '12', state: 'EnabledWithCount' },
+    ...extra,
   };
 }
 
-function assertInlineParserScenarios() {
-  const bookmarksFixture = {
-    data: {
-      bookmark_timeline_v2: {
-        timeline: {
-          instructions: [
-            {
-              type: 'TimelineAddEntries',
-              entries: [
-                {
-                  content: {
-                    itemContent: {
-                      tweet_results: {
-                        result: buildTweet('t-bookmark', 'u-bookmark'),
-                      },
-                    },
-                  },
-                },
-              ],
-            },
-          ],
-        },
-      },
+function timeline(...entries: unknown[]): unknown {
+  return { data: { home: { home_timeline_urt: { instructions: [{ type: 'TimelineAddEntries', entries }] } } } };
+}
+
+function entry(result: unknown, itemContent: Record<string, unknown> = {}): unknown {
+  return { content: { itemContent: { tweet_results: { result }, ...itemContent } } };
+}
+
+function collect(result: unknown): ArchiveCollector {
+  const collector = new ArchiveCollector();
+  collectTweet(result, 'inline', collector);
+  if (collector.warnings.length) fail(`[inline] unexpected warnings: ${collector.warnings.join(' | ')}`);
+  return collector;
+}
+
+// --- Inline scenarios ---
+
+function assertTextScenarios(): void {
+  const unescaped = unescapeXText('a &amp; b &lt;c&gt; 😀 d');
+  check(unescaped.text === 'a & b <c> 😀 d', 'unescape text');
+  check(unescaped.mapOffset(20) === 10 && unescaped.mapOffset(22) === 12, 'unescape maps offsets after escapes and emoji');
+
+  // X indexes the escaped text by code point; the URL sits after an emoji and an escape.
+  const fullText = '😀 &amp; https://t.co/abc';
+  const posts = collect(rawTweet('10', '1', {
+    full_text: fullText,
+    display_text_range: [0, 24],
+    entities: { urls: [{ url: 'https://t.co/abc', expanded_url: 'https://example.com/', display_url: 'example.com', indices: [8, 24] }] },
+  })).posts;
+  const text = posts.get('10')!.text!;
+  check(text.text === '😀 & https://t.co/abc', 'legacy text is unescaped');
+  check(text.visible === undefined, 'full visible range is omitted');
+  const url = text.entities![0];
+  check(url.type === 'url' && sliceCodePoints(text.text, url.range[0], url.range[1]) === 'https://t.co/abc', 'url range is remapped to the unescaped text');
+  check(getPlainText(text) === '😀 & example.com', 'segments slice by code points');
+
+  // Long post replying to @a: the mention prefix lives only in legacy text.
+  const note = collect(rawTweet('11', '1', {
+    full_text: '@a short…',
+    display_text_range: [3, 9],
+    in_reply_to_status_id_str: '9',
+    entities: { user_mentions: [{ id_str: '2', screen_name: 'a', name: 'A', indices: [0, 2] }] },
+  }, {
+    note_tweet: { note_tweet_results: { result: {
+      text: 'long text 😀 #tag',
+      entity_set: { hashtags: [{ text: 'tag', indices: [12, 16] }] },
+      richtext: { richtext_tags: [{ from_index: 0, to_index: 4, richtext_types: ['Bold'] }] },
+    } } },
+  })).posts.get('11')!.text!;
+  check(note.text === '@a long text 😀 #tag', 'note text keeps the reply prefix');
+  check(JSON.stringify(note.visible) === '[3,19]', 'note visible range starts after the prefix');
+  check(note.entities!.map((entity) => `${entity.type}@${entity.range}`).join(' ') === 'mention@0,2 hashtag@15,19', 'note entities are shifted');
+  check(JSON.stringify(note.styles) === '[{"range":[3,7],"styles":["Bold"]}]', 'note styles are shifted');
+  const segments = getRichTextSegments(note);
+  check(segments[0].text === 'long' && segments[0].bold && segments[segments.length - 1].text === '#tag', 'note segments render the visible text');
+}
+
+function assertRelationScenarios(): void {
+  const original = rawTweet('20', '2', {}, { quoted_status_result: { result: rawTweet('21', '3', {}, {
+    nested_quoted_tweet_results: { result: rawTweet('22', '4') },
+  }) } });
+  const repost = collect(rawTweet('23', '1', {
+    full_text: 'RT @user_2: tweet 20',
+    retweeted_status_result: { result: original },
+    extended_entities: { media: [rawMedia('500')] },
+  }));
+  check(JSON.stringify(repost.posts.get('23')) === '{"id":"23","authorId":"1","createdAt":"2030-01-01T00:00:00Z","repostOf":"20"}', 'pure repost keeps only the pointer');
+  check(!repost.media.has('500'), 'repost wrapper media are not duplicated');
+  check(repost.posts.get('20')?.quote?.postId === '21' && repost.posts.get('21')?.quote?.postId === '22', 'nested quotes are collected');
+  check(repost.posts.has('22') && repost.users.has('4'), 'nested quoted post and author are stored');
+
+  const source = collect(rawTweet('30', '1', {
+    extended_entities: { media: [rawMedia('501', {
+      source_status_id_str: '29',
+      source_user_id_str: '5',
+      source_user_results: { result: rawUser('5') },
+    })] },
+  }));
+  const media = source.media.get('501')!;
+  check(media.sourcePostId === '29' && media.sourceUserId === '5' && source.users.has('5'), 'media source user from source_user_results');
+  check(source.posts.get('30')!.mediaIds!.join() === '501', 'post references media by id');
+}
+
+function assertUserScenarios(): void {
+  const current = collect(rawTweet('40', '1', {}, { core: { user_results: { result: rawUser('1', {
+    banner: { image_url: 'https://pbs.twimg.com/profile_banners/1/2' },
+    profile_bio: {
+      description: 'Bio https://t.co/x',
+      entities: { description: { urls: [{ url: 'https://t.co/x', expanded_url: 'https://x.example/', display_url: 'x.example', indices: [4, 18] }] }, url: { urls: [{ url: 'https://t.co/y', expanded_url: 'https://site.example/', display_url: 'site.example', indices: [0, 23] }] } },
     },
-  };
-
-  const bookmarksParsed = parseBookmarksResponse(bookmarksFixture);
-  if (bookmarksParsed.tweetIds.join(',') !== 't-bookmark') {
-    fail(`[inline] bookmark traversal failed: ${bookmarksParsed.tweetIds.join(',')}`);
-  }
-  if (bookmarksParsed.meta?.instructionPath !== 'data.bookmark_timeline_v2.timeline.instructions') {
-    fail(`[inline] bookmark instruction path mismatch: ${bookmarksParsed.meta?.instructionPath ?? '(null)'}`);
-  }
-
-  const structuralFixture = {
-    data: {
-      home: {
-        home_timeline_urt: {
-          instructions: [
-            {
-              type: 'TimelineWeirdEntries',
-              entries: [
-                {
-                  content: {
-                    itemContent: {
-                      tweet_results: {
-                        result: buildTweet('t-entries', 'u-1'),
-                      },
-                    },
-                  },
-                },
-              ],
-            },
-            {
-              type: 'TimelineWeirdModule',
-              moduleItems: [
-                {
-                  item: {
-                    itemContent: {
-                      tweet_results: {
-                        result: buildTweet('t-module', 'u-2'),
-                      },
-                    },
-                  },
-                },
-              ],
-            },
-            {
-              type: 'TimelineUnknownPin',
-              entry: {
-                content: {
-                  itemContent: {
-                    tweet_results: {
-                      result: buildTweet('t-entry', 'u-3'),
-                    },
-                  },
-                },
-              },
-            },
-          ],
-        },
-      },
+    pinned_items: { tweet_ids_str: ['40'] },
+    possibly_sensitive: true,
+  }) } } })).users.get('1')!;
+  const legacy = collect(rawTweet('41', '1', {}, { core: { user_results: { result: {
+    __typename: 'User',
+    rest_id: '1',
+    core: { name: 'User 1', screen_name: 'user_1', created_at: 'Tue Jan 01 00:00:00 +0000 2030' },
+    avatar: { image_url: 'https://pbs.twimg.com/profile_images/1/a_normal.jpg' },
+    privacy: { protected: false },
+    legacy: {
+      description: 'Bio https://t.co/x',
+      entities: { description: { urls: [{ url: 'https://t.co/x', expanded_url: 'https://x.example/', display_url: 'x.example', indices: [4, 18] }] }, url: { urls: [{ url: 'https://t.co/y', expanded_url: 'https://site.example/', display_url: 'site.example', indices: [0, 23] }] } },
+      followers_count: 1, friends_count: 2, statuses_count: 3, media_count: 4, favourites_count: 5,
+      profile_banner_url: 'https://pbs.twimg.com/profile_banners/1/2',
+      pinned_tweet_ids_str: ['40'],
+      possibly_sensitive: true,
     },
-  };
+  } } } })).users.get('1')!;
+  check(JSON.stringify(current) === JSON.stringify(legacy), 'current and legacy user payloads normalize identically');
+  check(current.website === 'https://site.example/' && current.bio?.entities?.[0].type === 'url', 'user website and bio links');
+  check(current.counts?.posts === 3 && current.bannerUrl && current.pinnedPostIds?.[0] === '40', 'user counts, banner, pinned');
+  check(collect(rawTweet('42', '1')).users.get('1')!.bannerUrl === undefined, 'empty banner is absent');
+}
 
-  const structuralParsed = parseHomeTimelineResponse(structuralFixture);
-  if (structuralParsed.tweetIds.join(',') !== 't-entries,t-module,t-entry') {
-    fail(`[inline] structural traversal failed: ${structuralParsed.tweetIds.join(',')}`);
-  }
-
-  const duplicateFixture = {
-    data: {
-      home: {
-        home_timeline_urt: {
-          instructions: [
-            {
-              type: 'TimelineAddEntries',
-              entries: [
-                {
-                  content: {
-                    itemContent: {
-                      tweet_results: {
-                        result: buildTweet('t-merge', 'u-merge', {
-                          fullText: 'kept text',
-                          source: '<a href="https://x.com" rel="nofollow">Rich Web</a>',
-                          media: [buildMedia('m-merge')],
-                        }),
-                      },
-                    },
-                  },
-                },
-              ],
-            },
-            {
-              type: 'TimelineAddToModule',
-              moduleItems: [
-                {
-                  item: {
-                    itemContent: {
-                      tweet_results: {
-                        result: buildTweet('t-merge', 'u-merge', {
-                          fullText: '',
-                          source: '',
-                          media: [],
-                        }),
-                      },
-                    },
-                  },
-                },
-              ],
-            },
-          ],
-        },
-      },
-    },
-  };
-
-  const duplicateParsed = parseHomeTimelineResponse(duplicateFixture);
-  const mergedTweet = duplicateParsed.tweets.get('t-merge');
-  if (!mergedTweet) fail('[inline] duplicate merge tweet missing');
-  if (mergedTweet.content.legacyText.text !== 'kept text') fail('[inline] duplicate merge lost legacyText');
-  if (mergedTweet.source !== 'Rich Web') fail('[inline] duplicate merge lost source');
-  if (mergedTweet.content.mediaIds.join(',') !== 'm-merge') fail('[inline] duplicate merge lost media ids');
-  if (mergedTweet.content.legacyText.entities.media[0]?.mediaId !== 'm-merge') {
-    fail('[inline] duplicate merge lost media entity refs');
-  }
-
-  const originFixture = {
-    data: {
-      home: {
-        home_timeline_urt: {
-          instructions: [
-            {
-              type: 'TimelineAddEntries',
-              entries: [
-                {
-                  content: {
-                    itemContent: {
-                      tweet_results: {
-                        result: buildTweet('t-origin', 'u-origin', {
-                          media: [
-                            buildMedia('m-origin', {
-                              source_status_id_str: 't-source',
-                              source_user_id_str: 'u-source',
-                              additional_media_info: {
-                                source_user: {
-                                  user_results: {
-                                    result: buildUser('u-source'),
-                                  },
-                                },
-                              },
-                            }),
-                          ],
-                        }),
-                      },
-                    },
-                  },
-                },
-              ],
-            },
-          ],
-        },
-      },
-    },
-  };
-
-  const originParsed = parseHomeTimelineResponse(originFixture);
-  const originTweet = originParsed.tweets.get('t-origin');
-  const originMedia = originParsed.media.get('m-origin');
-  if (!originTweet || !originMedia) fail('[inline] origin fixture parse failed');
-  if ('user' in (originTweet.content.legacyText.entities.media[0]?.origin ?? {})) {
-    fail('[inline] media entity origin should not embed full user');
-  }
-  if (originTweet.content.legacyText.entities.media[0]?.origin?.tweetId !== 't-source') {
-    fail('[inline] media entity origin lost source tweet id');
-  }
-  if (originTweet.content.legacyText.entities.media[0]?.origin?.userId !== 'u-source') {
-    fail('[inline] media entity origin lost source user id');
-  }
-  if (getMediaOriginTweetId(originMedia) !== 't-source' || getMediaOriginUserId(originMedia) !== 'u-source') {
-    fail('[inline] media object origin lost source ids');
-  }
-  if (!originParsed.users.has('u-source')) {
-    fail('[inline] media object origin user was not collected');
-  }
-
-  const unmentionFixture = {
-    data: {
-      home: {
-        home_timeline_urt: {
-          instructions: [
-            {
-              type: 'TimelineAddEntries',
-              entries: [
-                {
-                  content: {
-                    itemContent: {
-                      tweet_results: {
-                        result: buildTweet('t-unmention', 'u-unmention', {
-                          unmentionData: {
-                            hydrate: {
-                              unmentioned_users_results: [{ rest_id: 'u-hidden' }],
-                            },
-                          },
-                        }),
-                      },
-                    },
-                  },
-                },
-              ],
-            },
-          ],
-        },
-      },
-    },
-  };
-
-  const unmentionParsed = parseHomeTimelineResponse(unmentionFixture);
-  if (!unmentionParsed.tweets.has('t-unmention')) {
-    fail('[inline] unmention hydrate traversal failed');
-  }
-
-  const styledText = 'ignore Bold text and https://t.co/demo with &gt; and \\n done';
-  const styledDisplayStart = styledText.indexOf('Bold text');
-  const styledDisplayEnd = styledText.indexOf(' done');
-  const boldStart = styledDisplayStart;
-  const boldEnd = boldStart + 'Bold text'.length;
-  const urlStart = styledText.indexOf('https://t.co/demo');
-  const urlEnd = urlStart + 'https://t.co/demo'.length;
-  const unknownStart = styledText.indexOf('&gt;');
-
-  const styledSegments = getAnnotatedTextSegments({
-    text: styledText,
-    displayRange: {
-      start: styledDisplayStart,
-      end: styledDisplayEnd,
-    },
-    entities: {
-      hashtags: [],
-      symbols: [],
-      urls: [
-        {
-          url: 'https://t.co/demo',
-          expandedUrl: 'https://example.com/source',
-          displayText: 'example.com/source',
-          range: {
-            start: urlStart,
-            end: urlEnd,
-          },
-        },
-      ],
-      mentions: [],
-      media: [],
-    },
-    styles: [
-      {
-        range: {
-          start: boldStart,
-          end: boldEnd,
-        },
-        styles: ['Bold'],
-      },
-      {
-        range: {
-          start: urlStart + 8,
-          end: urlEnd - 2,
-        },
-        styles: ['Italic'],
-      },
-      {
-        range: {
-          start: unknownStart,
-          end: unknownStart + '&gt;'.length,
-        },
-        styles: ['Unknown'],
-      },
+function assertCardScenarios(): void {
+  const image = (url: string, size: number) => ({ type: 'IMAGE', image_value: { url, width: size, height: size } });
+  const card = collect(rawTweet('50', '1', {}, { card: { rest_id: 'https://t.co/c', legacy: {
+    name: 'summary_large_image',
+    url: 'https://t.co/c',
+    binding_values: [
+      { key: 'title', value: { type: 'STRING', string_value: 'Title' } },
+      { key: 'domain', value: { type: 'STRING', string_value: 'example.com' } },
+      { key: 'vanity_url', value: { type: 'STRING', string_value: 'example.com' } },
+      { key: 'photo_image_full_size_small', value: image('https://pbs.twimg.com/card_img/1/a?format=jpg&name=small', 100) },
+      { key: 'photo_image_full_size_original', value: image('https://pbs.twimg.com/card_img/1/a?format=jpg&name=orig', 1000) },
+      { key: 'thumbnail_image_original', value: image('https://pbs.twimg.com/card_img/1/a?format=jpg&name=orig', 1000) },
+      { key: 'thumbnail_image_color', value: { type: 'IMAGE_COLOR', image_color_value: {} } },
+      { key: 'site', value: { type: 'USER', user_value: { id_str: '7' } } },
+      { key: 'app_name', value: { type: 'STRING', string_value: 'App' } },
     ],
-  });
+  } } })).posts.get('50')!.card!;
+  check(card.image?.url.endsWith('name=orig') && card.image.width === 1000, 'card keeps the original rendition');
+  check(card.domain === 'example.com' && card.siteUserId === '7' && card.title === 'Title', 'card fields');
+  check(JSON.stringify(card.extra) === '{"app_name":"App"}', 'unknown bindings stay in extra, duplicates do not');
 
-  if (styledSegments.map((segment) => segment.text).join('') !== 'Bold text and https://example.com/source with > and \n') {
-    fail('[inline] styled text segmentation lost decoded detail text output');
-  }
-
-  const boldSegment = styledSegments.find((segment) => segment.text === 'Bold text');
-  if (!boldSegment?.bold || boldSegment.emphasis) {
-    fail('[inline] styled text segmentation lost bold plain segment');
-  }
-
-  const urlSegment = styledSegments.find((segment) => segment.kind === 'url');
-  if (!urlSegment) {
-    fail('[inline] styled text segmentation lost url segment');
-  }
-  if (urlSegment.text !== 'https://example.com/source') {
-    fail('[inline] styled text segmentation lost expanded url output');
-  }
-  if (!urlSegment.italic || !urlSegment.emphasis) {
-    fail('[inline] styled text segmentation lost italic url styling');
-  }
-  if (urlSegment.bold || urlSegment.underline || urlSegment.strike) {
-    fail('[inline] styled text segmentation applied unexpected url styles');
-  }
-
-  const tailSegment = styledSegments[styledSegments.length - 1];
-  if (!tailSegment || tailSegment.text !== ' with > and \n') {
-    fail('[inline] styled text segmentation lost decoded tail text');
-  }
-  if (tailSegment.bold || tailSegment.italic || tailSegment.underline || tailSegment.strike) {
-    fail('[inline] styled text segmentation should ignore unknown styles');
-  }
-
-  const emptyParsed = parseHomeTimelineResponse({});
-  if (!emptyParsed.meta?.warnings?.length) fail('[inline] empty timeline response should emit warnings');
-
-  const searchFixture = {
-    data: {
-      search_by_raw_query: {
-        search_timeline: {
-          timeline: {
-            instructions: [
-              {
-                entries: [
-                  {
-                    content: {
-                      itemContent: {
-                        tweet_results: {
-                          result: buildTweet('t-search', 'u-search'),
-                        },
-                      },
-                    },
-                  },
-                ],
-              },
-            ],
-          },
-        },
-      },
-    },
-  };
-
-  const searchParsed = parseSearchTimelineResponse(searchFixture);
-  if (searchParsed.tweetIds.join(',') !== 't-search') {
-    fail(`[inline] search timeline traversal failed: ${searchParsed.tweetIds.join(',')}`);
-  }
-
-  const repliesFixture = {
-    data: {
-      user: {
-        result: {
-          timeline: {
-            timeline: {
-              instructions: [
-                {
-                  entries: [
-                    {
-                      content: {
-                        itemContent: {
-                          tweet_results: {
-                            result: buildTweet('t-reply', 'u-reply'),
-                          },
-                        },
-                      },
-                    },
-                  ],
-                },
-              ],
-            },
-          },
-        },
-      },
-    },
-  };
-
-  const repliesParsed = parseUserTweetsAndRepliesResponse(repliesFixture);
-  if (repliesParsed.tweetIds.join(',') !== 't-reply') {
-    fail(`[inline] replies timeline traversal failed: ${repliesParsed.tweetIds.join(',')}`);
-  }
-
-  const singleUserFixture = {
-    data: {
-      user: {
-        result: buildUser('u-screen-name'),
-      },
-    },
-  };
-
-  const singleUserParsed = parseUserByScreenNameResponse(singleUserFixture);
-  if (!singleUserParsed.users.has('u-screen-name')) {
-    fail('[inline] single user response was not parsed');
-  }
-
-  const multiUserFixture = {
-    data: {
-      users: {
-        0: buildUser('u-rest-1'),
-        1: buildUser('u-rest-2'),
-      },
-    },
-  };
-
-  const multiUserParsed = parseUsersByRestIdsResponse(multiUserFixture);
-  if (!multiUserParsed.users.has('u-rest-1') || !multiUserParsed.users.has('u-rest-2')) {
-    fail('[inline] users-by-rest-ids response was not parsed');
-  }
+  const poll = collect(rawTweet('51', '1', {}, { card: { rest_id: 'https://t.co/p', legacy: {
+    name: 'poll2choice_text_only',
+    url: 'https://t.co/p',
+    binding_values: [
+      { key: 'choice1_label', value: { type: 'STRING', string_value: 'Yes' } },
+      { key: 'choice1_count', value: { type: 'STRING', string_value: '3' } },
+      { key: 'choice2_label', value: { type: 'STRING', string_value: 'No' } },
+      { key: 'choice2_count', value: { type: 'STRING', string_value: '1' } },
+      { key: 'end_datetime_utc', value: { type: 'STRING', string_value: '2030-01-02T00:00:00Z' } },
+      { key: 'counts_are_final', value: { type: 'BOOLEAN', boolean_value: true } },
+    ],
+  } } })).posts.get('51')!.card!;
+  check(JSON.stringify(poll.poll) === '{"choices":[{"label":"Yes","count":3},{"label":"No","count":1}],"endsAt":"2030-01-02T00:00:00Z","final":true}', 'poll card');
+  check(collect(rawTweet('52', '1', {}, { card: { rest_id: 'https://t.co/u' } })).posts.get('52')!.card === undefined, 'unexpanded card is dropped');
 }
 
-function assertDbBatchScenario() {
+function assertTraversalScenarios(): void {
+  const parsed = parseTimelineResponse({ data: { home: { home_timeline_urt: { instructions: [
+    { type: 'TimelineAddEntries', entries: [entry(rawTweet('60', '1')), entry(rawTweet('61', '1'), { promotedMetadata: {} })] },
+    { type: 'TimelineAddToModule', moduleItems: [{ item: { itemContent: { tweet_results: { result: rawTweet('62', '1') } } } }] },
+    { type: 'TimelinePinEntry', entry: entry(rawTweet('63', '1')) },
+  ] } } } });
+  check(parsed.postIds.join() === '60,62,63', 'entries, module items and pinned entries in order');
+  check(!parsed.posts.has('61'), 'promoted entries are skipped');
+  check(parseTimelineResponse({}).meta.warnings.length > 0, 'unknown response shape warns');
+
+  const bookmarks = parseTimelineResponse({ data: { bookmark_timeline_v2: { timeline: { instructions: [{ entries: [entry(rawTweet('64', '1'))] }] } } } });
+  check(bookmarks.meta.instructionPath === 'data.bookmark_timeline_v2.timeline.instructions' && bookmarks.postIds.join() === '64', 'bookmarks path');
+}
+
+function assertMergeScenarios(): void {
+  const stored: Record<string, unknown> = {
+    id: '1', text: { text: 'a', entities: [{ type: 'hashtag', range: [0, 1] }] }, article: { id: '9', title: 'T', blocks: [{ type: 'unstyled', text: 'body' }] },
+    counts: { likes: 1, views: 10 },
+  };
+  const changed = mergeArchiveRecord(stored, { id: '1', text: { text: 'a' }, article: { id: '9', title: 'T' }, counts: { likes: 2 } });
+  check(changed, 'merge reports changes');
+  check((stored.article as any).blocks?.length === 1 && (stored.text as any).entities?.length === 1, 'absent fields keep stored values');
+  check(JSON.stringify(stored.counts) === '{"likes":2,"views":10}', 'present values win per field');
+  check(!mergeArchiveRecord(stored, { id: '1', counts: { likes: 2 } }), 'unchanged merge reports no change');
+}
+
+function assertRemoteScenarios(): void {
+  const collector = collect(rawTweet('70', '1', {
+    retweeted_status_result: { result: rawTweet('71', '2', { extended_entities: { media: [rawMedia('700')] } }, {
+      quoted_status_result: { result: rawTweet('72', '3') },
+    }) },
+  }));
+  const source = {
+    getPost: (id: string) => collector.posts.get(id),
+    getUser: (id: string) => collector.users.get(id),
+    getMedia: (id: string) => collector.media.get(id),
+  };
+  const { batch, missingPostIds } = buildArchiveBatch(['70', '99'], source);
+  check(batch.posts.map((post) => post.id).sort().join() === '70,71,72', 'repost batch includes the original and its quote');
+  check(batch.users.length === 3 && batch.media.map((item) => item.id).join() === '700', 'batch includes authors and media');
+  check(missingPostIds.join() === '99', 'unknown posts are reported');
+
+  const found = <T extends { id: string }>(items: T[]) => items.map((item) => ({ id: item.id, status: 'found' as const, data: structuredClone(item) }));
+  const response = { users: found(batch.users), posts: found(batch.posts), media: found(batch.media) };
+  check(compareArchiveBatch(batch, response).status === 'in_sync', 'identical records are in sync');
+
+  const remotePost = response.posts.find((item) => item.id === '71')!.data as Post;
+  remotePost.counts = { ...remotePost.counts, likes: 0 };
+  check(compareArchiveBatch(batch, response).status === 'stale', 'counter-only differences are stale');
+  remotePost.text = { text: 'changed' };
+  check(compareArchiveBatch(batch, response).status === 'mismatch', 'content differences mismatch');
+  remotePost.text = structuredClone(batch.posts.find((post) => post.id === '71')!.text);
+  (remotePost as any).article = { id: '5', title: 'only remote' };
+  check(compareArchiveBatch(batch, response).status === 'stale', 'extra remote fields do not mismatch');
+  response.media = [];
+  check(compareArchiveBatch(batch, response).status === 'failed', 'missing results fail');
+}
+
+function assertStoreScenarios(): void {
   clearDb();
-  const startVersion = dbVersion.value;
-
-  const user = buildStoredUser('u-db');
-  const tweet = buildStoredTweet('t-db', 'u-db', ['m-db']);
-  const media = buildStoredMedia('m-db');
-
+  const start = dbVersion.value;
   runDbBatch(() => {
-    upsertUser(user);
-    upsertTweet(tweet);
-    upsertMedia(media);
+    upsertUser(UserSchema.parse({ id: '1', handle: 'a', name: 'A' }));
+    upsertPost(PostSchema.parse({ id: '2', authorId: '1', createdAt: '2030-01-01T00:00:00Z' }));
   });
+  check(dbVersion.value - start === 1, 'db batch bumps the version once');
 
-  if (dbVersion.value - startVersion !== 1) {
-    fail(`[inline] db batch should bump version exactly once, got ${dbVersion.value - startVersion}`);
-  }
-}
-
-function assertTimelineStoreScenario() {
   clearTimelineState();
+  const key = buildTimelineRecordKey('UserMediaTimeline', '42');
+  ingestTimeline({ key, namespace: 'UserMediaTimeline', postIds: ['t1', 't2', 't1'], aliases: ['42', 'Owner'] });
+  check(getTimelinePostIds(key).join() === 't1,t2' && getTimelineVersion(key) === 1, 'timeline dedupes and versions');
+  check(getTimelinePostIdsByAlias('UserMediaTimeline', 'owner').join() === 't1,t2', 'aliases are case-insensitive');
+  check(resolveTimelineRecordKey('UserMediaTimeline#popular', 'owner') === null, 'sort variants are separate timelines');
+  ingestTimeline({ key: 'Home', namespace: 'Home', postIds: ['h1', 'h2'], insertMode: 'prepend' });
+  ingestTimeline({ key: 'Home', namespace: 'Home', postIds: ['h3', 'h2'], insertMode: 'prepend' });
+  check(getTimelinePostIds('Home').join() === 'h3,h1,h2', 'prepend mode');
 
-  const screenNameKey = buildTimelineRecordKey('UserMedia', 'InlineUser');
-  const userIdKey = buildTimelineRecordKey('UserMedia', 'u-inline');
+  clearCaptureState();
+  check(getPostCount() === 0 && getTimelinePostIds('Home').length === 0, 'clearCaptureState empties db and timelines');
+}
 
-  const firstIngest = ingestTimeline({
-    key: screenNameKey,
-    operationName: 'UserMedia',
-    tweetIds: ['t1', 't2', 't1'],
-    aliases: ['InlineUser'],
-  });
+// --- Fixtures ---
 
-  if (firstIngest.key !== screenNameKey) {
-    fail('[inline] timeline store should preserve the first canonical key');
-  }
-  if (getTimelineTweetIds(screenNameKey).join(',') !== 't1,t2') {
-    fail('[inline] timeline store lost order or dedupe');
-  }
-  if (getTimelineTweetIdsByAlias('UserMedia', 'inlineuser').join(',') !== 't1,t2') {
-    fail('[inline] timeline store should resolve aliases case-insensitively');
-  }
-  if (getTimelineVersion(screenNameKey) !== 1) {
-    fail('[inline] timeline store should bump version once for new ids');
-  }
-  if (getTimelineCreatedOrder(screenNameKey) == null) {
-    fail('[inline] timeline store should record timeline creation order');
-  }
-
-  const secondIngest = ingestTimeline({
-    key: userIdKey,
-    operationName: 'UserMedia',
-    tweetIds: ['t3'],
-    aliases: ['u-inline', 'InlineUser'],
-  });
-
-  if (secondIngest.key !== screenNameKey) {
-    fail('[inline] timeline store should merge alternate aliases into the existing record');
-  }
-  if (resolveTimelineRecordKey('UserMedia', 'u-inline') !== screenNameKey) {
-    fail('[inline] timeline store should index secondary aliases');
-  }
-  if (getTimelineTweetIdsByAlias('UserMedia', 'u-inline').join(',') !== 't1,t2,t3') {
-    fail('[inline] timeline store should append new ids onto the merged record');
-  }
-
-  const versionAfterDuplicate = getTimelineVersion(screenNameKey);
-  ingestTimeline({
-    key: userIdKey,
-    operationName: 'UserMedia',
-    tweetIds: ['t2'],
-    aliases: ['u-inline'],
-  });
-  if (getTimelineVersion(screenNameKey) !== versionAfterDuplicate) {
-    fail('[inline] timeline store should ignore duplicate-only ingest');
-  }
-
-  const homeKey = buildTimelineRecordKey('HomeTimeline');
-  ingestTimeline({
-    key: homeKey,
-    operationName: 'HomeTimeline',
-    tweetIds: ['h1', 'h2'],
-    insertMode: 'prepend',
-  });
-  ingestTimeline({
-    key: homeKey,
-    operationName: 'HomeTimeline',
-    tweetIds: ['h3', 'h2'],
-    insertMode: 'prepend',
-  });
-  if (getTimelineTweetIds(homeKey).join(',') !== 'h3,h1,h2') {
-    fail('[inline] prepend mode should insert new timeline ids at the top');
-  }
-  if (getTimelineCreatedOrderByAlias('HomeTimeline') == null) {
-    fail('[inline] timeline store should resolve created order without aliases');
+function assertParsedRecords(parsed: ParsedResponse, label: string): void {
+  if (parsed.meta.warnings.length) fail(`[${label}] warnings: ${parsed.meta.warnings.slice(0, 3).join(' | ')}`);
+  for (const user of parsed.users.values()) UserSchema.parse(user);
+  for (const media of parsed.media.values()) MediaSchema.parse(media);
+  for (const post of parsed.posts.values()) {
+    PostSchema.parse(post);
+    if (!parsed.users.has(post.authorId)) fail(`[${label}] post ${post.id} author ${post.authorId} missing`);
+    if (post.repostOf && !parsed.posts.has(post.repostOf)) fail(`[${label}] repost ${post.id} target missing`);
+    for (const mediaId of post.mediaIds ?? []) {
+      if (!parsed.media.has(mediaId)) fail(`[${label}] post ${post.id} media ${mediaId} missing`);
+    }
   }
 }
 
-function assertCaptureStateClearScenario() {
-  clearCaptureState();
+function main(): void {
+  assertTextScenarios();
+  assertRelationScenarios();
+  assertUserScenarios();
+  assertCardScenarios();
+  assertTraversalScenarios();
+  assertMergeScenarios();
+  assertRemoteScenarios();
+  assertStoreScenarios();
+  console.log('inline scenarios: ok');
 
-  runDbBatch(() => {
-    upsertUser({
-      ...buildStoredUser('u-clear'),
-      stats: {
-        followers: 0,
-        following: 0,
-        likes: 0,
-        mediaPosts: 0,
-        tweets: 0,
-        listed: 0,
-      },
-    });
-    upsertTweet({
-      ...buildStoredTweet('t-clear', 'u-clear'),
-      content: {
-        legacyText: {
-          text: 'clear',
-          entities: createEmptyTextEntities(),
-        },
-        mediaIds: [],
-      },
-      stats: {
-        views: undefined,
-        replies: 0,
-        reposts: 0,
-        quotes: 0,
-        likes: 0,
-        bookmarks: 0,
-      },
-    });
-  });
+  const fixtures = loadDumpFixtures();
+  const stats = new Map<string, { files: number; ordered: number; posts: number; users: number; media: number }>();
+  const unsupported = new Set<string>();
 
-  ingestTimeline({
-    key: buildTimelineRecordKey('UserMedia', 'clear-user'),
-    operationName: 'UserMedia',
-    tweetIds: ['t-clear'],
-    aliases: ['clear-user'],
-  });
-
-  clearCaptureState();
-
-  if (getTweetCount() !== 0) {
-    fail('[inline] clearCaptureState should empty the database');
-  }
-  if (getTimelineTweetIdsByAlias('UserMedia', 'clear-user').length !== 0) {
-    fail('[inline] clearCaptureState should empty timeline state');
-  }
-}
-
-function main() {
-  assertInlineParserScenarios();
-  assertDbBatchScenario();
-  assertTimelineStoreScenario();
-  assertCaptureStateClearScenario();
-
-  let totalTweets = 0;
-  let totalMedia = 0;
-
-  for (const testCase of CASES) {
-    let caseFiles = 0;
-    let caseTweets = 0;
-    let caseMedia = 0;
-    let caseUsers = 0;
-    let caseOrdered = 0;
-
-    for (const relativeDir of testCase.dirs) {
-      const dir = join(ROOT, relativeDir);
-      const files = readdirSync(dir).filter((file) => file.endsWith('.json')).sort();
-      caseFiles += files.length;
-
-      for (const file of files) {
-        const json = JSON.parse(readFileSync(join(dir, file), 'utf8'));
-        const parsed = testCase.parse(json);
-
-        for (const tweet of parsed.tweets.values()) {
-          assertTweetShape(tweet, `${testCase.name}/${file}`);
-        }
-
-        for (const user of parsed.users.values()) {
-          assertUserShape(user, `${testCase.name}/${file}`);
-        }
-
-        for (const tweet of parsed.tweets.values()) {
-          for (const mediaId of getTweetMediaIds(tweet)) {
-            if (!parsed.media.has(mediaId)) {
-              fail(`[${testCase.name}/${file}] tweet ${tweet.id} references missing media ${mediaId}`);
-            }
-          }
-        }
-
-        if (isTimelineParsedResponse(parsed)) {
-          for (const tweetId of parsed.tweetIds) {
-            if (!parsed.tweets.has(tweetId)) {
-              fail(`[${testCase.name}/${file}] ordered tweet id ${tweetId} missing from parsed.tweets`);
-            }
-          }
-          caseOrdered += parsed.tweetIds.length;
-        }
-
-        assertFixtureExpectations(parsed, testCase.name, file);
-
-        caseTweets += parsed.tweets.size;
-        caseMedia += parsed.media.size;
-        caseUsers += parsed.users.size;
-      }
+  for (const fixture of fixtures) {
+    const endpoint = getSupportedEndpoint(fixture.operationName);
+    if (!endpoint) {
+      unsupported.add(fixture.operationName);
+      continue;
     }
+    const parsed = endpoint.kind === 'tweet-detail'
+      ? parseTweetDetailResponse(fixture.response)
+      : parseTimelineResponse(fixture.response);
+    assertParsedRecords(parsed, fixture.source);
 
-    if (testCase.requireTweets && caseTweets === 0) {
-      fail(`[${testCase.name}] parser produced zero tweets across all fixtures`);
+    const ordered = (parsed as TimelineParsedResponse).postIds ?? [];
+    for (const id of ordered) {
+      if (!parsed.posts.has(id)) fail(`[${fixture.source}] ordered post ${id} missing`);
     }
+    if (endpoint.kind === 'timeline' && ordered.length === 0) fail(`[${fixture.source}] timeline produced no posts`);
 
-    if (testCase.requireUsers && caseUsers === 0) {
-      fail(`[${testCase.name}] parser produced zero users across all fixtures`);
-    }
-
-    totalTweets += caseTweets;
-    totalMedia += caseMedia;
-
-    const orderedText = testCase.ordered ? `, ordered=${caseOrdered}` : '';
-    console.log(`${testCase.name}@v${testCase.supportVersion}: files=${caseFiles}, tweets=${caseTweets}, media=${caseMedia}, users=${caseUsers}${orderedText}`);
+    const entry = stats.get(fixture.operationName) ?? { files: 0, ordered: 0, posts: 0, users: 0, media: 0 };
+    entry.files += 1;
+    entry.ordered += ordered.length;
+    entry.posts += parsed.posts.size;
+    entry.users += parsed.users.size;
+    entry.media += parsed.media.size;
+    stats.set(fixture.operationName, entry);
   }
 
-  console.log(`Totals: tweets=${totalTweets}, media=${totalMedia}`);
+  if (fixtures.length === 0) {
+    console.log('fixtures: none under dumps/ (gitignored); only inline scenarios ran');
+    return;
+  }
+  for (const [operationName, entry] of [...stats.entries()].sort()) {
+    console.log(`${operationName}: files=${entry.files}, ordered=${entry.ordered}, posts=${entry.posts}, users=${entry.users}, media=${entry.media}`);
+  }
+  if (unsupported.size) console.log(`unsupported operations skipped: ${[...unsupported].sort().join(', ')}`);
 }
 
 main();

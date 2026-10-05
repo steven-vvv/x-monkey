@@ -10,7 +10,7 @@
     "analyze:dumps": "tsx scripts/analyze-dumps.ts",
     "verify:parsers": "tsx --tsconfig scripts/tsconfig.json scripts/verify-parsers-runner.ts",
     "verify:tweet-raw-schema": "tsx scripts/verify-tweet-raw-schema-coverage.ts",
-    "verify:remote-db-contract": "tsx scripts/verify-remote-db-contract.ts"
+    "export:archive-sample": "tsx scripts/export-archive-sample.ts"
   },
   "dependencies": {
     "vue": "^3.5.43",

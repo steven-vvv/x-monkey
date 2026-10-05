@@ -9,7 +9,7 @@ import {
   type TabId,
 } from './lib/store';
 import { getConfig, clampAnchor, updateConfig, pausePersistence, resumePersistence } from './lib/config-service';
-import { dbVersion, getTweetCount } from './lib/db-service';
+import { dbVersion, getPostCount } from './lib/db-service';
 import { unsafeWindow } from '$';
 
 const BUBBLE_R = 18;
@@ -74,7 +74,7 @@ const contentScaleStyle = computed(() => {
 
 const tweetCount = computed(() => {
   void dbVersion.value;
-  return getTweetCount();
+  return getPostCount();
 });
 const hasTweetIncome = computed(() => tweetCount.value > 0);
 

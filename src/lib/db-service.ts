@@ -1,58 +1,41 @@
 import { reactive, computed, watch } from 'vue';
-import type { DbMediaRecord, DbTweetRecord, DbUserRecord } from './types';
-import { mergeEntity } from './entity-merge';
-import { getTweetMediaIds, getTweetReplyToTweetId } from './tweet-selectors';
+import type { Media, Post, User } from '../archive/model';
+import { mergeArchiveRecord } from '../archive/merge';
 import {
-  compareRemoteDbTweetBundle,
+  buildArchiveBatch,
+  compareArchiveBatch,
   getRemoteDbClientState,
-  isRemoteDbTweetApiReady,
-  queryRemoteDbTweetBundles,
-  type RemoteDbStatusComparison,
-  type RemoteDbTweetBundle,
+  isRemoteDbReady,
+  queryRemoteDbArchive,
+  toArchiveQuery,
+  type ArchiveRecordSource,
+  type RemoteRecordStatus,
 } from './remote-db';
 
-export interface DbTweet extends DbTweetRecord {
-  _ts: number;
-}
-
-export interface DbUser extends DbUserRecord {
-  _ts: number;
-}
-
-export interface DbMedia extends DbMediaRecord {
-  _ts: number;
-}
-
 interface Db {
-  tweets: Map<string, DbTweet>;
-  users: Map<string, DbUser>;
-  media: Map<string, DbMedia>;
+  posts: Map<string, Post>;
+  users: Map<string, User>;
+  media: Map<string, Media>;
 }
 
-interface RemoteSyncSnapshot {
-  tweet: DbTweet;
-  author: DbUser | undefined;
-  media: DbMedia[];
-  signature: string;
-}
-
-export type DbRemoteTweetSyncStatus = RemoteDbStatusComparison['overallStatus'];
+type RecordKind = 'post' | 'user' | 'media';
 
 const REMOTE_STATUS_BATCH_SIZE = 50;
 const REMOTE_SYNC_RETRY_INITIAL_MS = 1000;
 const REMOTE_SYNC_RETRY_MAX_MS = 60_000;
-const REMOTE_DB_MISSING_SELECTOR_RESULT_ERROR = 'Remote database response is missing this selector result';
 
 const db = reactive<Db>({
-  tweets: new Map(),
+  posts: new Map(),
   users: new Map(),
   media: new Map(),
 });
 
+/** Change counters per record, kept outside the records because records are submitted verbatim. */
+const recordVersions = new Map<string, number>();
 const changeCounter = reactive({ value: 0 });
 const remoteDbState = getRemoteDbClientState();
-const remoteTweetSyncStatuses = reactive<Record<string, DbRemoteTweetSyncStatus | undefined>>({});
-const remoteSyncPendingTweetIds = new Set<string>();
+const remoteSyncStatuses = reactive<Record<string, RemoteRecordStatus | undefined>>({});
+const remoteSyncPendingPostIds = new Set<string>();
 let batchDepth = 0;
 let batchDirty = false;
 let remoteSyncScheduled = false;
@@ -72,25 +55,18 @@ function markDirty() {
   bump();
 }
 
-function upsertEntity<T extends { id: string; _ts: number }>(
-  map: Map<string, T>,
-  entity: Omit<T, '_ts'>,
-): void {
-  const now = Date.now();
-  const existing = map.get(entity.id);
-
+function upsertRecord<T extends { id: string }>(kind: RecordKind, map: Map<string, T>, record: T): boolean {
+  const existing = map.get(record.id);
   if (existing) {
-    const previousTs = existing._ts;
-    const changed = mergeEntity(existing as Record<string, unknown>, entity as Record<string, unknown>);
-    existing._ts = now;
-    if (changed || previousTs !== existing._ts) {
-      markDirty();
-    }
-    return;
+    if (!mergeArchiveRecord(existing as Record<string, unknown>, record as Record<string, unknown>)) return false;
+  } else {
+    map.set(record.id, record);
   }
 
-  map.set(entity.id, { ...entity, _ts: now } as T);
+  const key = `${kind}:${record.id}`;
+  recordVersions.set(key, (recordVersions.get(key) ?? 0) + 1);
   markDirty();
+  return true;
 }
 
 export function runDbBatch(fn: () => void): void {
@@ -106,265 +82,182 @@ export function runDbBatch(fn: () => void): void {
   }
 }
 
-export function upsertTweet(tweet: DbTweetRecord): void {
-  upsertEntity(db.tweets, tweet);
-  enqueueRemoteTweetSyncStatusRefresh([tweet.id]);
+export function upsertPost(post: Post): void {
+  if (upsertRecord('post', db.posts, post)) enqueueRemoteSyncStatusRefresh(getPostsDependingOn('post', post.id));
 }
 
-export function upsertUser(user: DbUserRecord): void {
-  upsertEntity(db.users, user);
-  enqueueRemoteTweetSyncStatusRefresh(getTweetIdsForAuthor(user.id));
+export function upsertUser(user: User): void {
+  if (upsertRecord('user', db.users, user)) enqueueRemoteSyncStatusRefresh(getPostsDependingOn('user', user.id));
 }
 
-export function upsertMedia(media: DbMediaRecord): void {
-  upsertEntity(db.media, media);
-  enqueueRemoteTweetSyncStatusRefresh(getTweetIdsForMedia(media.id, media.origin?.tweetId));
+export function upsertMedia(media: Media): void {
+  if (upsertRecord('media', db.media, media)) enqueueRemoteSyncStatusRefresh(getPostsDependingOn('media', media.id));
 }
 
 export function clearDb(): void {
-  db.tweets.clear();
+  db.posts.clear();
   db.users.clear();
   db.media.clear();
-  clearRemoteTweetSyncStatuses();
+  recordVersions.clear();
+  clearRemoteSyncStatuses();
   bump();
 }
 
 export const dbVersion = computed(() => changeCounter.value);
 
-export function getDbTweet(id: string): DbTweet | undefined {
-  return db.tweets.get(id);
+export function getDbPost(id: string): Post | undefined {
+  return db.posts.get(id);
 }
 
-export function getDbUser(id: string): DbUser | undefined {
+export function getDbUser(id: string): User | undefined {
   return db.users.get(id);
 }
 
-export function getDbMedia(id: string): DbMedia | undefined {
+export function getDbMedia(id: string): Media | undefined {
   return db.media.get(id);
 }
 
-export function getAllTweets(): DbTweet[] {
-  return Array.from(db.tweets.values());
+export function getAllPosts(): Post[] {
+  return Array.from(db.posts.values());
 }
 
-export function getAllUsers(): DbUser[] {
-  return Array.from(db.users.values());
+export function getPostCount(): number {
+  return db.posts.size;
 }
 
-export function getTweetCount(): number {
-  return db.tweets.size;
+/** The post whose content is shown for `post`: the original for a pure repost. */
+export function getDisplayPost(post: Post): Post {
+  return (post.repostOf && db.posts.get(post.repostOf)) || post;
 }
 
-export function getRemoteTweetSyncStatus(tweetId: string): DbRemoteTweetSyncStatus | undefined {
-  if (!isRemoteDbTweetApiReady()) return undefined;
-  return remoteTweetSyncStatuses[tweetId];
+export function getMediaForPost(post: Post): Media[] {
+  return (post.mediaIds ?? []).map((id) => db.media.get(id)).filter((item): item is Media => !!item);
 }
 
-export function enqueueRemoteTweetSyncStatusRefresh(tweetIds: string[]): void {
-  if (!isRemoteDbTweetApiReady()) return;
+export function getParentChain(postId: string): Post[] {
+  const chain: Post[] = [];
+  const seen = new Set([postId]);
+  let parentId = db.posts.get(postId)?.replyTo?.postId;
 
-  for (const tweetId of tweetIds) {
-    if (db.tweets.has(tweetId)) {
-      remoteSyncPendingTweetIds.add(tweetId);
-    }
-  }
-
-  scheduleRemoteTweetSyncStatusRefresh();
-}
-
-export function getParentChain(tweetId: string): DbTweet[] {
-  const chain: DbTweet[] = [];
-  let current = db.tweets.get(tweetId);
-
-  while (current) {
-    const replyToTweetId = getTweetReplyToTweetId(current);
-    if (!replyToTweetId) break;
-
-    const parent = db.tweets.get(replyToTweetId);
+  while (parentId && !seen.has(parentId)) {
+    const parent = db.posts.get(parentId);
     if (!parent) break;
+    seen.add(parentId);
     chain.unshift(parent);
-    current = parent;
+    parentId = parent.replyTo?.postId;
   }
 
   return chain;
 }
 
-export function getReplies(tweetId: string): DbTweet[] {
-  const result: DbTweet[] = [];
-  for (const tweet of db.tweets.values()) {
-    if (getTweetReplyToTweetId(tweet) === tweetId) {
-      result.push(tweet);
-    }
-  }
-  return result;
+export function getReplies(postId: string): Post[] {
+  return getAllPosts().filter((post) => post.replyTo?.postId === postId);
 }
 
-export function getMediaForTweet(tweetId: string): DbMedia[] {
-  const tweet = db.tweets.get(tweetId);
-  if (!tweet) return [];
-  return getTweetMediaIds(tweet).map((id) => db.media.get(id)).filter(Boolean) as DbMedia[];
+export const archiveRecords: ArchiveRecordSource = {
+  getPost: (id) => db.posts.get(id),
+  getUser: (id) => db.users.get(id),
+  getMedia: (id) => db.media.get(id),
+};
+
+/** Posts whose submission batch contains the given record. */
+function getPostsDependingOn(kind: RecordKind, id: string): string[] {
+  const direct = getAllPosts().filter((post) => {
+    if (kind === 'post') return post.id === id || post.repostOf === id || post.quote?.postId === id;
+    if (kind === 'user') return post.authorId === id;
+    return post.mediaIds?.includes(id) || post.article?.coverMediaId === id || post.article?.mediaIds?.includes(id);
+  }).map((post) => post.id);
+  const reposts = getAllPosts().filter((post) => post.repostOf && direct.includes(post.repostOf)).map((post) => post.id);
+  return [...new Set([...direct, ...reposts])];
 }
 
-function getTweetIdsForAuthor(authorId: string): string[] {
-  const tweetIds: string[] = [];
-  for (const tweet of db.tweets.values()) {
-    if (tweet.authorId === authorId) {
-      tweetIds.push(tweet.id);
-    }
-  }
-  return tweetIds;
+export function getRemoteSyncStatus(postId: string): RemoteRecordStatus | undefined {
+  if (!isRemoteDbReady()) return undefined;
+  return remoteSyncStatuses[postId];
 }
 
-function getTweetIdsForMedia(mediaId: string, originTweetId?: string): string[] {
-  const tweetIds = new Set<string>();
-  if (originTweetId && db.tweets.has(originTweetId)) {
-    tweetIds.add(originTweetId);
-  }
+export function enqueueRemoteSyncStatusRefresh(postIds: string[]): void {
+  if (!isRemoteDbReady()) return;
 
-  for (const tweet of db.tweets.values()) {
-    if (getTweetMediaIds(tweet).includes(mediaId)) {
-      tweetIds.add(tweet.id);
-    }
+  for (const postId of postIds) {
+    if (db.posts.has(postId)) remoteSyncPendingPostIds.add(postId);
   }
-
-  return [...tweetIds];
+  scheduleRemoteSyncStatusRefresh();
 }
 
-function clearRemoteTweetSyncStatuses(): void {
+function clearRemoteSyncStatuses(): void {
   remoteSyncEpoch += 1;
   remoteSyncRetryDelayMs = REMOTE_SYNC_RETRY_INITIAL_MS;
-  remoteSyncPendingTweetIds.clear();
-  for (const tweetId of Object.keys(remoteTweetSyncStatuses)) {
-    delete remoteTweetSyncStatuses[tweetId];
+  remoteSyncPendingPostIds.clear();
+  for (const postId of Object.keys(remoteSyncStatuses)) {
+    delete remoteSyncStatuses[postId];
   }
 }
 
-function createRemoteSyncSignature(
-  tweet: DbTweet,
-  author: DbUser | undefined,
-  media: DbMedia[],
-): string {
+function batchSignature(postId: string): string {
+  const { batch } = buildArchiveBatch([postId], archiveRecords);
   return [
-    tweet.id,
-    changeCounter.value,
-    tweet._ts,
-    author?._ts ?? 0,
-    media.map((item) => `${item.id}:${item._ts}`).join(','),
-  ].join('|');
+    ...batch.posts.map((item) => `post:${item.id}`),
+    ...batch.users.map((item) => `user:${item.id}`),
+    ...batch.media.map((item) => `media:${item.id}`),
+  ].map((key) => `${key}@${recordVersions.get(key) ?? 0}`).join(',');
 }
 
-function createRemoteSyncSnapshot(tweetId: string): RemoteSyncSnapshot | null {
-  const tweet = db.tweets.get(tweetId);
-  if (!tweet) return null;
-
-  const author = db.users.get(tweet.authorId);
-  const media = getTweetMediaIds(tweet)
-    .map((id) => db.media.get(id))
-    .filter(Boolean) as DbMedia[];
-
-  return {
-    tweet,
-    author,
-    media,
-    signature: createRemoteSyncSignature(tweet, author, media),
-  };
-}
-
-function hasRemoteTweetSelectorResult(bundle: RemoteDbTweetBundle): boolean {
-  return bundle.tweet.status !== 'failed'
-    || bundle.tweet.error !== REMOTE_DB_MISSING_SELECTOR_RESULT_ERROR;
-}
-
-function isRemoteSyncSnapshotCurrent(snapshot: RemoteSyncSnapshot): boolean {
-  const current = createRemoteSyncSnapshot(snapshot.tweet.id);
-  return current?.signature === snapshot.signature;
-}
-
-function scheduleRemoteTweetSyncStatusRefresh(delayMs = 0): void {
-  if (remoteSyncScheduled || remoteSyncRunning || remoteSyncPendingTweetIds.size === 0) {
-    return;
-  }
+function scheduleRemoteSyncStatusRefresh(delayMs = 0): void {
+  if (remoteSyncScheduled || remoteSyncRunning || remoteSyncPendingPostIds.size === 0) return;
 
   remoteSyncScheduled = true;
   window.setTimeout(() => {
     remoteSyncScheduled = false;
-    void processRemoteTweetSyncQueue();
+    void processRemoteSyncQueue();
   }, delayMs);
 }
 
-async function processRemoteTweetSyncQueue(): Promise<void> {
+async function processRemoteSyncQueue(): Promise<void> {
   if (remoteSyncRunning) return;
 
   remoteSyncRunning = true;
   try {
-    while (remoteSyncPendingTweetIds.size > 0 && isRemoteDbTweetApiReady()) {
-      const tweetIds = [...remoteSyncPendingTweetIds].slice(0, REMOTE_STATUS_BATCH_SIZE);
-      for (const tweetId of tweetIds) {
-        remoteSyncPendingTweetIds.delete(tweetId);
-      }
+    while (remoteSyncPendingPostIds.size > 0 && isRemoteDbReady()) {
+      const postIds = [...remoteSyncPendingPostIds].slice(0, REMOTE_STATUS_BATCH_SIZE)
+        .filter((postId) => remoteSyncPendingPostIds.delete(postId) && db.posts.has(postId));
+      if (postIds.length === 0) continue;
 
-      const snapshots = tweetIds
-        .map((tweetId) => {
-          const snapshot = createRemoteSyncSnapshot(tweetId);
-          if (!snapshot) {
-            delete remoteTweetSyncStatuses[tweetId];
-          }
-          return snapshot;
-        })
-        .filter(Boolean) as RemoteSyncSnapshot[];
-
-      if (snapshots.length === 0) continue;
+      const batches = postIds.map((postId) => ({
+        postId,
+        batch: buildArchiveBatch([postId], archiveRecords).batch,
+        signature: batchSignature(postId),
+      }));
+      const query = toArchiveQuery(buildArchiveBatch(postIds, archiveRecords).batch);
 
       const epoch = remoteSyncEpoch;
-      let bundles: RemoteDbTweetBundle[];
+      let response: Awaited<ReturnType<typeof queryRemoteDbArchive>>;
       try {
-        bundles = await queryRemoteDbTweetBundles({
-          items: snapshots.map((snapshot) => ({
-            tweetId: snapshot.tweet.id,
-            authorId: snapshot.author?.id,
-            mediaIds: snapshot.media.map((media) => media.id),
-          })),
-        });
+        response = await queryRemoteDbArchive(query);
       } catch {
-        // Keep this batch pending. A transient network, 401 refresh, or 5xx
-        // must not silently erase the status checks for these tweets.
-        for (const tweetId of tweetIds) {
-          if (db.tweets.has(tweetId)) remoteSyncPendingTweetIds.add(tweetId);
-        }
+        // Keep this batch pending: a transient network error, a 401 refresh or
+        // a 5xx must not silently drop the status checks for these posts.
+        for (const postId of postIds) remoteSyncPendingPostIds.add(postId);
         remoteSyncRetryDelayMs = Math.min(REMOTE_SYNC_RETRY_MAX_MS, remoteSyncRetryDelayMs * 2);
         return;
       }
 
-      if (epoch !== remoteSyncEpoch) {
-        for (const snapshot of snapshots) {
-          if (db.tweets.has(snapshot.tweet.id)) remoteSyncPendingTweetIds.add(snapshot.tweet.id);
-        }
-        continue;
-      }
-
       remoteSyncRetryDelayMs = REMOTE_SYNC_RETRY_INITIAL_MS;
+      if (epoch !== remoteSyncEpoch) continue;
 
-      for (const [index, bundle] of bundles.entries()) {
-        const snapshot = snapshots[index];
-        if (!snapshot || !hasRemoteTweetSelectorResult(bundle)) continue;
-
-        if (!isRemoteSyncSnapshotCurrent(snapshot)) {
-          remoteSyncPendingTweetIds.add(snapshot.tweet.id);
+      for (const { postId, batch, signature } of batches) {
+        if (!db.posts.has(postId)) continue;
+        if (batchSignature(postId) !== signature) {
+          remoteSyncPendingPostIds.add(postId);
           continue;
         }
-
-        remoteTweetSyncStatuses[snapshot.tweet.id] = compareRemoteDbTweetBundle(
-          snapshot.tweet,
-          snapshot.author,
-          snapshot.media,
-          bundle,
-        ).overallStatus;
+        remoteSyncStatuses[postId] = compareArchiveBatch(batch, response).status;
       }
     }
   } finally {
     remoteSyncRunning = false;
-    if (remoteSyncPendingTweetIds.size > 0 && isRemoteDbTweetApiReady()) {
-      scheduleRemoteTweetSyncStatusRefresh(
+    if (remoteSyncPendingPostIds.size > 0 && isRemoteDbReady()) {
+      scheduleRemoteSyncStatusRefresh(
         remoteSyncRetryDelayMs === REMOTE_SYNC_RETRY_INITIAL_MS ? 0 : remoteSyncRetryDelayMs,
       );
     }
@@ -379,9 +272,7 @@ watch(
     String(remoteDbState.runtimeEnabled),
   ] as const,
   () => {
-    if (isRemoteDbTweetApiReady()) {
-      enqueueRemoteTweetSyncStatusRefresh([...db.tweets.keys()]);
-    }
+    if (isRemoteDbReady()) enqueueRemoteSyncStatusRefresh([...db.posts.keys()]);
   },
   { immediate: true },
 );

@@ -1,76 +1,57 @@
 <script setup lang="ts">
 import { computed } from 'vue';
-import type { DbTweet } from '../lib/db-service';
-import { getDbTweet, getDbUser, getMediaForTweet } from '../lib/db-service';
-import { avatarFull, formatDateTime, toTweetStats } from '../lib/view-format';
-import {
-  getTweetDisplayText,
-  getTweetDetailTextSegments,
-  getTweetQuoteId,
-  getTweetRepostId,
-} from '../lib/tweet-selectors';
+import type { Post } from '../archive/model';
+import { getDbMedia, getDbPost, getDbUser, getMediaForPost } from '../lib/db-service';
+import { formatDateTime, formatCount, toTweetStats } from '../lib/view-format';
+import { formatUrlForDisplay, getAvatarUrl, getPlainText, getRichTextSegments } from '../lib/post-view';
 import StatGrid from './StatGrid.vue';
 import MediaThumbGrid from './MediaThumbGrid.vue';
 
-const props = defineProps<{ tweet: DbTweet }>();
+const props = defineProps<{ post: Post }>();
 
 const emit = defineEmits<{
   (e: 'open-user', userId: string): void;
-  (e: 'open-original', tweet: DbTweet): void;
+  (e: 'open-original', post: Post): void;
   (e: 'open-media', url: string): void;
-  (e: 'open-tweet', tweetId: string): void;
+  (e: 'open-tweet', postId: string): void;
 }>();
 
-const author = computed(() => getDbUser(props.tweet.authorId));
-const textSegments = computed(() => getTweetDetailTextSegments(props.tweet));
-const stats = computed(() => toTweetStats(props.tweet));
-const media = computed(() => getMediaForTweet(props.tweet.id));
-const quoteTweetId = computed(() => getTweetQuoteId(props.tweet));
-const repostTweetId = computed(() => getTweetRepostId(props.tweet));
-const quoteTweet = computed(() => quoteTweetId.value ? getDbTweet(quoteTweetId.value) ?? null : null);
-const repostTweet = computed(() => repostTweetId.value ? getDbTweet(repostTweetId.value) ?? null : null);
-const quoteAuthor = computed(() => quoteTweet.value ? getDbUser(quoteTweet.value.authorId) ?? null : null);
-const repostAuthor = computed(() => repostTweet.value ? getDbUser(repostTweet.value.authorId) ?? null : null);
+const author = computed(() => getDbUser(props.post.authorId));
+const avatarUrl = computed(() => author.value ? getAvatarUrl(author.value) : undefined);
+const textSegments = computed(() => props.post.text ? getRichTextSegments(props.post.text) : []);
+const stats = computed(() => toTweetStats(props.post.counts));
+const media = computed(() => getMediaForPost(props.post));
+const quotePostId = computed(() => props.post.quote?.postId);
+const quotePost = computed(() => quotePostId.value ? getDbPost(quotePostId.value) ?? null : null);
+const quoteAuthor = computed(() => quotePost.value ? getDbUser(quotePost.value.authorId) ?? null : null);
 const verificationTag = computed(() => {
-  const verification = author.value?.identity?.verification;
-  const verificationType = verification?.type?.trim();
+  const verified = author.value?.verified;
+  return verified?.type ?? (verified?.blue ? 'Blue' : null);
+});
 
-  if (verificationType && verificationType.toLowerCase() !== 'none') {
-    return verificationType;
-  }
-
-  if (verification?.isBlueVerified) {
-    return 'Blue';
-  }
-
-  return null;
+const card = computed(() => props.post.card);
+const pollTotal = computed(() => card.value?.poll?.choices.reduce((sum, choice) => sum + (choice.count ?? 0), 0) ?? 0);
+const article = computed(() => props.post.article);
+const articleCover = computed(() => article.value?.coverMediaId ? getDbMedia(article.value.coverMediaId) : undefined);
+const articleText = computed(() => {
+  const blocks = article.value?.blocks;
+  if (!blocks) return article.value?.preview ?? '';
+  return blocks.filter((block) => block.type !== 'atomic').map((block) => block.text).join('\n');
 });
 
 const policyLines = computed(() => {
+  const post = props.post;
   const lines: string[] = [];
-
-  if (props.tweet.policy?.paidPromotion) {
-    lines.push('Paid Promotion');
+  if (post.paidPromotion) lines.push('Paid promotion');
+  if (post.aiGenerated) {
+    lines.push(post.aiGenerated.media
+      ? `AI-generated media (${post.aiGenerated.source})`
+      : `No AI-generated media (${post.aiGenerated.source})`);
   }
-  if (props.tweet.policy?.replyPolicy) {
-    lines.push(`Reply policy: ${props.tweet.policy.replyPolicy}`);
-  }
-  if (props.tweet.policy?.followersOnly) {
-    lines.push('Followers-only conversation');
-  }
-  if (props.tweet.policy?.isPossiblySensitive) {
-    lines.push('Marked as possibly sensitive');
-  }
-  if (props.tweet.policy?.isMediaVisibilityRestricted) {
-    lines.push('Media visibility restricted');
-  }
-  if (props.tweet.policy?.availableActions?.length) {
-    lines.push(`Available actions: ${props.tweet.policy.availableActions.join(', ')}`);
-  }
-  if (props.tweet.place?.fullName ?? props.tweet.place?.name) {
-    lines.push(`Location: ${props.tweet.place?.fullName ?? props.tweet.place?.name}`);
-  }
-
+  if (post.replyPolicy) lines.push(`Reply policy: ${post.replyPolicy}`);
+  if (post.sensitive) lines.push('Marked as possibly sensitive');
+  if (post.editIds) lines.push(`Edited: ${post.editIds.length} versions`);
+  if (post.place) lines.push(`Location: ${post.place.fullName ?? post.place.name ?? post.place.id}`);
   return lines;
 });
 </script>
@@ -78,23 +59,18 @@ const policyLines = computed(() => {
 <template>
   <div class="xd-detail-card">
     <div class="xd-detail-head">
-      <img
-        v-if="author?.profile.avatarUrl"
-        class="xd-detail-avatar"
-        :src="avatarFull(author.profile.avatarUrl)"
-        loading="lazy"
-      />
+      <img v-if="avatarUrl" class="xd-detail-avatar" :src="avatarUrl" loading="lazy" />
 
       <div class="xd-detail-head-main">
-        <div class="xd-detail-author xd-list-item--clickable" @click="emit('open-user', tweet.authorId)">
-          <span class="xd-author-name">{{ author?.profile.displayName ?? '?' }}</span>
-          <span class="xd-author-handle">@{{ author?.profile.userName ?? '?' }}</span>
+        <div class="xd-detail-author xd-list-item--clickable" @click="emit('open-user', post.authorId)">
+          <span class="xd-author-name">{{ author?.name ?? '?' }}</span>
+          <span class="xd-author-handle">@{{ author?.handle ?? '?' }}</span>
           <span v-if="verificationTag" class="xd-detail-author-tag">{{ verificationTag }}</span>
         </div>
 
         <div class="xd-detail-meta">
-          <span>{{ formatDateTime(tweet.createdAt) }}</span>
-          <span v-if="tweet.source">{{ tweet.source }}</span>
+          <span>{{ formatDateTime(post.createdAt) }}</span>
+          <span v-if="post.source">{{ post.source }}</span>
         </div>
       </div>
     </div>
@@ -105,43 +81,51 @@ const policyLines = computed(() => {
         :key="`${segment.kind}-${index}`"
         class="xd-detail-text-segment"
         :class="{
-          'xd-detail-text-segment--emphasis': segment.emphasis,
+          'xd-detail-text-segment--emphasis': segment.kind !== 'plain',
           'xd-detail-text-segment--bold': segment.bold,
           'xd-detail-text-segment--italic': segment.italic,
           'xd-detail-text-segment--underline': segment.underline,
           'xd-detail-text-segment--strike': segment.strike,
         }"
+        :title="segment.href"
       >{{ segment.text }}</span>
     </div>
 
-    <div
-      v-if="repostTweetId"
-      class="xd-detail-ref xd-list-item--clickable"
-      @click="emit('open-tweet', repostTweetId)"
-    >
-      <div class="xd-detail-ref-label">Repost</div>
-      <div class="xd-detail-ref-text">
-        <template v-if="repostTweet">
-          {{ repostAuthor?.profile.displayName ?? '?' }} · {{ getTweetDisplayText(repostTweet) || '(no text)' }}
-        </template>
-        <template v-else>
-          Tweet ID {{ repostTweetId }}
-        </template>
-      </div>
+    <div v-if="article" class="xd-detail-ref">
+      <div class="xd-detail-ref-label">Article{{ article.blocks ? '' : ' (preview)' }}</div>
+      <img v-if="articleCover" class="xd-detail-ref-image" :src="articleCover.url" loading="lazy" />
+      <div class="xd-detail-ref-title">{{ article.title }}</div>
+      <div v-if="articleText" class="xd-detail-ref-text xd-detail-ref-text--clamped">{{ articleText }}</div>
+    </div>
+
+    <div v-if="card" class="xd-detail-ref">
+      <div class="xd-detail-ref-label">{{ card.poll ? 'Poll' : (card.domain ?? card.type) }}</div>
+      <template v-if="card.poll">
+        <div v-for="choice in card.poll.choices" :key="choice.label" class="xd-detail-line">
+          {{ choice.label }}<template v-if="choice.count !== undefined"> · {{ formatCount(choice.count) }}{{ pollTotal > 0 ? ` (${Math.round(choice.count / pollTotal * 100)}%)` : '' }}</template>
+        </div>
+        <div v-if="card.poll.endsAt" class="xd-detail-line">{{ card.poll.final ? 'Ended' : 'Ends' }} {{ formatDateTime(card.poll.endsAt) }}</div>
+      </template>
+      <template v-else>
+        <img v-if="card.image" class="xd-detail-ref-image" :src="card.image.url" :alt="card.image.alt" loading="lazy" />
+        <div v-if="card.title" class="xd-detail-ref-title">{{ card.title }}</div>
+        <div v-if="card.description" class="xd-detail-ref-text">{{ card.description }}</div>
+        <div v-if="card.player" class="xd-detail-line">{{ formatUrlForDisplay(card.player.url) }}</div>
+      </template>
     </div>
 
     <div
-      v-if="quoteTweetId"
+      v-if="quotePostId"
       class="xd-detail-ref xd-list-item--clickable"
-      @click="emit('open-tweet', quoteTweetId)"
+      @click="emit('open-tweet', quotePostId)"
     >
       <div class="xd-detail-ref-label">Quote</div>
       <div class="xd-detail-ref-text">
-        <template v-if="quoteTweet">
-          {{ quoteAuthor?.profile.displayName ?? '?' }} · {{ getTweetDisplayText(quoteTweet) || '(no text)' }}
+        <template v-if="quotePost">
+          {{ quoteAuthor?.name ?? '?' }} · {{ getPlainText(quotePost.text) || quotePost.article?.title || '(no text)' }}
         </template>
         <template v-else>
-          Tweet ID {{ quoteTweetId }}
+          {{ post.quote?.url ?? `Post ID ${quotePostId}` }}
         </template>
       </div>
     </div>
@@ -152,16 +136,15 @@ const policyLines = computed(() => {
       <div v-for="line in policyLines" :key="line" class="xd-detail-line">{{ line }}</div>
     </div>
 
-    <div v-if="tweet.communityNote" class="xd-detail-lines">
-      <div class="xd-detail-note-title">{{ tweet.communityNote.title ?? 'Community Note' }}</div>
-      <div v-if="tweet.communityNote.subtitle?.text" class="xd-detail-line">{{ tweet.communityNote.subtitle.text }}</div>
-      <div v-if="tweet.communityNote.footer?.text" class="xd-detail-line">{{ tweet.communityNote.footer.text }}</div>
+    <div v-if="post.communityNote" class="xd-detail-lines">
+      <div class="xd-detail-note-title">{{ post.communityNote.title ?? 'Community Note' }}</div>
+      <div class="xd-detail-line">{{ getPlainText(post.communityNote.text) }}</div>
     </div>
 
     <StatGrid :stats="stats" />
 
     <div class="xd-detail-actions">
-      <button class="xd-btn xd-btn--accent" @click="emit('open-original', tweet)">Open Original</button>
+      <button class="xd-btn xd-btn--accent" @click="emit('open-original', post)">Open Original</button>
     </div>
   </div>
 </template>
@@ -275,6 +258,28 @@ const policyLines = computed(() => {
   color: var(--xd-text-primary);
   line-height: 1.4;
   word-break: break-word;
+}
+
+.xd-detail-ref-text--clamped {
+  display: -webkit-box;
+  -webkit-line-clamp: 6;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  white-space: pre-line;
+}
+
+.xd-detail-ref-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--xd-text-primary);
+  line-height: 1.4;
+}
+
+.xd-detail-ref-image {
+  width: 100%;
+  max-height: 160px;
+  object-fit: cover;
+  border-radius: var(--xd-radius);
 }
 
 .xd-detail-lines {

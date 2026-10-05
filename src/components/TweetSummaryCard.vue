@@ -1,13 +1,10 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, onUpdated, ref } from 'vue';
-import type { DbMediaRecord, DbTweetRecord, DbUserRecord } from '../lib/types';
+import type { Media, Post, User } from '../archive/model';
+import type { RemoteRecordStatus } from '../lib/remote-db';
 import { getConfig } from '../lib/config-service';
-import { avatarFull, formatTweetDateTime, toTweetSummaryStats } from '../lib/view-format';
-import { getMediaSensitivityOverlayText } from '../lib/view-format';
-import {
-  getMediaThumbUrl,
-  getTweetSummaryText,
-} from '../lib/tweet-selectors';
+import { formatTweetDateTime, getMediaSensitivityOverlayText, toTweetSummaryStats } from '../lib/view-format';
+import { getAvatarUrl, getMediaThumbUrl, getPlainText } from '../lib/post-view';
 
 const SUMMARY_MEDIA_MIN_WIDTH = 125;
 const SUMMARY_MEDIA_GAP = 4;
@@ -17,18 +14,19 @@ const SUMMARY_MEDIA_HEIGHT = 100;
 const SUMMARY_STAT_MIN_WIDTH = 56;
 const SUMMARY_STAT_GAP = 4;
 
-type TweetSummaryRemoteSyncStatus = 'in_sync' | 'missing' | 'mismatch' | 'failed';
-
 const props = defineProps<{
-  tweet: DbTweetRecord;
-  author: DbUserRecord | undefined;
-  media: DbMediaRecord[];
-  remoteSyncStatus?: TweetSummaryRemoteSyncStatus;
+  /** The post whose content is shown (the original for a repost). */
+  post: Post;
+  author: User | undefined;
+  media: Media[];
+  /** Set when the timeline entry is a repost of `post`. */
+  repostedBy?: User;
+  remoteSyncStatus?: RemoteRecordStatus;
   selected?: boolean;
 }>();
 
 const emit = defineEmits<{
-  (e: 'select', tweetId: string): void;
+  (e: 'select'): void;
 }>();
 
 const cfg = getConfig();
@@ -87,9 +85,10 @@ onUpdated(() => {
   observeResizableElements();
 });
 
-const previewText = computed(() => getTweetSummaryText(props.tweet));
-const dateText = computed(() => formatTweetDateTime(props.tweet.createdAt));
-const hasAvatar = computed(() => Boolean(props.author?.profile.avatarUrl));
+const previewText = computed(() => getPlainText(props.post.text) || props.post.article?.title || '');
+const dateText = computed(() => formatTweetDateTime(props.post.createdAt));
+const avatarUrl = computed(() => props.author ? getAvatarUrl(props.author) : undefined);
+const hasAvatar = computed(() => Boolean(avatarUrl.value));
 const hasLeadCell = computed(() => hasAvatar.value || Boolean(props.remoteSyncStatus));
 const visibleMediaCount = computed(() => resolveVisibleMediaCount(mediaWidth.value));
 const visibleMedia = computed(() => props.media.slice(0, visibleMediaCount.value));
@@ -103,7 +102,7 @@ const mediaGridStyle = computed<Record<string, string>>(() => ({
   '--xd-summary-media-gap': `${SUMMARY_MEDIA_GAP}px`,
   '--xd-summary-media-height': `${SUMMARY_MEDIA_HEIGHT}px`,
 }));
-const summaryStats = computed(() => toTweetSummaryStats(props.tweet));
+const summaryStats = computed(() => toTweetSummaryStats(props.post.counts));
 const visibleStatCount = computed(() => resolveVisibleStatCount(cardWidth.value, summaryStats.value.length));
 const visibleStats = computed(() => summaryStats.value.slice(0, visibleStatCount.value));
 const statsGridStyle = computed<Record<string, string>>(() => ({
@@ -111,6 +110,7 @@ const statsGridStyle = computed<Record<string, string>>(() => ({
 }));
 const remoteSyncStatusText = computed(() => {
   if (props.remoteSyncStatus === 'in_sync') return 'Remote database in sync';
+  if (props.remoteSyncStatus === 'stale') return 'Remote database has older counts';
   if (props.remoteSyncStatus === 'missing') return 'Remote database missing';
   if (props.remoteSyncStatus === 'mismatch') return 'Remote database mismatch';
   if (props.remoteSyncStatus === 'failed') return 'Remote database failed';
@@ -131,13 +131,13 @@ const remoteSyncStatusClass = computed(() => {
       'xd-tweet-summary-card--no-avatar': !hasLeadCell,
       'xd-tweet-summary-card--selected': props.selected,
     }"
-    @click="emit('select', tweet.id)"
+    @click="emit('select')"
   >
     <div v-if="hasLeadCell" class="xd-tweet-summary-card-visual">
       <img
-        v-if="author?.profile.avatarUrl"
+        v-if="avatarUrl"
         class="xd-tweet-summary-card-avatar"
-        :src="avatarFull(author.profile.avatarUrl)"
+        :src="avatarUrl"
         loading="lazy"
       />
       <span
@@ -151,10 +151,11 @@ const remoteSyncStatusClass = computed(() => {
     </div>
 
     <div class="xd-tweet-summary-card-main">
+      <div v-if="repostedBy" class="xd-tweet-summary-card-context">Reposted by @{{ repostedBy.handle }}</div>
       <div class="xd-tweet-summary-card-head">
         <div class="xd-tweet-summary-card-author-line">
-          <span class="xd-tweet-summary-card-author-name">{{ author?.profile.displayName ?? '?' }}</span>
-          <span class="xd-tweet-summary-card-author-handle">@{{ author?.profile.userName ?? '?' }}</span>
+          <span class="xd-tweet-summary-card-author-name">{{ author?.name ?? '?' }}</span>
+          <span class="xd-tweet-summary-card-author-handle">@{{ author?.handle ?? '?' }}</span>
         </div>
         <span class="xd-tweet-summary-card-date">{{ dateText }}</span>
       </div>

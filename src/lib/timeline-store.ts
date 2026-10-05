@@ -1,10 +1,13 @@
 import { reactive } from 'vue';
-import type { SupportedTimelineOperationName } from './endpoint-support';
 
+/**
+ * Timelines are grouped by namespace (an operation plus its sort order, see
+ * `getTimelineNamespace`); aliases resolve a profile handle or id to a record.
+ */
 interface TimelineRecord {
   key: string;
-  operationName: SupportedTimelineOperationName;
-  tweetIds: string[];
+  namespace: string;
+  postIds: string[];
   seenIds: Set<string>;
   version: number;
   aliases: Set<string>;
@@ -15,8 +18,8 @@ export type TimelineInsertMode = 'append' | 'prepend';
 
 export interface TimelineIngestInput {
   key: string;
-  operationName: SupportedTimelineOperationName;
-  tweetIds: string[];
+  namespace: string;
+  postIds: string[];
   aliases?: string[];
   insertMode?: TimelineInsertMode;
 }
@@ -29,8 +32,8 @@ function normalizeAlias(alias: string): string {
   return alias.trim().toLowerCase();
 }
 
-function makeAliasIndexKey(operationName: SupportedTimelineOperationName, alias: string): string {
-  return `${operationName}:${normalizeAlias(alias)}`;
+function makeAliasIndexKey(namespace: string, alias: string): string {
+  return `${namespace}:${normalizeAlias(alias)}`;
 }
 
 function uniqueAliases(aliases: string[] = []): string[] {
@@ -48,7 +51,7 @@ function findExistingTimelineKey(input: TimelineIngestInput, aliases: string[]):
   if (timelineState[input.key]) return input.key;
 
   for (const alias of aliases) {
-    const indexedKey = timelineAliasIndex[makeAliasIndexKey(input.operationName, alias)];
+    const indexedKey = timelineAliasIndex[makeAliasIndexKey(input.namespace, alias)];
     if (indexedKey && timelineState[indexedKey]) {
       return indexedKey;
     }
@@ -64,8 +67,8 @@ function ensureTimelineRecord(input: TimelineIngestInput): TimelineRecord {
   if (!timelineState[key]) {
     timelineState[key] = {
       key,
-      operationName: input.operationName,
-      tweetIds: [],
+      namespace: input.namespace,
+      postIds: [],
       seenIds: new Set<string>(),
       version: 0,
       aliases: new Set<string>(),
@@ -76,32 +79,29 @@ function ensureTimelineRecord(input: TimelineIngestInput): TimelineRecord {
   const record = timelineState[key];
   for (const alias of aliases) {
     record.aliases.add(alias);
-    timelineAliasIndex[makeAliasIndexKey(record.operationName, alias)] = key;
+    timelineAliasIndex[makeAliasIndexKey(record.namespace, alias)] = key;
   }
 
   return record;
 }
 
-export function buildTimelineRecordKey(
-  operationName: SupportedTimelineOperationName,
-  scope?: string | null,
-): string {
+export function buildTimelineRecordKey(namespace: string, scope?: string | null): string {
   const normalizedScope = typeof scope === 'string' ? normalizeAlias(scope) : '';
-  return normalizedScope ? `${operationName}:${normalizedScope}` : operationName;
+  return normalizedScope ? `${namespace}:${normalizedScope}` : namespace;
 }
 
 export function ingestTimeline(input: TimelineIngestInput): { changed: boolean; key: string } {
-  if (!input.key || input.tweetIds.length === 0) {
+  if (!input.key || input.postIds.length === 0) {
     return { changed: false, key: input.key };
   }
 
   const record = ensureTimelineRecord(input);
   const newTweetIds: string[] = [];
 
-  for (const tweetId of input.tweetIds) {
-    if (!tweetId || record.seenIds.has(tweetId)) continue;
-    record.seenIds.add(tweetId);
-    newTweetIds.push(tweetId);
+  for (const postId of input.postIds) {
+    if (!postId || record.seenIds.has(postId)) continue;
+    record.seenIds.add(postId);
+    newTweetIds.push(postId);
   }
 
   if (newTweetIds.length === 0) {
@@ -109,28 +109,25 @@ export function ingestTimeline(input: TimelineIngestInput): { changed: boolean; 
   }
 
   if (input.insertMode === 'prepend') {
-    record.tweetIds = [...newTweetIds, ...record.tweetIds];
+    record.postIds = [...newTweetIds, ...record.postIds];
   } else {
-    record.tweetIds.push(...newTweetIds);
+    record.postIds.push(...newTweetIds);
   }
   record.version++;
 
   return { changed: true, key: record.key };
 }
 
-export function resolveTimelineRecordKey(
-  operationName: SupportedTimelineOperationName,
-  alias?: string | null,
-): string | null {
+export function resolveTimelineRecordKey(namespace: string, alias?: string | null): string | null {
   if (!alias) {
-    return timelineState[operationName] ? operationName : null;
+    return timelineState[namespace] ? namespace : null;
   }
 
-  return timelineAliasIndex[makeAliasIndexKey(operationName, alias)] ?? null;
+  return timelineAliasIndex[makeAliasIndexKey(namespace, alias)] ?? null;
 }
 
-export function getTimelineTweetIds(key: string): string[] {
-  return timelineState[key]?.tweetIds ?? [];
+export function getTimelinePostIds(key: string): string[] {
+  return timelineState[key]?.postIds ?? [];
 }
 
 export function getTimelineVersion(key: string): number {
@@ -141,27 +138,27 @@ export function getTimelineCreatedOrder(key: string): number | null {
   return timelineState[key]?.createdOrder ?? null;
 }
 
-export function getTimelineTweetIdsByAlias(
-  operationName: SupportedTimelineOperationName,
+export function getTimelinePostIdsByAlias(
+  namespace: string,
   alias?: string | null,
 ): string[] {
-  const key = resolveTimelineRecordKey(operationName, alias);
-  return key ? getTimelineTweetIds(key) : [];
+  const key = resolveTimelineRecordKey(namespace, alias);
+  return key ? getTimelinePostIds(key) : [];
 }
 
 export function getTimelineVersionByAlias(
-  operationName: SupportedTimelineOperationName,
+  namespace: string,
   alias?: string | null,
 ): number {
-  const key = resolveTimelineRecordKey(operationName, alias);
+  const key = resolveTimelineRecordKey(namespace, alias);
   return key ? getTimelineVersion(key) : 0;
 }
 
 export function getTimelineCreatedOrderByAlias(
-  operationName: SupportedTimelineOperationName,
+  namespace: string,
   alias?: string | null,
 ): number | null {
-  const key = resolveTimelineRecordKey(operationName, alias);
+  const key = resolveTimelineRecordKey(namespace, alias);
   return key ? getTimelineCreatedOrder(key) : null;
 }
 
@@ -171,7 +168,7 @@ export function clearTimelineState(key?: string): void {
     if (!record) return;
 
     for (const alias of record.aliases) {
-      delete timelineAliasIndex[makeAliasIndexKey(record.operationName, alias)];
+      delete timelineAliasIndex[makeAliasIndexKey(record.namespace, alias)];
     }
     delete timelineState[key];
     return;

@@ -1,296 +1,117 @@
-import { readdirSync, readFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
-import { FIXTURE_ENDPOINTS, getEndpointFixtureDirs, type EndpointKind } from '../src/lib/endpoint-support';
+import { loadDumpFixtures } from './dump-fixtures';
 
-type JsonObject = Record<string, any>;
+type Json = Record<string, any>;
 
-interface EndpointConfig {
-  name: string;
-  dirs: readonly string[];
-  kind: EndpointKind;
-  supportVersion: number | null;
-}
-
-interface EndpointStats {
-  files: number;
+interface OperationStats {
+  responses: number;
   tweets: number;
-  instructionTypes: Map<string, number>;
-  tweetPaths: Set<string>;
-  typenames: Map<string, number>;
-  noteTweet: number;
-  noteTweetLonger: number;
-  quoted: number;
-  quotedFallbackOnly: number;
-  retweeted: number;
-  card: number;
-  article: number;
-  userProfileUrl: number;
-  userVerifiedType: number;
-  userProfessionalType: number;
-  userProfileImageShape: number;
+  instructions: Map<string, number>;
+  entries: Map<string, number>;
+  features: Map<string, number>;
 }
 
-const ROOT = resolve(process.cwd());
-const ENDPOINTS: EndpointConfig[] = FIXTURE_ENDPOINTS
-  .filter((endpoint) => endpoint.kind !== 'user')
-  .map((endpoint) => ({
-    name: endpoint.operationName,
-    dirs: getEndpointFixtureDirs(endpoint),
-    kind: endpoint.kind,
-    supportVersion: endpoint.supportVersion,
-  }));
-
-function readJson(filePath: string): JsonObject {
-  return JSON.parse(readFileSync(filePath, 'utf8'));
+function bump(map: Map<string, number>, key: string, count = 1): void {
+  map.set(key, (map.get(key) ?? 0) + count);
 }
 
-function normalizeTweetResult(result: any): JsonObject | null {
-  if (!result || typeof result !== 'object') return null;
-  if (result.__typename === 'TweetWithVisibilityResults' && result.tweet) {
-    return { __typename: 'Tweet', ...result.tweet };
-  }
-  return result;
-}
-
-function collectTimelineTweets(json: JsonObject) {
-  const instructions = json?.data?.user?.result?.timeline?.timeline?.instructions
-    ?? json?.data?.user?.result?.timeline_v2?.timeline?.instructions
-    ?? json?.data?.home?.home_timeline_urt?.instructions
-    ?? json?.data?.bookmark_timeline_v2?.timeline?.instructions
-    ?? json?.data?.search_by_raw_query?.search_timeline?.timeline?.instructions;
-
-  const tweets: JsonObject[] = [];
-  const instructionTypes = new Map<string, number>();
-  const tweetPaths = new Set<string>();
-
-  if (!Array.isArray(instructions)) {
-    return { instructions: [], tweets, instructionTypes, tweetPaths };
-  }
-
-  const visitResult = (result: any, pathLabel: string) => {
-    const normalized = normalizeTweetResult(result);
-    if (!normalized) return;
-    tweets.push(normalized);
-    tweetPaths.add(pathLabel);
-  };
-
-  for (const instruction of instructions) {
-    const type = typeof instruction?.type === 'string' ? instruction.type : '(unknown)';
-    instructionTypes.set(type, (instructionTypes.get(type) ?? 0) + 1);
-
-    if (Array.isArray(instruction?.entries)) {
-      for (const entry of instruction.entries) {
-        if (entry?.content?.itemContent?.tweet_results?.result) {
-          visitResult(entry.content.itemContent.tweet_results.result, 'entries[].content.itemContent.tweet_results.result');
-        }
-        if (Array.isArray(entry?.content?.items)) {
-          for (const item of entry.content.items) {
-            if (item?.item?.itemContent?.tweet_results?.result) {
-              visitResult(item.item.itemContent.tweet_results.result, 'entries[].content.items[].item.itemContent.tweet_results.result');
-            }
-          }
-        }
-      }
-    }
-
-    if (Array.isArray(instruction?.moduleItems)) {
-      for (const item of instruction.moduleItems) {
-        if (item?.item?.itemContent?.tweet_results?.result) {
-          visitResult(item.item.itemContent.tweet_results.result, 'moduleItems[].item.itemContent.tweet_results.result');
-        }
-      }
-    }
-
-    if (instruction?.entry?.content?.itemContent?.tweet_results?.result) {
-      visitResult(instruction.entry.content.itemContent.tweet_results.result, 'entry.content.itemContent.tweet_results.result');
-    }
-  }
-
-  return { instructions, tweets, instructionTypes, tweetPaths };
-}
-
-function collectTweetDetailTweets(json: JsonObject) {
-  const instructions = json?.data?.threaded_conversation_with_injections_v2?.instructions;
-  const tweets: JsonObject[] = [];
-  const instructionTypes = new Map<string, number>();
-  const tweetPaths = new Set<string>();
-
-  if (!Array.isArray(instructions)) {
-    return { instructions: [], tweets, instructionTypes, tweetPaths };
-  }
-
-  const visitResult = (result: any, pathLabel: string) => {
-    const normalized = normalizeTweetResult(result);
-    if (!normalized) return;
-    tweets.push(normalized);
-    tweetPaths.add(pathLabel);
-  };
-
-  for (const instruction of instructions) {
-    const type = typeof instruction?.type === 'string' ? instruction.type : '(unknown)';
-    instructionTypes.set(type, (instructionTypes.get(type) ?? 0) + 1);
-
-    if (!Array.isArray(instruction?.entries)) continue;
-    for (const entry of instruction.entries) {
-      if (entry?.content?.itemContent?.tweet_results?.result) {
-        visitResult(entry.content.itemContent.tweet_results.result, 'entries[].content.itemContent.tweet_results.result');
-      }
-      if (Array.isArray(entry?.content?.items)) {
-        for (const item of entry.content.items) {
-          if (item?.item?.itemContent?.tweet_results?.result) {
-            visitResult(item.item.itemContent.tweet_results.result, 'entries[].content.items[].item.itemContent.tweet_results.result');
-          }
-        }
-      }
-    }
-  }
-
-  return { instructions, tweets, instructionTypes, tweetPaths };
-}
-
-function collectStats(config: EndpointConfig): EndpointStats {
-  const stats: EndpointStats = {
-    files: 0,
-    tweets: 0,
-    instructionTypes: new Map(),
-    tweetPaths: new Set(),
-    typenames: new Map(),
-    noteTweet: 0,
-    noteTweetLonger: 0,
-    quoted: 0,
-    quotedFallbackOnly: 0,
-    retweeted: 0,
-    card: 0,
-    article: 0,
-    userProfileUrl: 0,
-    userVerifiedType: 0,
-    userProfessionalType: 0,
-    userProfileImageShape: 0,
-  };
-
-  for (const relativeDir of config.dirs) {
-    const dir = join(ROOT, relativeDir);
-    const files = readdirSync(dir).filter((file) => file.endsWith('.json')).sort();
-    stats.files += files.length;
-
-    for (const file of files) {
-      const json = readJson(join(dir, file));
-      const collector = config.kind === 'timeline' ? collectTimelineTweets(json) : collectTweetDetailTweets(json);
-
-      for (const [type, count] of collector.instructionTypes) {
-        stats.instructionTypes.set(type, (stats.instructionTypes.get(type) ?? 0) + count);
-      }
-      for (const pathLabel of collector.tweetPaths) {
-        stats.tweetPaths.add(pathLabel);
-      }
-
-      for (const rawTweet of collector.tweets) {
-        stats.tweets++;
-        const typename = typeof rawTweet.__typename === 'string' ? rawTweet.__typename : '(unknown)';
-        stats.typenames.set(typename, (stats.typenames.get(typename) ?? 0) + 1);
-
-        const legacyText = typeof rawTweet?.legacy?.full_text === 'string' ? rawTweet.legacy.full_text : '';
-        const noteText = typeof rawTweet?.note_tweet?.note_tweet_results?.result?.text === 'string'
-          ? rawTweet.note_tweet.note_tweet_results.result.text
-          : null;
-        const quotedResult = rawTweet?.quoted_status_result?.result;
-        const retweetedResult = rawTweet?.retweeted_status_result?.result ?? rawTweet?.legacy?.retweeted_status_result?.result;
-        const author = rawTweet?.core?.user_results?.result;
-        const profileUrl = author?.legacy?.entities?.url?.urls?.find((item: any) => typeof item?.expanded_url === 'string')?.expanded_url;
-
-        if (noteText) stats.noteTweet++;
-        if (noteText && noteText.length > legacyText.length) stats.noteTweetLonger++;
-        if (quotedResult || rawTweet?.legacy?.quoted_status_id_str) stats.quoted++;
-        if (!quotedResult && rawTweet?.legacy?.quoted_status_id_str) stats.quotedFallbackOnly++;
-        if (retweetedResult) stats.retweeted++;
-        if (rawTweet?.card) stats.card++;
-        if (rawTweet?.article) stats.article++;
-        if (profileUrl) stats.userProfileUrl++;
-        if (author?.verification?.verified_type) stats.userVerifiedType++;
-        if (author?.professional?.professional_type) stats.userProfessionalType++;
-        if (author?.profile_image_shape) stats.userProfileImageShape++;
-      }
-    }
-  }
-
-  return stats;
-}
-
-function mapToInline(map: Map<string, number>): string {
+function formatCounts(map: Map<string, number>): string {
   if (map.size === 0) return '(none)';
-  return [...map.entries()]
-    .sort((a, b) => a[0].localeCompare(b[0]))
-    .map(([key, value]) => `${key}:${value}`)
-    .join(', ');
+  return [...map.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([key, value]) => `${key}:${value}`).join(', ');
 }
 
-function setToInline(set: Set<string>): string {
-  if (set.size === 0) return '(none)';
-  return [...set].sort().join(', ');
+function findInstructions(response: Json): Json[] {
+  const candidates = [
+    response?.data?.user?.result?.timeline?.timeline?.instructions,
+    response?.data?.home?.home_timeline_urt?.instructions,
+    response?.data?.bookmark_timeline_v2?.timeline?.instructions,
+    response?.data?.search_by_raw_query?.search_timeline?.timeline?.instructions,
+    response?.data?.threaded_conversation_with_injections_v2?.instructions,
+  ];
+  return candidates.find(Array.isArray) ?? [];
 }
 
-function printEndpoint(config: EndpointConfig, stats: EndpointStats) {
-  console.log(`## ${config.name}`);
-  console.log(`- support-version: ${config.supportVersion == null ? 'n/a' : `v${config.supportVersion}`}`);
-  console.log(`- files: ${stats.files}`);
-  console.log(`- tweets: ${stats.tweets}`);
-  console.log(`- instruction-types: ${mapToInline(stats.instructionTypes)}`);
-  console.log(`- tweet-paths: ${setToInline(stats.tweetPaths)}`);
-  console.log(`- tweet-typenames: ${mapToInline(stats.typenames)}`);
-  console.log(`- note-tweet: ${stats.noteTweet} (longer-than-legacy: ${stats.noteTweetLonger})`);
-  console.log(`- quoted: ${stats.quoted} (fallback-only: ${stats.quotedFallbackOnly})`);
-  console.log(`- retweeted-status-result: ${stats.retweeted}`);
-  console.log(`- card/article: ${stats.card}/${stats.article}`);
-  console.log(`- user-model-coverage: profileUrl=${stats.userProfileUrl}, verifiedType=${stats.userVerifiedType}, professionalType=${stats.userProfessionalType}, profileImageShape=${stats.userProfileImageShape}`);
+/** Records which notable payload features a tweet result carries. */
+function recordTweetFeatures(result: Json, features: Map<string, number>): void {
+  const tweet = result?.__typename === 'TweetWithVisibilityResults' ? result.tweet : result;
+  if (!tweet?.legacy) {
+    bump(features, `typename:${result?.__typename ?? '(unknown)'}`);
+    return;
+  }
+  bump(features, `typename:${result.__typename}`);
+  const legacy = tweet.legacy;
+  if (tweet.note_tweet) bump(features, 'note_tweet');
+  if (tweet.card) bump(features, tweet.card.legacy ? `card:${tweet.card.legacy.name}` : 'card:unexpanded');
+  if (tweet.article) bump(features, tweet.article.article_results?.result?.content_state ? 'article:full' : 'article:preview');
+  if (tweet.quoted_status_result || legacy.quoted_status_id_str) bump(features, 'quote');
+  if (tweet.nested_quoted_tweet_results) bump(features, 'nested_quote');
+  if (legacy.retweeted_status_result) bump(features, 'repost');
+  if (legacy.in_reply_to_status_id_str) bump(features, 'reply');
+  if (tweet.birdwatch_pivot) bump(features, 'community_note');
+  if (legacy.place) bump(features, 'place');
+  if ((tweet.edit_control?.edit_control_initial ?? tweet.edit_control)?.edit_tweet_ids?.length > 1) bump(features, 'edited');
+  if (tweet.content_disclosure?.ai_generated_disclosure) bump(features, 'ai_disclosure');
+  if (legacy.extended_entities?.media?.length) bump(features, 'media');
+  if (tweet.core?.user_results?.result?.legacy) bump(features, 'user:legacy');
+}
+
+function walkTweetResults(value: unknown, visit: (result: Json, promoted: boolean) => void, promoted = false): void {
+  if (Array.isArray(value)) {
+    for (const item of value) walkTweetResults(item, visit, promoted);
+    return;
+  }
+  if (!value || typeof value !== 'object') return;
+  const object = value as Json;
+  const isPromoted = promoted || object.promotedMetadata !== undefined;
+  if (object.tweet_results?.result) visit(object.tweet_results.result, isPromoted);
+  for (const [key, child] of Object.entries(object)) {
+    // Nested results (quotes, reposts) are counted through their parent.
+    if (key !== 'tweet_results') walkTweetResults(child, visit, isPromoted);
+  }
+}
+
+function main(): void {
+  const fixtures = loadDumpFixtures();
+  if (fixtures.length === 0) {
+    console.log('No fixtures under dumps/ (the directory is gitignored).');
+    return;
+  }
+
+  const byOperation = new Map<string, OperationStats>();
+  for (const fixture of fixtures) {
+    const stats = byOperation.get(fixture.operationName) ?? {
+      responses: 0, tweets: 0, instructions: new Map(), entries: new Map(), features: new Map(),
+    };
+    stats.responses += 1;
+
+    for (const instruction of findInstructions(fixture.response as Json)) {
+      bump(stats.instructions, instruction?.type ?? '(unknown)');
+      const entries = [...(instruction?.entries ?? []), ...(instruction?.entry ? [instruction.entry] : [])];
+      for (const entry of entries) {
+        const prefix = String(entry?.entryId ?? '(none)').replace(/-\d.*$/, '').replace(/-[0-9a-f]{16,}.*$/, '');
+        bump(stats.entries, prefix);
+      }
+      if (instruction?.moduleItems) bump(stats.entries, 'moduleItems', instruction.moduleItems.length);
+    }
+
+    walkTweetResults(fixture.response, (result, promoted) => {
+      stats.tweets += 1;
+      if (promoted) bump(stats.features, 'promoted');
+      recordTweetFeatures(result, stats.features);
+    });
+    byOperation.set(fixture.operationName, stats);
+  }
+
+  console.log('# Dump Analysis');
+  console.log(`- fixtures: ${fixtures.length}`);
   console.log();
-}
-
-function printConclusions(statsByName: Map<string, EndpointStats>) {
-  const bookmarks = statsByName.get('Bookmarks');
-  const newUserMedia = statsByName.get('UserMedia');
-  const legacyUserMedia = statsByName.get('legacy/UserMedia');
-  const homeTimeline = statsByName.get('HomeTimeline');
-  const homeLatestTimeline = statsByName.get('HomeLatestTimeline');
-  const userTweets = statsByName.get('UserTweets');
-
-  console.log('## Conclusions');
-
-  if (homeTimeline && homeLatestTimeline && userTweets && newUserMedia) {
-    console.log(`- New endpoints share the same timeline traversal pattern as UserMedia: tweet nodes are consistently under itemContent/module items, so one generic timeline parser is sufficient.`);
-    console.log(`- Timeline pin entries exist in UserTweets (${userTweets.instructionTypes.get('TimelinePinEntry') ?? 0}), so parser coverage must include instruction.entry in addition to entries/moduleItems.`);
+  for (const [operationName, stats] of [...byOperation.entries()].sort()) {
+    console.log(`## ${operationName}`);
+    console.log(`- responses: ${stats.responses}, top-level tweet results: ${stats.tweets}`);
+    console.log(`- instructions: ${formatCounts(stats.instructions)}`);
+    console.log(`- entries: ${formatCounts(stats.entries)}`);
+    console.log(`- features: ${formatCounts(stats.features)}`);
+    console.log();
   }
-
-  if (bookmarks) {
-    console.log(`- Bookmarks uses a dedicated root path (data.bookmark_timeline_v2.timeline.instructions), but its tweet packaging still matches the generic timeline walker.`);
-  }
-
-  if (newUserMedia && legacyUserMedia) {
-    console.log(`- UserMedia did not introduce a new entity model. The main change is timeline packaging: new dumps split between TimelineAddEntries and TimelineAddToModule, while the tweet/media payload remains compatible with legacy parsing.`);
-    console.log(`- Note Tweet text remains relevant for UserMedia: legacy longer-text cases ${legacyUserMedia.noteTweetLonger}, new longer-text cases ${newUserMedia.noteTweetLonger}.`);
-  }
-
-  const noteTweetLongerTotal = [...statsByName.values()].reduce((sum, stats) => sum + stats.noteTweetLonger, 0);
-  const quotedFallbackTotal = [...statsByName.values()].reduce((sum, stats) => sum + stats.quotedFallbackOnly, 0);
-  const retweetedTotal = [...statsByName.values()].reduce((sum, stats) => sum + stats.retweeted, 0);
-  const userProfileUrlTotal = [...statsByName.values()].reduce((sum, stats) => sum + stats.userProfileUrl, 0);
-
-  console.log(`- Suggested tweet-model updates: prefer note_tweet text (${noteTweetLongerTotal} longer-text cases), keep quoted_status_id_str fallback (${quotedFallbackTotal} fallback-only cases), and parse retweeted_status_result (${retweetedTotal} cases).`);
-  console.log(`- Suggested user-model updates: profile URL, verified type, professional type, and profile image shape are already present in payloads and can be stored now for later profile pages (${userProfileUrlTotal} profile URLs observed).`);
-}
-
-function main() {
-  console.log('# Dump Endpoint Analysis');
-  console.log();
-
-  const statsByName = new Map<string, EndpointStats>();
-
-  for (const endpoint of ENDPOINTS) {
-    const stats = collectStats(endpoint);
-    statsByName.set(endpoint.name, stats);
-    printEndpoint(endpoint, stats);
-  }
-
-  printConclusions(statsByName);
 }
 
 main();

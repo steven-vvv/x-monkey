@@ -1,90 +1,85 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue';
-import type { DbMedia, DbTweet, DbUser } from '../lib/db-service';
+import type { Media, Post, User } from '../archive/model';
 import {
+  archiveRecords,
   dbVersion,
-  enqueueRemoteTweetSyncStatusRefresh,
-  getDbTweet,
+  enqueueRemoteSyncStatusRefresh,
+  getDbPost,
   getDbUser,
-  getMediaForTweet,
+  getDisplayPost,
+  getMediaForPost,
   getParentChain,
-  getRemoteTweetSyncStatus,
+  getRemoteSyncStatus,
   getReplies,
 } from '../lib/db-service';
-import { HOME_FEATURE_TIMELINE_SOURCES, getFeatureTimelineLabel, getFeatureTimelineOperation, type FeatureTimelineSource } from '../lib/feature-timeline';
-import { getTimelineTweetIdsByAlias, getTimelineVersionByAlias } from '../lib/timeline-store';
+import {
+  HOME_FEATURE_TIMELINE_SOURCES,
+  getFeatureTimelineLabel,
+  getFeatureTimelineNamespace,
+  type FeatureTimelineSort,
+  type FeatureTimelineSource,
+} from '../lib/feature-timeline';
+import { getTimelinePostIdsByAlias, getTimelineVersionByAlias } from '../lib/timeline-store';
 import { featureNavigateTo, featureRoute, type FeatureRoute } from '../lib/store';
 import { GM_openInTab } from '$';
-import { getTweetOpenUrl, getUserOpenUrl } from '../lib/tweet-selectors';
+import { getPostOpenUrl, getUserOpenUrl } from '../lib/post-view';
 import {
-  buildRemoteDbSubmissionBatch,
-  isRemoteDbTweetApiReady,
+  buildArchiveBatch,
+  isRemoteDbReady,
   RemoteDbHttpError,
-  submitRemoteDbSubmission,
+  submitRemoteDbArchive,
+  type RemoteDbSubmitResponse,
 } from '../lib/remote-db';
 import TweetDetailView from '../components/TweetDetailView.vue';
 import UserDetailCard from '../components/UserDetailCard.vue';
 import TweetSummaryCard from '../components/TweetSummaryCard.vue';
 import RemoteDbTweetPanel from '../components/RemoteDbTweetPanel.vue';
 
-interface TweetSummaryCardItem {
-  tweet: DbTweet;
-  author: DbUser | undefined;
-  media: DbMedia[];
+interface TimelineCardItem {
+  /** Timeline entry id: the repost itself for reposts. */
+  id: string;
+  post: Post;
+  author: User | undefined;
+  media: Media[];
+  repostedBy?: User;
 }
 
 interface FeatureTimelineContext {
   source: FeatureTimelineSource;
   username?: string;
+  sort?: FeatureTimelineSort;
 }
 
 type TimelineBatchSubmitState = 'idle' | 'submitting' | 'success' | 'error';
 
 const route = featureRoute;
 const timelineMultiSelectActive = ref(false);
-const selectedTimelineTweetIds = reactive(new Set<string>());
+const selectedTimelinePostIds = reactive(new Set<string>());
 const timelineBatchSubmitState = ref<TimelineBatchSubmitState>('idle');
 const timelineBatchSubmitMessage = ref<string | null>(null);
 
 function getRouteTimelineContext(value: FeatureRoute): FeatureTimelineContext | null {
-  if (value.page === 'timeline') {
-    return {
-      source: value.source,
-      username: value.username,
-    };
+  if (value.page === 'timeline' || ((value.page === 'tweet' || value.page === 'user') && value.source)) {
+    return { source: value.source!, username: value.username, sort: value.sort };
   }
-
-  if ((value.page === 'tweet' || value.page === 'user') && value.source) {
-    return {
-      source: value.source,
-      username: value.username,
-    };
-  }
-
   return null;
 }
 
-function buildTimelineCardItems(source: FeatureTimelineSource, username?: string | null): TweetSummaryCardItem[] {
-  const operationName = getFeatureTimelineOperation(source);
-  const tweetIds = getTimelineTweetIdsByAlias(operationName, username ?? null);
-
-  return tweetIds.map((id) => {
-    const tweet = getDbTweet(id);
-    if (!tweet) return null;
-    return {
-      tweet,
-      author: getDbUser(tweet.authorId),
-      media: getMediaForTweet(tweet.id),
-    };
-  }).filter(Boolean) as TweetSummaryCardItem[];
-}
-
-function getTimelineWaitingText(source: FeatureTimelineSource): string {
-  if (source === 'user-media') return 'Waiting for media data...';
-  if (source === 'user-tweets') return 'Waiting for tweet timeline data...';
-  if (source === 'bookmarks') return 'Waiting for bookmarks data...';
-  if (source === 'home-timeline') return 'Waiting for HomeTimeline data...';
-  return 'Waiting for HomeLatestTimeline data...';
+function buildTimelineCardItems(context: FeatureTimelineContext): TimelineCardItem[] {
+  const postIds = getTimelinePostIdsByAlias(getFeatureTimelineNamespace(context.source, context.sort), context.username ?? null);
+  return postIds.flatMap((id) => {
+    const entry = getDbPost(id);
+    if (!entry) return [];
+    const post = getDisplayPost(entry);
+    return [{
+      id,
+      post,
+      author: getDbUser(post.authorId),
+      media: getMediaForPost(post),
+      repostedBy: post !== entry ? getDbUser(entry.authorId) : undefined,
+    }];
+  });
 }
 
 function createRouteWithCurrentTimelineContext(fallbackRoute: FeatureRoute, withContext: (context: FeatureTimelineContext) => FeatureRoute): FeatureRoute {
@@ -92,65 +87,70 @@ function createRouteWithCurrentTimelineContext(fallbackRoute: FeatureRoute, with
   return context ? withContext(context) : fallbackRoute;
 }
 
-const focalTweet = computed(() => {
+function getRoutePost(postId: string): Post | null {
+  const post = getDbPost(postId);
+  return post ? getDisplayPost(post) : null;
+}
+
+const focalPost = computed(() => {
   void dbVersion.value;
-  if (route.value.page === 'status') return getDbTweet(route.value.tweetId) ?? null;
-  return null;
+  return route.value.page === 'status' ? getRoutePost(route.value.tweetId) : null;
 });
 
-const detailTweet = computed(() => {
+const detailPost = computed(() => {
   void dbVersion.value;
-  if (route.value.page === 'tweet') return getDbTweet(route.value.tweetId) ?? null;
-  return null;
+  return route.value.page === 'tweet' ? getRoutePost(route.value.tweetId) : null;
 });
 
 const detailReplies = computed(() => {
   void dbVersion.value;
-  if (!detailTweet.value) return [];
-  return getReplies(detailTweet.value.id);
+  return detailPost.value ? getReplies(detailPost.value.id) : [];
 });
 
-const detailRemoteSyncTweets = computed(() => {
-  if (!detailTweet.value) return [];
-  return [detailTweet.value, ...detailReplies.value];
-});
+const detailRemoteSyncPosts = computed(() => detailPost.value ? [detailPost.value, ...detailReplies.value] : []);
 
 const detailUser = computed(() => {
   void dbVersion.value;
-  if (route.value.page === 'user') return getDbUser(route.value.userId) ?? null;
-  return null;
+  return route.value.page === 'user' ? getDbUser(route.value.userId) ?? null : null;
 });
 
 const timelineItems = computed(() => {
   if (route.value.page !== 'timeline') return [];
   void dbVersion.value;
-  void getTimelineVersionByAlias(getFeatureTimelineOperation(route.value.source), route.value.username ?? null);
-  return buildTimelineCardItems(route.value.source, route.value.username);
+  const context = { source: route.value.source, username: route.value.username, sort: route.value.sort };
+  void getTimelineVersionByAlias(getFeatureTimelineNamespace(context.source, context.sort), context.username ?? null);
+  return buildTimelineCardItems(context);
+});
+
+const timelineWaitingText = computed(() => {
+  return route.value.page === 'timeline'
+    ? `Waiting for ${getFeatureTimelineLabel(route.value.source, route.value.sort)} data...`
+    : '';
 });
 
 const homeEntryCards = computed(() => {
   return HOME_FEATURE_TIMELINE_SOURCES.map((source) => {
-    const operationName = getFeatureTimelineOperation(source);
-    void getTimelineVersionByAlias(operationName);
+    const namespace = getFeatureTimelineNamespace(source);
+    void getTimelineVersionByAlias(namespace);
     return {
       source,
       label: getFeatureTimelineLabel(source),
-      count: getTimelineTweetIdsByAlias(operationName).length,
+      count: getTimelinePostIdsByAlias(namespace).length,
     };
   });
 });
 
-function openTweet(tweetId: string) {
+function openTweet(postId: string) {
   featureNavigateTo(createRouteWithCurrentTimelineContext(
-    { page: 'tweet', tweetId },
-    (context) => ({ page: 'tweet', tweetId, source: context.source, username: context.username }),
+    { page: 'tweet', tweetId: postId },
+    (context) => ({ page: 'tweet', tweetId: postId, ...context }),
   ));
 }
 
 function openUser(userId: string) {
   featureNavigateTo(createRouteWithCurrentTimelineContext(
     { page: 'user', userId },
-    (context) => ({ page: 'user', userId, source: context.source, username: context.username }),
+    (context) => ({ page: 'user', userId, ...context }),
   ));
 }
 
@@ -158,12 +158,8 @@ function openHomeTimeline(source: FeatureTimelineSource) {
   featureNavigateTo({ page: 'timeline', source });
 }
 
-function openOriginal(tweet: DbTweet) {
-  const user = getDbUser(tweet.authorId);
-  const url = getTweetOpenUrl(tweet, user);
-  if (url) {
-    GM_openInTab(url, { active: true });
-  }
+function openOriginal(post: Post) {
+  GM_openInTab(getPostOpenUrl(post, getDbUser(post.authorId)), { active: true });
 }
 
 function openMediaUrl(url: string) {
@@ -172,155 +168,65 @@ function openMediaUrl(url: string) {
 
 function openProfile(userId: string) {
   const user = getDbUser(userId);
-  if (user) {
-    GM_openInTab(getUserOpenUrl(user), { active: true });
-  }
+  if (user) GM_openInTab(getUserOpenUrl(user), { active: true });
 }
 
 const focalParents = computed(() => {
   void dbVersion.value;
-  if (!focalTweet.value) return [];
-  return getParentChain(focalTweet.value.id);
+  return focalPost.value ? getParentChain(focalPost.value.id) : [];
 });
 
 const focalReplies = computed(() => {
   void dbVersion.value;
-  if (!focalTweet.value) return [];
-  return getReplies(focalTweet.value.id);
+  return focalPost.value ? getReplies(focalPost.value.id) : [];
 });
 
-const focalRemoteSyncTweets = computed(() => {
-  if (!focalTweet.value) return [];
-  return [...focalParents.value, focalTweet.value, ...focalReplies.value];
-});
+const focalRemoteSyncPosts = computed(() => focalPost.value ? [...focalParents.value, focalPost.value, ...focalReplies.value] : []);
 
-const shouldShowRemoteDbPanel = computed(() => {
-  return isRemoteDbTweetApiReady();
-});
+const shouldShowRemoteDbPanel = computed(() => isRemoteDbReady());
 
-const shouldShowTimelineRemoteActions = computed(() => {
-  return route.value.page === 'timeline' && isRemoteDbTweetApiReady();
-});
+const shouldShowTimelineRemoteActions = computed(() => route.value.page === 'timeline' && isRemoteDbReady());
 
 const timelineRouteKey = computed(() => {
   if (route.value.page !== 'timeline') return 'inactive';
-  return `${route.value.source}:${route.value.username ?? ''}`;
+  return `${route.value.source}:${route.value.username ?? ''}:${route.value.sort ?? ''}`;
 });
 
-const selectedTimelineItems = computed(() => {
-  return timelineItems.value.filter((item) => selectedTimelineTweetIds.has(item.tweet.id));
+const timelineEntryIds = computed(() => timelineItems.value.map((item) => item.id));
+
+const selectedTimelineIds = computed(() => timelineEntryIds.value.filter((id) => selectedTimelinePostIds.has(id)));
+
+const selectedTimelineCount = computed(() => selectedTimelineIds.value.length);
+
+const allTimelinePostsSelected = computed(() => {
+  return timelineEntryIds.value.length > 0 && timelineEntryIds.value.every((id) => selectedTimelinePostIds.has(id));
 });
 
-const timelineTweetIds = computed(() => timelineItems.value.map((item) => item.tweet.id));
+const timelineSubmitDisabled = computed(() => timelineBatchSubmitState.value === 'submitting' || selectedTimelineCount.value === 0);
 
-const selectedTimelineCount = computed(() => selectedTimelineItems.value.length);
+const timelineSubmitButtonText = computed(() => timelineBatchSubmitState.value === 'submitting' ? 'Submitting...' : 'Submit');
 
-const allTimelineTweetsSelected = computed(() => {
-  return timelineTweetIds.value.length > 0
-    && timelineTweetIds.value.every((tweetId) => selectedTimelineTweetIds.has(tweetId));
-});
+const selectAllButtonText = computed(() => allTimelinePostsSelected.value ? 'Clear All' : 'Select All');
 
-const selectedTimelineBuildResult = computed(() => {
-  return buildRemoteDbSubmissionBatch(selectedTimelineItems.value.map((item) => ({
-    tweet: item.tweet,
-    author: item.author,
-    media: item.media,
-  })));
-});
+const timelineActionMetaText = computed(() => timelineBatchSubmitMessage.value ?? `${selectedTimelineCount.value} selected`);
 
-const selectedTimelineSubmitIssue = computed(() => {
-  if (selectedTimelineCount.value === 0) {
-    return 'Select tweets to submit';
-  }
-
-  const result = selectedTimelineBuildResult.value;
-  if (result.missingAuthorTweetIds.length > 0) {
-    return `Submit unavailable: author data is missing for ${result.missingAuthorTweetIds.join(', ')}`;
-  }
-  if (result.invalidUserCreatedAtIds.length > 0) {
-    return `Submit unavailable: invalid user time for ${result.invalidUserCreatedAtIds.join(', ')}`;
-  }
-  if (result.invalidTweetCreatedAtIds.length > 0) {
-    return `Submit unavailable: invalid tweet time for ${result.invalidTweetCreatedAtIds.join(', ')}`;
-  }
-  return null;
-});
-
-const timelineSubmitDisabled = computed(() => {
-  return timelineBatchSubmitState.value === 'submitting'
-    || selectedTimelineCount.value === 0
-    || !selectedTimelineBuildResult.value.submission;
-});
-
-const timelineSubmitButtonText = computed(() => {
-  return timelineBatchSubmitState.value === 'submitting' ? 'Submitting...' : 'Submit';
-});
-
-const selectAllButtonText = computed(() => {
-  return allTimelineTweetsSelected.value ? 'Clear All' : 'Select All';
-});
-
-const timelineActionMetaText = computed(() => {
-  if (timelineBatchSubmitMessage.value) {
-    return timelineBatchSubmitMessage.value;
-  }
-
-  if (timelineMultiSelectActive.value && selectedTimelineCount.value > 0 && selectedTimelineSubmitIssue.value) {
-    return selectedTimelineSubmitIssue.value;
-  }
-
-  return `${selectedTimelineCount.value} selected`;
-});
-
-function firstSubmitIssue(
-  result: Awaited<ReturnType<typeof submitRemoteDbSubmission>>,
-): string | null {
-  for (const collection of [result.users, result.tweets, result.media]) {
-    for (const item of collection) {
-      if (item.error) {
-        return item.error;
-      }
-
-      const failedOperation = item.operations.find((operation) => operation.status === 'failed');
-      if (failedOperation?.reason) {
-        return `${item.id ?? 'unknown'}: ${failedOperation.reason}`;
-      }
-    }
-  }
-
-  return null;
-}
-
-function formatSubmitMessage(
-  result: Awaited<ReturnType<typeof submitRemoteDbSubmission>>,
-): string {
-  const summary = result.summary;
-  const issue = firstSubmitIssue(result);
-  return issue
-    ? `Submit accepted ${summary.accepted}, skipped ${summary.skipped}, partial ${summary.partial}, failed ${summary.failed}. First issue: ${issue}`
-    : `Submit accepted ${summary.accepted}, skipped ${summary.skipped}, partial ${summary.partial}, failed ${summary.failed}.`;
+function formatSubmitMessage(result: RemoteDbSubmitResponse): string {
+  const { summary } = result;
+  const issue = [...result.posts, ...result.users, ...result.media].find((item) => item.status === 'failed' || item.status === 'partial');
+  const counts = `accepted ${summary.accepted}, unchanged ${summary.unchanged}, partial ${summary.partial}, failed ${summary.failed}`;
+  return issue ? `Submit ${counts}. First issue: ${issue.id}: ${issue.reason ?? issue.status}` : `Submit ${counts}.`;
 }
 
 function toRemoteSubmitErrorMessage(error: unknown): string {
   if (error instanceof RemoteDbHttpError) {
-    if (error.status === 401) {
-      return 'Remote database session expired. Open Settings and sign in again.';
-    }
-
-    if (error.status === 403) {
-      return 'Remote database sync requires an administrator account.';
-    }
+    if (error.status === 401) return 'Remote database session expired. Open Settings and sign in again.';
+    if (error.status === 403) return 'Remote database sync requires an administrator account.';
   }
-
-  if (error instanceof Error && error.message.trim()) {
-    return error.message;
-  }
-
-  return 'Failed to submit selected tweets to remote database';
+  return error instanceof Error && error.message.trim() ? error.message : 'Failed to submit selected posts to remote database';
 }
 
 function clearTimelineSelection(): void {
-  selectedTimelineTweetIds.clear();
+  selectedTimelinePostIds.clear();
 }
 
 function clearTimelineBatchMessage(): void {
@@ -339,60 +245,44 @@ function toggleTimelineMultiSelect(): void {
     resetTimelineMultiSelect();
     return;
   }
-
   timelineMultiSelectActive.value = true;
   clearTimelineBatchMessage();
 }
 
-function toggleTimelineTweetSelection(tweetId: string): void {
-  if (selectedTimelineTweetIds.has(tweetId)) {
-    selectedTimelineTweetIds.delete(tweetId);
-  } else {
-    selectedTimelineTweetIds.add(tweetId);
-  }
-
+function toggleTimelinePostSelection(id: string): void {
+  if (selectedTimelinePostIds.has(id)) selectedTimelinePostIds.delete(id);
+  else selectedTimelinePostIds.add(id);
   clearTimelineBatchMessage();
 }
 
-function toggleAllTimelineTweetSelection(): void {
-  if (allTimelineTweetsSelected.value) {
+function toggleAllTimelinePostSelection(): void {
+  if (allTimelinePostsSelected.value) {
     clearTimelineSelection();
     clearTimelineBatchMessage();
     return;
   }
-
   timelineMultiSelectActive.value = true;
-  for (const tweetId of timelineTweetIds.value) {
-    selectedTimelineTweetIds.add(tweetId);
-  }
+  for (const id of timelineEntryIds.value) selectedTimelinePostIds.add(id);
   clearTimelineBatchMessage();
 }
 
-function selectTimelineTweet(tweetId: string): void {
+function selectTimelineItem(item: TimelineCardItem): void {
   if (timelineMultiSelectActive.value && shouldShowTimelineRemoteActions.value) {
-    toggleTimelineTweetSelection(tweetId);
+    toggleTimelinePostSelection(item.id);
     return;
   }
-
-  openTweet(tweetId);
+  openTweet(item.post.id);
 }
 
-async function submitSelectedTimelineTweets(): Promise<void> {
-  const selectedIds = selectedTimelineItems.value.map((item) => item.tweet.id);
-  const submission = selectedTimelineBuildResult.value.submission;
-
-  if (!submission) {
-    timelineBatchSubmitState.value = 'error';
-    timelineBatchSubmitMessage.value = selectedTimelineSubmitIssue.value ?? 'Unable to build selected tweet submission';
-    return;
-  }
-
+async function submitSelectedTimelinePosts(): Promise<void> {
+  const selectedIds = selectedTimelineIds.value;
+  const { batch } = buildArchiveBatch(selectedIds, archiveRecords);
   timelineBatchSubmitState.value = 'submitting';
   timelineBatchSubmitMessage.value = null;
 
   try {
-    const result = await submitRemoteDbSubmission(submission);
-    enqueueRemoteTweetSyncStatusRefresh(selectedIds);
+    const result = await submitRemoteDbArchive(batch);
+    enqueueRemoteSyncStatusRefresh(selectedIds);
     clearTimelineSelection();
     timelineMultiSelectActive.value = false;
     timelineBatchSubmitState.value = 'success';
@@ -411,13 +301,11 @@ watch(
 );
 
 watch(
-  () => timelineTweetIds.value.join('|'),
+  () => timelineEntryIds.value.join('|'),
   () => {
-    const currentIds = new Set(timelineTweetIds.value);
-    for (const tweetId of [...selectedTimelineTweetIds]) {
-      if (!currentIds.has(tweetId)) {
-        selectedTimelineTweetIds.delete(tweetId);
-      }
+    const currentIds = new Set(timelineEntryIds.value);
+    for (const id of [...selectedTimelinePostIds]) {
+      if (!currentIds.has(id)) selectedTimelinePostIds.delete(id);
     }
   },
 );
@@ -440,10 +328,10 @@ watch(
       </template>
 
       <template v-else-if="route.page === 'status'">
-        <div v-if="!focalTweet" class="xd-empty">Waiting for tweet data...</div>
+        <div v-if="!focalPost" class="xd-empty">Waiting for post data...</div>
         <template v-else>
           <TweetDetailView
-            :tweet="focalTweet"
+            :post="focalPost"
             :parents="focalParents"
             :replies="focalReplies"
             show-parents
@@ -455,8 +343,8 @@ watch(
             <template #after-detail>
               <RemoteDbTweetPanel
                 v-if="shouldShowRemoteDbPanel"
-                :tweet="focalTweet"
-                :batch-sync-tweets="focalRemoteSyncTweets"
+                :post="focalPost"
+                :batch-sync-posts="focalRemoteSyncPosts"
               />
             </template>
           </TweetDetailView>
@@ -464,24 +352,25 @@ watch(
       </template>
 
       <template v-else-if="route.page === 'timeline'">
-        <div v-if="timelineItems.length === 0" class="xd-empty">{{ getTimelineWaitingText(route.source) }}</div>
+        <div v-if="timelineItems.length === 0" class="xd-empty">{{ timelineWaitingText }}</div>
         <TweetSummaryCard
           v-for="item in timelineItems"
-          :key="item.tweet.id"
-          :tweet="item.tweet"
+          :key="item.id"
+          :post="item.post"
           :author="item.author"
           :media="item.media"
-          :remote-sync-status="getRemoteTweetSyncStatus(item.tweet.id)"
-          :selected="selectedTimelineTweetIds.has(item.tweet.id)"
-          @select="selectTimelineTweet"
+          :reposted-by="item.repostedBy"
+          :remote-sync-status="getRemoteSyncStatus(item.id)"
+          :selected="selectedTimelinePostIds.has(item.id)"
+          @select="selectTimelineItem(item)"
         />
       </template>
 
       <template v-else-if="route.page === 'tweet'">
-        <div v-if="!detailTweet" class="xd-empty">Tweet not found</div>
+        <div v-if="!detailPost" class="xd-empty">Post not found</div>
         <template v-else>
           <TweetDetailView
-            :tweet="detailTweet"
+            :post="detailPost"
             :replies="detailReplies"
             @open-user="openUser"
             @open-original="openOriginal"
@@ -491,8 +380,8 @@ watch(
             <template #after-detail>
               <RemoteDbTweetPanel
                 v-if="shouldShowRemoteDbPanel"
-                :tweet="detailTweet"
-                :batch-sync-tweets="detailRemoteSyncTweets"
+                :post="detailPost"
+                :batch-sync-posts="detailRemoteSyncPosts"
               />
             </template>
           </TweetDetailView>
@@ -518,16 +407,16 @@ watch(
         </button>
         <button
           class="xd-btn xd-btn--sm"
-          :class="{ 'xd-btn--accent': allTimelineTweetsSelected }"
+          :class="{ 'xd-btn--accent': allTimelinePostsSelected }"
           :disabled="timelineItems.length === 0"
-          @click="toggleAllTimelineTweetSelection"
+          @click="toggleAllTimelinePostSelection"
         >
           {{ selectAllButtonText }}
         </button>
         <button
           class="xd-btn xd-btn--sm xd-btn--accent"
           :disabled="timelineSubmitDisabled"
-          @click="submitSelectedTimelineTweets"
+          @click="submitSelectedTimelinePosts"
         >
           {{ timelineSubmitButtonText }}
         </button>
@@ -536,7 +425,7 @@ watch(
         <span
           class="xd-tab-meta"
           :class="{
-            'xd-tab-meta--error': timelineBatchSubmitState === 'error' || (timelineMultiSelectActive && selectedTimelineCount > 0 && selectedTimelineSubmitIssue),
+            'xd-tab-meta--error': timelineBatchSubmitState === 'error',
             'xd-tab-meta--success': timelineBatchSubmitState === 'success',
           }"
         >
