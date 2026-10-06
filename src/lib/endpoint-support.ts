@@ -1,4 +1,4 @@
-export type EndpointKind = 'timeline' | 'tweet-detail';
+export type EndpointKind = 'timeline' | 'tweet-detail' | 'user';
 
 export interface EndpointSupportRecord {
   operationName: string;
@@ -29,6 +29,8 @@ export const SUPPORTED_ENDPOINTS = [
   { operationName: 'UserVideoTimeline', kind: 'timeline', scope: 'user' },
   { operationName: 'UserPhotoTimeline', kind: 'timeline', scope: 'user' },
   { operationName: 'SearchTimeline', kind: 'timeline', scope: 'query' },
+  // The profile header request; it adds the account's record without posts.
+  { operationName: 'UserByScreenName', kind: 'user' },
 ] as const satisfies readonly EndpointSupportRecord[];
 
 export type SupportedEndpoint = (typeof SUPPORTED_ENDPOINTS)[number];

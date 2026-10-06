@@ -86,12 +86,11 @@ export function formatMediaSensitivityWarnings(warnings: readonly string[]): str
   return labels;
 }
 
-export function getMediaSensitivityOverlayText(media: Pick<Media, 'sensitive'>): string | null {
-  const warnings = media.sensitive;
-  if (!warnings?.length) return null;
-
-  const labels = formatMediaSensitivityWarnings(warnings);
-  return labels.length > 0 ? labels.join(', ') : null;
+/** Overlay text for masked media: the media's own flags, else the post's content warning. */
+export function getMediaSensitivityOverlayText(media: Pick<Media, 'sensitive'>, post?: Pick<Post, 'contentWarning'>): string | null {
+  const labels = formatMediaSensitivityWarnings(media.sensitive ?? []);
+  if (labels.length > 0) return labels.join(', ');
+  return post?.contentWarning?.title ?? null;
 }
 
 export function toTweetCompactCardItem(post: Post, author: User | undefined): TweetCompactCardItem {

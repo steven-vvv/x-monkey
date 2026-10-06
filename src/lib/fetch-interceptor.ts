@@ -1,6 +1,6 @@
 import { GM_log, unsafeWindow } from '$';
 import { getSupportedEndpoint, getTimelineNamespace, type EndpointSupportRecord } from './endpoint-support';
-import { parseTimelineResponse, parseTweetDetailResponse, type TimelineParsedResponse } from './parser';
+import { parseTimelineResponse, parseTweetDetailResponse, parseUserResponse, type TimelineParsedResponse } from './parser';
 import { getDbUser, runDbBatch, upsertMedia, upsertPost, upsertUser } from './db-service';
 import type { ParsedResponse } from './types';
 import { buildTimelineRecordKey, ingestTimeline } from './timeline-store';
@@ -178,6 +178,15 @@ function ingestTweetDetailResponse(request: GraphqlRequestContext, parsed: Parse
   notifyListeners();
 }
 
+function ingestUserResponse(request: GraphqlRequestContext, parsed: ParsedResponse): void {
+  logParseWarnings(request.operationName, parsed);
+  // Suspended and other unavailable accounts come without an id.
+  if (parsed.users.size === 0) return;
+
+  ingestEntities(parsed);
+  notifyListeners();
+}
+
 function handleGraphqlResponse(request: GraphqlRequestContext, responseBody: string): void {
   const endpoint = getSupportedEndpoint(request.operationName);
   if (!endpoint) return;
@@ -193,6 +202,8 @@ function handleGraphqlResponse(request: GraphqlRequestContext, responseBody: str
   try {
     if (endpoint.kind === 'tweet-detail') {
       ingestTweetDetailResponse(request, parseTweetDetailResponse(json));
+    } else if (endpoint.kind === 'user') {
+      ingestUserResponse(request, parseUserResponse(json));
     } else {
       ingestTimelineResponse(endpoint, request, parseTimelineResponse(json));
     }

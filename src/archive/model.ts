@@ -108,6 +108,8 @@ export const UserSchema = strictObject({
   sensitive: z.boolean().optional(),
   /** 打开主页前的警示页类型，样本值 `sensitive_media`。 */
   interstitial: z.string().optional(),
+  /** 账号被限制显示的国家或地区代码（`withheld_in_countries`），样本值 `SA`、`AE`。 */
+  withheldIn: z.array(z.string()).min(1).optional(),
   verified: strictObject({
     blue: z.boolean().optional(),
     /** `Business`、`Government`。 */
@@ -154,7 +156,10 @@ export const MediaSchema = strictObject({
   sourceUserId: IdSchema.optional(),
   /** `adult_content`、`graphic_violence`、`other`。 */
   sensitive: z.array(z.string()).min(1).optional(),
-  /** `ext_media_availability.status` 不为 `Available` 时记录。 */
+  /**
+   * `ext_media_availability` 不为 `Available` 时记录：有原因时为原因（样本值 `Geoblocked`，
+   * 即采集时所在地区不可用），否则为状态。
+   */
   unavailable: z.string().optional(),
   /** 发布方视频的标题、描述与跳转链接，来源 `additional_media_info`。 */
   title: z.string().optional(),
@@ -174,7 +179,10 @@ export const PollSchema = strictObject({
 export type Poll = z.infer<typeof PollSchema>;
 
 export const CardSchema = strictObject({
-  /** 卡片模板名，样本值：`summary`、`summary_large_image`、`player`、`unified_card`、`poll4choice_text_only`。 */
+  /**
+   * 卡片模板名，样本值：`summary`、`summary_large_image`、`player`、`unified_card`、
+   * `poll2choice_text_only`、`poll4choice_text_only`。
+   */
   type: z.string(),
   /** 卡片对应的 t.co 链接，与正文中的 `url` 实体对应；投票卡片为 `card://<id>`。 */
   url: z.string(),
@@ -194,7 +202,7 @@ export const CardSchema = strictObject({
     width: count.optional(),
     height: count.optional(),
   }).optional(),
-  /** 仅 `poll4choice_text_only` 解析；其他投票模板的值留在 `extra`。 */
+  /** 仅 `poll2choice_text_only`、`poll4choice_text_only` 解析；其他投票模板的值留在 `extra`。 */
   poll: PollSchema.optional(),
   /** 其余未建模的字符串与布尔绑定值（如 `app_*`、`unified_card`），保证信息不丢。 */
   extra: z.record(z.string(), z.union([z.string(), z.boolean()])).optional(),
@@ -243,6 +251,12 @@ export const PlaceSchema = strictObject({
 });
 export type Place = z.infer<typeof PlaceSchema>;
 
+/**
+ * 被引用或被回复的帖子不可见时，X 在原处显示的说明，如“这个帖子已被其作者删除。”。
+ * 只有文字，没有原因代码；语言随采集时的界面语言。末尾指向帮助页的“了解更多”不存。
+ */
+export const TombstoneSchema = z.string().min(1);
+
 export const PostCountsSchema = strictObject({
   replies: count.optional(),
   reposts: count.optional(),
@@ -265,11 +279,13 @@ export const PostSchema = strictObject({
     postId: IdSchema,
     userId: IdSchema.optional(),
     handle: z.string().optional(),
+    tombstone: TombstoneSchema.optional(),
   }).optional(),
   quote: strictObject({
     postId: IdSchema,
     /** 被引帖子的永久链接，被引帖子不可见时用于保留出处。 */
     url: z.string().optional(),
+    tombstone: TombstoneSchema.optional(),
   }).optional(),
   text: RichTextSchema.optional(),
   lang: z.string().optional(),
@@ -290,7 +306,19 @@ export const PostSchema = strictObject({
     url: z.string().optional(),
   }).optional(),
   sensitive: z.boolean().optional(),
-  /** `ByInvitation`、`Community`、`Following`、`Verified` 等。 */
+  /** 媒体或卡片前的内容警告（`mediaVisibilityResults.blurred_image_interstitial`）。 */
+  contentWarning: strictObject({
+    /** 如 `Content warning: Sensitive content`。 */
+    title: z.string(),
+    /** 由谁标注，如 `The author labeled this post as containing sensitive content.`。 */
+    text: z.string().optional(),
+  }).optional(),
+  /** 帖子发在哪个社群；名称只在时间线条目里给出。 */
+  community: strictObject({
+    id: IdSchema,
+    name: z.string().optional(),
+  }).optional(),
+  /** 样本值 `ByInvitation`、`Community`（作者关注的账号）、`MyNetwork`、`Verified`。 */
   replyPolicy: z.string().optional(),
   paidPromotion: z.boolean().optional(),
   aiGenerated: strictObject({

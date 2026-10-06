@@ -42,9 +42,12 @@ function entityHref(entity: Entity, text: string): string | undefined {
   }
 }
 
+const SHORT_LINK = /^https?:\/\/t\.co\//;
+
 /** What X shows for an entity: the shortened link, or `$TICKER` for a tagged asset identifier. */
 function entityText(entity: Entity, text: string): string {
-  if (entity.type === 'url') return formatUrlForDisplay(entity.expanded);
+  // Some community note links come without their destination; the text already shows a readable form.
+  if (entity.type === 'url') return SHORT_LINK.test(entity.expanded) && !SHORT_LINK.test(text) ? text : formatUrlForDisplay(entity.expanded);
   if (entity.type === 'cashtag' && entity.ticker) return `$${entity.ticker}`;
   return text;
 }

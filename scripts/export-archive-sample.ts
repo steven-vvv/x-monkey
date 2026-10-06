@@ -3,7 +3,7 @@ import { dirname, resolve } from 'node:path';
 import type { ArchiveBatch, Media, Post, User } from '../src/archive/model';
 import { mergeArchiveRecord } from '../src/archive/merge';
 import { getSupportedEndpoint } from '../src/lib/endpoint-support';
-import { parseTimelineResponse, parseTweetDetailResponse } from '../src/lib/parser';
+import { parseEndpointResponse } from '../src/lib/parser';
 import { buildArchiveBatch } from '../src/lib/remote-db/adapter';
 import { loadDumpFixtures } from './dump-fixtures';
 
@@ -39,7 +39,7 @@ function addAll<T extends { id: string }>(target: Map<string, T>, source: Map<st
 for (const fixture of fixtures) {
   const endpoint = getSupportedEndpoint(fixture.operationName);
   if (!endpoint || !PUBLIC_SOURCES.test(fixture.operationName) || fixture.operationName === 'Likes') continue;
-  const parsed = endpoint.kind === 'tweet-detail' ? parseTweetDetailResponse(fixture.response) : parseTimelineResponse(fixture.response);
+  const parsed = parseEndpointResponse(endpoint.kind, fixture.response);
   addAll(posts, parsed.posts);
   addAll(users, parsed.users);
   addAll(media, parsed.media);
@@ -53,12 +53,19 @@ const FEATURES: Array<[string, (post: Post) => boolean]> = [
   ['reply with hidden mention prefix', (post) => !!post.replyTo && (post.text?.visible?.[0] ?? 0) > 0],
   ['link card', (post) => post.card?.type === 'summary_large_image' && !!post.card.image],
   ['player card', (post) => post.card?.type === 'player'],
-  ['finished poll', (post) => post.card?.poll?.final === true],
+  ['finished poll', (post) => post.card?.type === 'poll4choice_text_only' && post.card.poll?.final === true],
   ['open poll', (post) => post.card?.poll?.final === false],
+  ['two-choice poll', (post) => post.card?.type === 'poll2choice_text_only' && !!post.card.poll],
   ['full article', (post) => !!post.article?.blocks],
+  ['article with lists and quotes', (post) => !!post.article?.blocks?.some((block) => block.type === 'ordered-list-item')
+    && !!post.article.blocks.some((block) => block.type === 'blockquote')],
   ['article preview', (post) => !!post.article && !post.article.blocks],
   ['repost', (post) => !!post.repostOf && posts.has(post.repostOf)],
   ['quote', (post) => !!post.quote && posts.has(post.quote.postId)],
+  ['reply to an unavailable post', (post) => !!post.replyTo?.tombstone],
+  ['quote of an unavailable post', (post) => !!post.quote?.tombstone],
+  ['content warning', (post) => !!post.contentWarning && mediaOf(post).length > 0],
+  ['community post', (post) => !!post.community],
   ['video', (post) => mediaOf(post).some((item) => item.type === 'video')],
   ['several photos', (post) => mediaOf(post).filter((item) => item.type === 'photo').length > 1],
   ['video timestamps', (post) => !!post.text?.entities?.some((entity) => entity.type === 'timestamp')],
@@ -67,6 +74,10 @@ const FEATURES: Array<[string, (post: Post) => boolean]> = [
   ['community note', (post) => !!post.communityNote],
   ['edited', (post) => !!post.editIds],
   ['ai disclosure', (post) => !!post.aiGenerated],
+  ['paid partnership', (post) => !!post.paidPromotion],
+  ['reply policy', (post) => !!post.replyPolicy],
+  ['unavailable media with a title', (post) => mediaOf(post).some((item) => !!item.unavailable && !!item.title)],
+  ['author withheld in some countries', (post) => !!users.get(post.authorId)?.withheldIn],
   ['place', (post) => !!post.place],
 ];
 

@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { computed } from 'vue';
-import type { Media } from '../archive/model';
+import type { Media, Post } from '../archive/model';
 import { getConfig } from '../lib/config-service';
 import { getMediaOpenUrl, getMediaThumbUrl } from '../lib/post-view';
 import { getMediaSensitivityOverlayText } from '../lib/view-format';
 
-const props = defineProps<{ media: Media[] }>();
+const props = defineProps<{ media: Media[]; post?: Pick<Post, 'contentWarning'> }>();
 
 const emit = defineEmits<{
   (e: 'open', url: string): void;
@@ -15,7 +15,7 @@ const cfg = getConfig();
 
 const mediaItems = computed(() => props.media.map((mediaItem) => ({
   mediaItem,
-  sensitivityText: cfg.maskSensitiveMediaWarnings ? getMediaSensitivityOverlayText(mediaItem) : null,
+  sensitivityText: cfg.maskSensitiveMediaWarnings ? getMediaSensitivityOverlayText(mediaItem, props.post) : null,
 })));
 </script>
 

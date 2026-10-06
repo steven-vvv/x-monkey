@@ -94,7 +94,7 @@ const visibleMediaCount = computed(() => resolveVisibleMediaCount(mediaWidth.val
 const visibleMedia = computed(() => props.media.slice(0, visibleMediaCount.value));
 const visibleMediaItems = computed(() => visibleMedia.value.map((item) => ({
   item,
-  sensitivityText: cfg.maskSensitiveMediaWarnings ? getMediaSensitivityOverlayText(item) : null,
+  sensitivityText: cfg.maskSensitiveMediaWarnings ? getMediaSensitivityOverlayText(item, props.post) : null,
 })));
 const extraCount = computed(() => Math.max(0, props.media.length - visibleMedia.value.length));
 const mediaGridStyle = computed<Record<string, string>>(() => ({

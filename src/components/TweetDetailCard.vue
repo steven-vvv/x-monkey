@@ -46,7 +46,10 @@ const articleText = computed(() => {
 const policyLines = computed(() => {
   const post = props.post;
   const lines: string[] = [];
-  if (post.paidPromotion) lines.push('Paid promotion');
+  if (post.contentWarning) lines.push([post.contentWarning.title, post.contentWarning.text].filter(Boolean).join(' — '));
+  if (post.community) lines.push(`Community: ${post.community.name ?? post.community.id}`);
+  if (post.replyTo?.tombstone) lines.push(`Replying to an unavailable post: ${post.replyTo.tombstone}`);
+  if (post.paidPromotion) lines.push('Paid partnership');
   if (post.aiGenerated) {
     lines.push(post.aiGenerated.media
       ? `AI-generated media (${post.aiGenerated.source})`
@@ -125,12 +128,12 @@ const policyLines = computed(() => {
           {{ quoteAuthor?.name ?? '?' }} · {{ getPlainText(quotePost.text) || quotePost.article?.title || '(no text)' }}
         </template>
         <template v-else>
-          {{ post.quote?.url ?? `Post ID ${quotePostId}` }}
+          {{ post.quote?.tombstone ?? post.quote?.url ?? `Post ID ${quotePostId}` }}
         </template>
       </div>
     </div>
 
-    <MediaThumbGrid :media="media" @open="(url) => emit('open-media', url)" />
+    <MediaThumbGrid :media="media" :post="post" @open="(url) => emit('open-media', url)" />
 
     <div v-if="policyLines.length > 0" class="xd-detail-lines">
       <div v-for="line in policyLines" :key="line" class="xd-detail-line">{{ line }}</div>

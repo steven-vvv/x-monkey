@@ -1,9 +1,9 @@
 import { MediaSchema, PostSchema, UserSchema, type Post } from '../src/archive/model';
-import { ArchiveCollector, collectTweet } from '../src/archive/normalize';
+import { ArchiveCollector, collectTweet, readTombstone } from '../src/archive/normalize';
 import { mergeArchiveRecord } from '../src/archive/merge';
 import { sliceCodePoints, unescapeXText } from '../src/archive/text';
 import { getSupportedEndpoint } from '../src/lib/endpoint-support';
-import { parseTimelineResponse, parseTweetDetailResponse, type TimelineParsedResponse } from '../src/lib/parser';
+import { parseEndpointResponse, parseTimelineResponse, parseTweetDetailResponse, parseUserResponse, type TimelineParsedResponse } from '../src/lib/parser';
 import { getPlainText, getRichTextSegments } from '../src/lib/post-view';
 import { buildArchiveBatch, compareArchiveBatch } from '../src/lib/remote-db/adapter';
 import { clearDb, dbVersion, getPostCount, runDbBatch, upsertPost, upsertUser } from '../src/lib/db-service';
@@ -206,6 +206,16 @@ function assertUserScenarios(): void {
   check(current.interstitial === 'sensitive_media', 'profile warning type');
   const plain = collect(rawTweet('42', '1', {}, { core: { user_results: { result: rawUser('1', { profile_metadata: { profile_interstitial_type: '' } }) } } })).users.get('1')!;
   check(plain.bannerUrl === undefined && plain.interstitial === undefined, 'empty banner and empty warning type are absent');
+  const withheld = collect(rawTweet('43', '1', {}, { core: { user_results: { result: rawUser('1', {
+    profile_bio: { description: 'Bio', withheld_in_countries: ['SA'] },
+  }) } } })).users.get('1')!;
+  check(JSON.stringify(withheld.withheldIn) === '["SA"]', 'withheld countries');
+
+  // Profile requests: a normal account, and a suspended one that has no id.
+  const profile = parseUserResponse({ data: { user: { result: rawUser('44') } } });
+  check(profile.users.get('44')?.handle === 'user_44' && profile.meta.warnings.length === 0, 'profile response yields the user');
+  const suspended = parseUserResponse({ data: { user: { result: { __typename: 'UserUnavailable', reason: 'Suspended', message: 'User is suspended' } } } });
+  check(suspended.users.size === 0 && suspended.meta.warnings.length === 0, 'unavailable profile yields nothing');
 }
 
 function assertCardScenarios(): void {
@@ -244,11 +254,16 @@ function assertCardScenarios(): void {
   } } })).posts.get('51')!.card!;
   check(JSON.stringify(poll) === '{"type":"poll4choice_text_only","url":"card://9","poll":{"choices":[{"label":"A","count":3},{"label":"B","count":1},{"label":"C","count":0},{"label":"D","count":0}],"endsAt":"2030-01-02T00:00:00Z","final":false,"updatedAt":"2030-01-01T12:00:00Z"}}', 'four-choice poll card');
 
-  // Card types without samples (two-choice polls, for example) are not parsed; their raw values are kept.
+  const twoChoices = collect(rawTweet('49', '1', {}, { card: { rest_id: 'card://7', legacy: {
+    name: 'poll2choice_text_only', url: 'card://7', binding_values: pollBindings.slice(0, 4).concat(pollBindings.slice(8)),
+  } } })).posts.get('49')!.card!;
+  check(JSON.stringify(twoChoices) === '{"type":"poll2choice_text_only","url":"card://7","poll":{"choices":[{"label":"A","count":3},{"label":"B","count":1}],"endsAt":"2030-01-02T00:00:00Z","final":false,"updatedAt":"2030-01-01T12:00:00Z"}}', 'two-choice poll card');
+
+  // Card types without samples (three-choice polls, for example) are not parsed; their raw values are kept.
   const unsupported = collect(rawTweet('53', '1', {}, { card: { rest_id: 'card://8', legacy: {
-    name: 'poll2choice_text_only', url: 'card://8', binding_values: pollBindings.slice(0, 4).concat(pollBindings.slice(10)),
+    name: 'poll3choice_text_only', url: 'card://8', binding_values: pollBindings.slice(0, 4).concat(pollBindings.slice(10)),
   } } })).posts.get('53')!.card!;
-  check(JSON.stringify(unsupported) === '{"type":"poll2choice_text_only","url":"card://8","extra":{"choice1_label":"A","choice1_count":"3","choice2_label":"B","choice2_count":"1","counts_are_final":false,"api":"capi://passthrough/1","duration_minutes":"1440"}}', 'unsupported card keeps raw values only');
+  check(JSON.stringify(unsupported) === '{"type":"poll3choice_text_only","url":"card://8","extra":{"choice1_label":"A","choice1_count":"3","choice2_label":"B","choice2_count":"1","counts_are_final":false,"api":"capi://passthrough/1","duration_minutes":"1440"}}', 'unsupported card keeps raw values only');
   check(collect(rawTweet('52', '1', {}, { card: { rest_id: 'https://t.co/u' } })).posts.get('52')!.card === undefined, 'unexpanded card is dropped');
 }
 
@@ -260,6 +275,41 @@ function assertVisibilityScenarios(): void {
     tweet: rawTweet('59', '1', { conversation_control: { policy: 'Community', conversation_owner_results: { result: { __typename: 'User', core: { screen_name: 'user_1' } } } } }),
   });
   check(restricted.posts.get('59')?.replyPolicy === 'Community' && restricted.users.size === 1, 'reply restriction on a wrapped post');
+
+  const warned = collect({
+    __typename: 'TweetWithVisibilityResults',
+    mediaVisibilityResults: { blurred_image_interstitial: {
+      opacity: 0.8,
+      title: { entities: [], rtl: false, text: 'Content warning: Sensitive content' },
+      text: { entities: [], rtl: false, text: 'The author labeled this post as containing sensitive content.' },
+    } },
+    tweet: rawTweet('80', '1', { possibly_sensitive: true }),
+  }).posts.get('80')!;
+  check(JSON.stringify(warned.contentWarning) === '{"title":"Content warning: Sensitive content","text":"The author labeled this post as containing sensitive content."}' && warned.sensitive, 'content warning from the visibility wrapper');
+
+  // A quoted post X no longer serves: the id comes from the quoting post, the notice loses its help link.
+  const tombstone = (text: string, linkText: string) => ({ __typename: 'TweetTombstone', tombstone: { __typename: 'TextTombstone', text: {
+    text: `${text} ${linkText}`,
+    entities: [{ fromIndex: Array.from(text).length + 1, toIndex: Array.from(`${text} ${linkText}`).length, ref: { type: 'TimelineUrl', url: 'https://help.x.com/rules-and-policies/notices-on-x', urlType: 'ExternalUrl' } }],
+    rtl: false,
+  } } });
+  const quoting = collect(rawTweet('81', '1', {
+    is_quote_status: true,
+    quoted_status_id_str: '82',
+    quoted_status_permalink: { url: 'https://t.co/q', expanded: 'https://twitter.com/gone/status/82', display: 'x.com/gone/status/82' },
+  }, { quoted_status_result: { result: tombstone('This Post is from a suspended account.', 'Learn more') } })).posts.get('81')!;
+  check(JSON.stringify(quoting.quote) === '{"postId":"82","url":"https://twitter.com/gone/status/82","tombstone":"This Post is from a suspended account."}', 'quoted tombstone');
+  check(readTombstone(tombstone('这个帖子已被其作者删除。', '了解更多')) === '这个帖子已被其作者删除。', 'tombstone notice without its help link');
+
+  const community = collect(rawTweet('83', '1', {}, { community_results: { result: {
+    __typename: 'Community', id_str: '1509123690012680192', viewer_relationship: { moderation_state: { __typename: 'CommunityUserDefaultModerationState' } },
+  } } })).posts.get('83')!;
+  check(JSON.stringify(community.community) === '{"id":"1509123690012680192"}', 'community id');
+
+  const geoblocked = collect(rawTweet('84', '1', { extended_entities: { media: [rawMedia('503', {
+    ext_media_availability: { status: 'Unavailable', reason: 'Geoblocked' },
+  })] } })).media.get('503')!;
+  check(geoblocked.unavailable === 'Geoblocked', 'unavailable media keep the reason');
 }
 
 function assertTaggedTextScenarios(): void {
@@ -305,6 +355,12 @@ function assertTaggedTextScenarios(): void {
     subtitle: { text: 'See example.com/a…', entities: [{ fromIndex: 4, toIndex: 18, ref: { type: 'TimelineUrl', url: 'https://t.co/n', expandedUrl: 'https://example.com/article', urlType: 'ExternalUrl' } }] },
   } })).posts.get('58')!.communityNote!;
   check(JSON.stringify(noted) === '{"id":"9","title":"Readers added context","text":{"text":"See example.com/a…","entities":[{"type":"url","range":[4,18],"expanded":"https://example.com/article"}]},"lang":"en","url":"https://twitter.com/i/birdwatch/n/9"}', 'community note with expanded links');
+  // Some note links come without the destination: the t.co link is kept, the text shows the readable form.
+  const bare = collect(rawTweet('85', '1', {}, { birdwatch_pivot: {
+    note: { rest_id: '10' },
+    subtitle: { text: 'See example.com/b…', entities: [{ fromIndex: 4, toIndex: 18, ref: { type: 'TimelineUrl', url: 'https://t.co/m', urlType: 'ExternalUrl' } }] },
+  } })).posts.get('85')!.communityNote!;
+  check(bare.text.entities?.[0].type === 'url' && bare.text.entities[0].expanded === 'https://t.co/m' && getPlainText(bare.text) === 'See example.com/b…', 'note link without destination');
 }
 
 function assertTraversalScenarios(): void {
@@ -327,6 +383,20 @@ function assertTraversalScenarios(): void {
     { content: { displayType: 'VerticalGrid', items: [{ item: { itemContent: { tweet_results: { result: rawTweet('66', '1') } } } }] } },
   ] }] } } } } });
   check(search.postIds.join() === '65,66' && search.meta.warnings.length === 0, 'search results path');
+
+  // A detail page whose parent is gone: the tombstone entry names the post it replaces.
+  const detail = parseTweetDetailResponse({ data: { threaded_conversation_with_injections_v2: { instructions: [{ type: 'TimelineAddEntries', entries: [
+    { entryId: 'tweet-67', content: { itemContent: { tweet_results: { result: { __typename: 'TweetTombstone', tombstone: { __typename: 'TextTombstone', text: { text: 'Gone', entities: [] } } } } } } },
+    { entryId: 'tweet-68', ...(entry(rawTweet('68', '1', { in_reply_to_status_id_str: '67', in_reply_to_user_id_str: '2', in_reply_to_screen_name: 'b', conversation_id_str: '67' })) as object) },
+  ] }] } } });
+  check(JSON.stringify(detail.posts.get('68')?.replyTo) === '{"postId":"67","userId":"2","handle":"b","tombstone":"Gone"}' && detail.posts.size === 1, 'reply to a tombstone keeps its notice');
+
+  // A community post names its community only through the timeline item.
+  const communityPost = rawTweet('69', '1', {}, { community_results: { result: { __typename: 'Community', id_str: '5' } } });
+  const named = parseTimelineResponse(timeline(entry(communityPost, { socialContext: {
+    type: 'TimelineGeneralContext', contextType: 'Community', text: 'Community name', landingUrl: { url: 'https://twitter.com/i/communities/5', urlType: 'ExternalUrl' },
+  } })));
+  check(JSON.stringify(named.posts.get('69')?.community) === '{"id":"5","name":"Community name"}', 'community name from the social context');
 }
 
 function assertMergeScenarios(): void {
@@ -452,9 +522,7 @@ function main(): void {
       unsupported.add(fixture.operationName);
       continue;
     }
-    const parsed = endpoint.kind === 'tweet-detail'
-      ? parseTweetDetailResponse(fixture.response)
-      : parseTimelineResponse(fixture.response);
+    const parsed = parseEndpointResponse(endpoint.kind, fixture.response);
     assertParsedRecords(parsed, fixture.source);
 
     const ordered = (parsed as TimelineParsedResponse).postIds ?? [];

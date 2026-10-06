@@ -20,6 +20,7 @@ const labels = computed(() => [
   props.user.parody,
   props.user.protected ? 'Protected' : null,
   props.user.interstitial ? `Profile warning: ${props.user.interstitial}` : null,
+  props.user.withheldIn ? `Withheld in: ${props.user.withheldIn.join(', ')}` : null,
 ].filter(Boolean) as string[]);
 </script>
 

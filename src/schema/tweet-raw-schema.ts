@@ -164,10 +164,10 @@ export const CardBindingValueSchema = strictObject({
 });
 export type CardBindingValue = z.infer<typeof CardBindingValueSchema>;
 
-/** 用户资料链接。 */
+/** 链接实体。转帖包装的 `RT @…` 正文被截断时，末尾半截的 t.co 链接没有 `expanded_url`。 */
 export const UrlEntitySchema = strictObject({
   display_url: z.string(),
-  expanded_url: z.string(),
+  expanded_url: z.string().optional(),
   url: z.string(),
   indices: z.array(z.number()).optional(),
 });
@@ -207,6 +207,7 @@ export type SmartTagEntity = z.infer<typeof SmartTagEntitySchema>;
 /** 帖子下方的行情卡片，`rest_id` 与正文中的资产标识相同。 */
 export const CashtagAttachmentSchema = strictObject({
   rest_id: z.string(),
+  size_variant: z.number().optional(),
 });
 export type CashtagAttachment = z.infer<typeof CashtagAttachmentSchema>;
 
@@ -225,7 +226,7 @@ export const HashtagEntitySchema = strictObject({
 });
 export type HashtagEntity = z.infer<typeof HashtagEntitySchema>;
 
-/** 简介自动翻译中的提及，比帖子里的多一个与 `id_str` 相同的 `id`。 */
+/** 自动翻译（简介与帖子）中的提及，比帖子里的多一个与 `id_str` 相同的 `id`。 */
 export const TranslatedBioMentionSchema = strictObject({
   id: z.string().optional(),
   id_str: z.string(),
@@ -378,6 +379,8 @@ export const UserSchema = strictObject({
       description: strictObject({ urls: z.array(UrlEntitySchema).optional() }).optional(),
       url: UrlContainerSchema.optional(),
     }).optional(),
+    /** 账号被限制显示的国家或地区代码，取代 `legacy.withheld_in_countries`。 */
+    withheld_in_countries: z.array(z.string()).optional(),
   }).optional(),
   profile_description_language: z.string().optional(),
   profile_image_shape: z.string().optional(),
@@ -567,6 +570,8 @@ export const MediaSchema = strictObject({
   url: z.string().optional(),
   ext_alt_text: z.string().optional(),
   ext_media_availability: strictObject({
+    /** 不可用时的原因，样本值 `Geoblocked`。 */
+    reason: z.string().optional(),
     status: z.string().optional(),
   }).optional(),
   features: MediaFeaturesSchema.optional(),
@@ -693,7 +698,10 @@ export const GrokTranslatedPostDataSchema = strictObject({
   associated_data: strictObject({}).optional(),
   preview_translation: z.string().optional(),
   destination_language: z.string().optional(),
-  entities: TweetEntitiesSchema.optional(),
+  entities: strictObject({
+    ...TweetEntitiesSchema.shape,
+    user_mentions: z.array(TranslatedBioMentionSchema).optional(),
+  }).optional(),
   source_language: z.string().optional(),
   translation: z.string().optional(),
 });
@@ -729,6 +737,18 @@ export const PreviousCountsSchema = strictObject({
   retweet_count: z.number().optional(),
 });
 export type PreviousCounts = z.infer<typeof PreviousCountsSchema>;
+
+/** 帖子所在的社群。名称不在这里，只随时间线条目的 `socialContext` 下发。 */
+export const CommunityResultsSchema = strictObject({
+  result: strictObject({
+    __typename: z.literal('Community'),
+    id_str: z.string(),
+    viewer_relationship: strictObject({
+      moderation_state: UnknownGraphqlNodeSchema.optional(),
+    }).optional(),
+  }).optional(),
+});
+export type CommunityResults = z.infer<typeof CommunityResultsSchema>;
 
 /** 广告披露。 */
 export const ContentDisclosureSchema = strictObject({
@@ -1026,6 +1046,7 @@ function createTweetDataShape() {
   birdwatch_pivot: BirdwatchPivotSchema.optional(),
   card: CardSchema.optional(),
   cashtag_attachments: z.array(CashtagAttachmentSchema).optional(),
+  community_results: CommunityResultsSchema.optional(),
   content_disclosure: ContentDisclosureSchema.optional(),
   core: TweetCoreSchema,
   edit_control: EditControlSchema.optional(),
@@ -1144,6 +1165,7 @@ export interface TweetData {
   birdwatch_pivot?: BirdwatchPivot;
   card?: Card;
   cashtag_attachments?: CashtagAttachment[];
+  community_results?: CommunityResults;
   content_disclosure?: ContentDisclosure;
   core: TweetCore;
   edit_control?: EditControl;

@@ -368,6 +368,8 @@ export function collectUser(input: unknown, path: string, collector: ArchiveColl
       protected: asBoolean(read(node, 'privacy', 'protected')) ?? asBoolean(legacy?.protected),
       sensitive: asBoolean(node.possibly_sensitive) ?? asBoolean(legacy?.possibly_sensitive),
       interstitial: asText(read(node, 'profile_metadata', 'profile_interstitial_type')) ?? asText(legacy?.profile_interstitial_type),
+      withheldIn: nonEmpty(asArray(read(node, 'profile_bio', 'withheld_in_countries') ?? legacy?.withheld_in_countries)
+        .map(asText).filter((value): value is string => !!value)),
       verified: compact({
         blue: asBoolean(node.is_blue_verified),
         type: asText(read(node, 'verification', 'verified_type')),
@@ -412,6 +414,7 @@ function collectMedia(input: unknown, path: string, collector: ArchiveCollector)
   if (sourceUser !== undefined) collectUser(sourceUser, `${path}.${sourceUserPath.join('.')}`, collector);
 
   const availability = asText(read(item, 'ext_media_availability', 'status'));
+  const unavailableReason = asText(read(item, 'ext_media_availability', 'reason'));
   const media: Media = {
     id,
     type,
@@ -442,7 +445,7 @@ function collectMedia(input: unknown, path: string, collector: ArchiveCollector)
         .filter(([, flagged]) => flagged === true)
         .map(([name]) => name)
         .sort()),
-      unavailable: availability && availability !== 'Available' ? availability : undefined,
+      unavailable: availability && availability !== 'Available' ? unavailableReason ?? availability : undefined,
       title: asText(read(item, 'additional_media_info', 'title')),
       description: asText(read(item, 'additional_media_info', 'description')),
       link: asText(read(item, 'additional_media_info', 'call_to_actions', 'visit_site', 'url')),
@@ -503,7 +506,7 @@ const CARD_IMAGE_SUFFIX = /_(original|x_large|large|small|color|alt_text)$/;
 /** Modelled bindings, plus two that are never kept: the `card_url` placeholder and the viewer's own poll vote. */
 const CARD_CONSUMED_KEYS = new Set(['title', 'description', 'domain', 'vanity_url', 'card_url', 'site', 'creator', 'player_url', 'player_width', 'player_height', 'selected_choice']);
 /** Poll templates parsed into `Card.poll`; other poll templates have not been captured. */
-const POLL_CARD_TYPES = new Set(['poll4choice_text_only']);
+const POLL_CARD_TYPES = new Set(['poll2choice_text_only', 'poll4choice_text_only']);
 /** Poll bindings without content: the vote endpoint and the duration (end time minus post time). */
 const POLL_DROPPED_KEYS = ['api', 'duration_minutes'];
 
@@ -723,6 +726,22 @@ function normalizePlace(input: unknown): Place | undefined {
   };
 }
 
+/**
+ * Reads the notice X shows in place of a post it does not serve (a
+ * `TweetTombstone`), without the trailing "Learn more" link to its help pages.
+ */
+export function readTombstone(input: unknown): string | undefined {
+  const node = asObject(input);
+  const text = node?.__typename === 'TweetTombstone' ? asText(read(node, 'tombstone', 'text', 'text')) : undefined;
+  if (!text) return undefined;
+  const length = codePointLength(text);
+  const linkStart = asArray(read(node, 'tombstone', 'text', 'entities'))
+    .filter((entity) => asCount(read(entity, 'toIndex')) === length)
+    .map((entity) => asCount(read(entity, 'fromIndex')))
+    .find((start) => start !== undefined);
+  return asText((linkStart === undefined ? text : sliceCodePoints(text, 0, linkStart)).trim());
+}
+
 function unwrapTweetResult(input: unknown): Json | undefined {
   const node = asObject(input);
   if (!node) return undefined;
@@ -777,6 +796,7 @@ export function collectTweet(
       : undefined)
       ?? asId(legacy.quoted_status_id_str)
       ?? asId(read(data, 'quotedRefResult', 'result', 'rest_id'));
+    const quoteTombstone = readTombstone(quoteResult);
 
     const mediaSource = asArray(read(legacy, 'extended_entities', 'media')).length > 0
       ? 'extended_entities'
@@ -792,6 +812,10 @@ export function collectTweet(
       .filter((value): value is string => !!value);
     const note = asObject(data.birdwatch_pivot);
     const noteText = timelineTextToRichText(note?.subtitle);
+    // The content warning sits on the visibility wrapper, next to the post.
+    const warning = read(input, 'mediaVisibilityResults', 'blurred_image_interstitial');
+    const warningTitle = asText(read(warning, 'title', 'text'));
+    const communityId = asId(read(data, 'community_results', 'result', 'id_str'));
     const aiDisclosure = asObject(read(data, 'content_disclosure', 'ai_generated_disclosure'));
     const aiMedia = asBoolean(aiDisclosure?.has_ai_generated_media);
     const aiSource = asText(aiDisclosure?.ai_generated_detection_source);
@@ -805,7 +829,9 @@ export function collectTweet(
         replyTo: replyToPostId
           ? compact({ postId: replyToPostId, userId: asId(legacy.in_reply_to_user_id_str), handle: asText(legacy.in_reply_to_screen_name) })
           : undefined,
-        quote: quotedId ? compact({ postId: quotedId, url: asText(read(legacy, 'quoted_status_permalink', 'expanded')) }) : undefined,
+        quote: quotedId
+          ? compact({ postId: quotedId, url: asText(read(legacy, 'quoted_status_permalink', 'expanded')), tombstone: quoteTombstone })
+          : undefined,
         text: buildPostText(data),
         lang: asText(legacy.lang),
         source: stripSourceHtml(asString(data.source)),
@@ -832,6 +858,8 @@ export function collectTweet(
           })
           : undefined,
         sensitive: asBoolean(legacy.possibly_sensitive),
+        contentWarning: warningTitle ? compact({ title: warningTitle, text: asText(read(warning, 'text', 'text')) }) : undefined,
+        community: communityId ? { id: communityId } : undefined,
         replyPolicy: asText(read(legacy, 'conversation_control', 'policy')),
         paidPromotion: asBoolean(read(data, 'content_disclosure', 'advertising_disclosure', 'is_paid_promotion')),
         aiGenerated: aiMedia !== undefined && aiSource ? { media: aiMedia, source: aiSource } : undefined,

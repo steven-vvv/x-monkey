@@ -65,11 +65,12 @@ Supported operations, as used by the X web client in 2026-10:
 | `/search?q=…` (`f=top`, `f=live`, `f=media`) | `SearchTimeline` |
 | `/home` | `HomeTimeline`, `HomeLatestTimeline` |
 | `/<user>/status/<id>` | `TweetDetail` |
+| any profile (header) | `UserByScreenName`, the account record only |
 
 `?sort=popular` on the Posts, All and Highlights tabs is kept as a separate timeline.
 Search results are kept per query and tab; the People and Lists tabs are not post lists.
 Pages and payload shapes that have not been captured yet (subscriber-only
-posts, two- and three-choice polls, other card types, list timelines) are not
+posts, three-choice and image polls, other card types, list timelines) are not
 supported; an unsupported card keeps its raw values in `extra`. The samples
 still missing are listed in section 8 of the design note.
 
