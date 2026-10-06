@@ -14,7 +14,7 @@ import {
   getReplies,
 } from '../lib/db-service';
 import {
-  HOME_FEATURE_TIMELINE_SOURCES,
+  HOME_FEATURE_TIMELINES,
   getFeatureTimelineLabel,
   getFeatureTimelineNamespace,
   type FeatureTimelineSort,
@@ -129,12 +129,14 @@ const timelineWaitingText = computed(() => {
 });
 
 const homeEntryCards = computed(() => {
-  return HOME_FEATURE_TIMELINE_SOURCES.map((source) => {
-    const namespace = getFeatureTimelineNamespace(source);
+  return HOME_FEATURE_TIMELINES.map(({ source, sort }) => {
+    const namespace = getFeatureTimelineNamespace(source, sort);
     void getTimelineVersionByAlias(namespace);
     return {
+      namespace,
       source,
-      label: getFeatureTimelineLabel(source),
+      sort,
+      label: getFeatureTimelineLabel(source, sort),
       count: getTimelinePostIdsByAlias(namespace).length,
     };
   });
@@ -154,8 +156,8 @@ function openUser(userId: string) {
   ));
 }
 
-function openHomeTimeline(source: FeatureTimelineSource) {
-  featureNavigateTo({ page: 'timeline', source });
+function openHomeTimeline(source: FeatureTimelineSource, sort?: FeatureTimelineSort) {
+  featureNavigateTo({ page: 'timeline', source, sort });
 }
 
 function openOriginal(post: Post) {
@@ -319,7 +321,7 @@ watch(
       </template>
 
       <template v-else-if="route.page === 'home-root'">
-        <div v-for="entry in homeEntryCards" :key="entry.source" class="xd-list-item xd-list-item--clickable" @click="openHomeTimeline(entry.source)">
+        <div v-for="entry in homeEntryCards" :key="entry.namespace" class="xd-list-item xd-list-item--clickable" @click="openHomeTimeline(entry.source, entry.sort)">
           <div class="xd-list-item-info">
             <div class="xd-list-item-title">{{ entry.label }}</div>
             <div class="xd-list-item-meta">{{ entry.count }} tweets captured</div>

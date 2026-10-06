@@ -12,6 +12,8 @@ interface TimelineRecord {
   version: number;
   aliases: Set<string>;
   createdOrder: number;
+  /** The last post of each page by the page's bottom cursor. */
+  pageEnds: Map<string, string>;
 }
 
 export type TimelineInsertMode = 'append' | 'prepend';
@@ -21,7 +23,12 @@ export interface TimelineIngestInput {
   namespace: string;
   postIds: string[];
   aliases?: string[];
+  /** Where a new page goes, unless it continues an earlier page downward. */
   insertMode?: TimelineInsertMode;
+  /** The cursor the page was requested with. */
+  cursor?: string;
+  /** The cursor that requests the page below this one. */
+  bottomCursor?: string;
 }
 
 const timelineState = reactive<Record<string, TimelineRecord>>({});
@@ -73,6 +80,7 @@ function ensureTimelineRecord(input: TimelineIngestInput): TimelineRecord {
       version: 0,
       aliases: new Set<string>(),
       createdOrder: ++timelineCreateCounter,
+      pageEnds: new Map<string, string>(),
     };
   }
 
@@ -96,6 +104,9 @@ export function ingestTimeline(input: TimelineIngestInput): { changed: boolean; 
   }
 
   const record = ensureTimelineRecord(input);
+  // Scrolling down requests the bottom cursor of the page above: the new page goes right below it.
+  const pageAbove = input.cursor ? record.pageEnds.get(input.cursor) : undefined;
+  if (input.bottomCursor) record.pageEnds.set(input.bottomCursor, input.postIds[input.postIds.length - 1]);
   const newTweetIds: string[] = [];
 
   for (const postId of input.postIds) {
@@ -108,7 +119,9 @@ export function ingestTimeline(input: TimelineIngestInput): { changed: boolean; 
     return { changed: false, key: record.key };
   }
 
-  if (input.insertMode === 'prepend') {
+  if (pageAbove !== undefined) {
+    record.postIds.splice(record.postIds.indexOf(pageAbove) + 1, 0, ...newTweetIds);
+  } else if (input.insertMode === 'prepend') {
     record.postIds = [...newTweetIds, ...record.postIds];
   } else {
     record.postIds.push(...newTweetIds);

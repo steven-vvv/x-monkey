@@ -8,6 +8,8 @@ import { getPlainText, getRichTextSegments } from '../src/lib/post-view';
 import { buildArchiveBatch, compareArchiveBatch } from '../src/lib/remote-db/adapter';
 import { clearDb, dbVersion, getPostCount, runDbBatch, upsertPost, upsertUser } from '../src/lib/db-service';
 import { clearCaptureState } from '../src/lib/capture-state-service';
+import { getFeatureTimelineNamespace } from '../src/lib/feature-timeline';
+import { featureRoute, syncFeatureRoute } from '../src/lib/store';
 import {
   buildTimelineRecordKey,
   clearTimelineState,
@@ -373,6 +375,10 @@ function assertTraversalScenarios(): void {
   check(!parsed.posts.has('61'), 'promoted entries are skipped');
   check(parseTimelineResponse({}).meta.warnings.length > 0, 'unknown response shape warns');
 
+  const cursor = (cursorType: string, value: string) => ({ content: { __typename: 'TimelineTimelineCursor', entryType: 'TimelineTimelineCursor', cursorType, value } });
+  const paged = parseTimelineResponse(timeline(cursor('Top', 'top-1'), entry(rawTweet('60', '1')), cursor('Bottom', 'bottom-1')));
+  check(paged.bottomCursor === 'bottom-1' && paged.postIds.join() === '60', 'bottom cursor of a page');
+
   const bookmarks = parseTimelineResponse({ data: { bookmark_timeline_v2: { timeline: { instructions: [{ entries: [entry(rawTweet('64', '1'))] }] } } } });
   check(bookmarks.meta.instructionPath === 'data.bookmark_timeline_v2.timeline.instructions' && bookmarks.postIds.join() === '64', 'bookmarks path');
 
@@ -478,6 +484,22 @@ function assertStoreScenarios(): void {
   ingestTimeline({ key: 'Home', namespace: 'Home', postIds: ['h1', 'h2'], insertMode: 'prepend' });
   ingestTimeline({ key: 'Home', namespace: 'Home', postIds: ['h3', 'h2'], insertMode: 'prepend' });
   check(getTimelinePostIds('Home').join() === 'h3,h1,h2', 'prepend mode');
+  // Older pages first, then the newest one, scrolled down from; then the older pages again.
+  ingestTimeline({ key: 'Following', namespace: 'Following', postIds: ['o2', 'o1'], insertMode: 'prepend', bottomCursor: 'old' });
+  ingestTimeline({ key: 'Following', namespace: 'Following', postIds: ['n4', 'n3'], insertMode: 'prepend', bottomCursor: 'new' });
+  ingestTimeline({ key: 'Following', namespace: 'Following', postIds: ['n2', 'n1'], insertMode: 'prepend', cursor: 'new', bottomCursor: 'new-2' });
+  ingestTimeline({ key: 'Following', namespace: 'Following', postIds: ['o1', 'o0'], insertMode: 'prepend', cursor: 'old' });
+  check(getTimelinePostIds('Following').join() === 'n4,n3,n2,n1,o2,o1,o0', 'a page requested with a bottom cursor goes below its page');
+
+  // The panel opens the home list captured first (the stub page is x.com/home).
+  clearTimelineState();
+  syncFeatureRoute();
+  check(JSON.stringify(featureRoute.value) === '{"page":"timeline","source":"home-timeline"}', 'home opens For You before any list is captured');
+  for (const [namespace, id] of [[getFeatureTimelineNamespace('home-latest-timeline', 'popular'), 'p1'], [getFeatureTimelineNamespace('home-timeline'), 'f1']]) {
+    ingestTimeline({ key: namespace, namespace, postIds: [id], insertMode: 'prepend' });
+  }
+  syncFeatureRoute();
+  check(JSON.stringify(featureRoute.value) === '{"page":"timeline","source":"home-latest-timeline","sort":"popular"}', 'home opens the list captured first');
 
   clearCaptureState();
   check(getPostCount() === 0 && getTimelinePostIds('Home').length === 0, 'clearCaptureState empties db and timelines');
@@ -513,8 +535,9 @@ function main(): void {
   console.log('inline scenarios: ok');
 
   const fixtures = loadDumpFixtures();
-  const stats = new Map<string, { files: number; ordered: number; posts: number; users: number; media: number }>();
+  const stats = new Map<string, { files: number; ordered: number; posts: number; users: number; media: number; continued: number }>();
   const unsupported = new Set<string>();
+  const bottomCursors = new Set<string>();
 
   for (const fixture of fixtures) {
     const endpoint = getSupportedEndpoint(fixture.operationName);
@@ -530,8 +553,10 @@ function main(): void {
       if (!parsed.posts.has(id)) fail(`[${fixture.source}] ordered post ${id} missing`);
     }
     if (endpoint.kind === 'timeline' && ordered.length === 0) fail(`[${fixture.source}] timeline produced no posts`);
+    const bottomCursor = (parsed as TimelineParsedResponse).bottomCursor;
+    if (bottomCursor) bottomCursors.add(bottomCursor);
 
-    const entry = stats.get(fixture.operationName) ?? { files: 0, ordered: 0, posts: 0, users: 0, media: 0 };
+    const entry = stats.get(fixture.operationName) ?? { files: 0, ordered: 0, posts: 0, users: 0, media: 0, continued: 0 };
     entry.files += 1;
     entry.ordered += ordered.length;
     entry.posts += parsed.posts.size;
@@ -544,8 +569,14 @@ function main(): void {
     console.log('fixtures: none under dumps/ (gitignored); only inline scenarios ran');
     return;
   }
+  // Pages requested with the bottom cursor of another captured page.
+  for (const fixture of fixtures) {
+    const cursor = fixture.variables?.cursor;
+    const entry = stats.get(fixture.operationName);
+    if (entry && typeof cursor === 'string' && bottomCursors.has(cursor)) entry.continued += 1;
+  }
   for (const [operationName, entry] of [...stats.entries()].sort()) {
-    console.log(`${operationName}: files=${entry.files}, ordered=${entry.ordered}, posts=${entry.posts}, users=${entry.users}, media=${entry.media}`);
+    console.log(`${operationName}: files=${entry.files}, ordered=${entry.ordered}, posts=${entry.posts}, users=${entry.users}, media=${entry.media}, continued=${entry.continued}`);
   }
   if (unsupported.size) console.log(`unsupported operations skipped: ${[...unsupported].sort().join(', ')}`);
 }

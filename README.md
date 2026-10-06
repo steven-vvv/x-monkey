@@ -63,11 +63,14 @@ Supported operations, as used by the X web client in 2026-10:
 | `/i/history`, `/i/bookmarks` | `Bookmarks` |
 | `/i/history/likes` | `Likes` |
 | `/search?q=…` (`f=top`, `f=live`, `f=media`) | `SearchTimeline` |
-| `/home` | `HomeTimeline`, `HomeLatestTimeline` |
+| `/home` | `HomeTimeline` (For You), `HomeLatestTimeline` (Following) |
 | `/<user>/status/<id>` | `TweetDetail` |
 | any profile (header) | `UserByScreenName`, the account record only |
 
-`?sort=popular` on the Posts, All and Highlights tabs is kept as a separate timeline.
+`?sort=popular` on the Posts, All and Highlights tabs is kept as a separate timeline,
+and so is the Popular sort of Following. On the home feeds a new page goes on
+top, unless it was loaded by scrolling down: then it goes right below the page
+it continues.
 Search results are kept per query and tab; the People and Lists tabs are not post lists.
 Pages and payload shapes that have not been captured yet (subscriber-only
 posts, three-choice and image polls, other card types, list timelines) are not

@@ -17,7 +17,7 @@ export type FeatureTimelineSource =
   | 'home-timeline'
   | 'home-latest-timeline';
 
-/** `?sort=popular` on the Posts, All and Highlights profile tabs. */
+/** `?sort=popular` on the Posts, All and Highlights profile tabs, and the Popular sort of Following. */
 export type FeatureTimelineSort = 'popular';
 
 interface FeatureTimelineDescriptor {
@@ -45,10 +45,12 @@ const FEATURE_TIMELINE_DESCRIPTORS: Record<FeatureTimelineSource, FeatureTimelin
   'home-latest-timeline': { operationName: 'HomeLatestTimeline', label: 'Following' },
 };
 
-export const HOME_FEATURE_TIMELINE_SOURCES = [
-  'home-timeline',
-  'home-latest-timeline',
-] as const satisfies readonly FeatureTimelineSource[];
+/** The home page lists: For You, and Following in its Recent and Popular sorts. */
+export const HOME_FEATURE_TIMELINES: ReadonlyArray<{ source: FeatureTimelineSource; sort?: FeatureTimelineSort }> = [
+  { source: 'home-timeline' },
+  { source: 'home-latest-timeline' },
+  { source: 'home-latest-timeline', sort: 'popular' },
+];
 
 export function getFeatureTimelineNamespace(source: FeatureTimelineSource, sort?: FeatureTimelineSort): string {
   const descriptor = FEATURE_TIMELINE_DESCRIPTORS[source];

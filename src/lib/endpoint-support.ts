@@ -8,21 +8,27 @@ export interface EndpointSupportRecord {
    * to the search in `variables.rawQuery`; `global` ones are a single list.
    */
   scope?: 'user' | 'global' | 'query';
-  /** New pages land on top (home feeds) instead of being appended. */
+  /**
+   * New pages land on top (home feeds) instead of being appended; a page
+   * requested with the bottom cursor of an earlier one still goes below it.
+   */
   prepend?: boolean;
+  /** The boolean variable that selects the operation's `popular` list. */
+  popularVariable?: string;
 }
 
 /** GraphQL operations captured into the in-memory database (2026-10 web client). */
 export const SUPPORTED_ENDPOINTS = [
   { operationName: 'TweetDetail', kind: 'tweet-detail' },
   { operationName: 'HomeTimeline', kind: 'timeline', scope: 'global', prepend: true },
-  { operationName: 'HomeLatestTimeline', kind: 'timeline', scope: 'global', prepend: true },
+  // The Following feed: POST requests; `enableRanking` is its Popular sort, Recent otherwise.
+  { operationName: 'HomeLatestTimeline', kind: 'timeline', scope: 'global', prepend: true, popularVariable: 'enableRanking' },
   { operationName: 'Bookmarks', kind: 'timeline', scope: 'global' },
   // Likes are private since 2024: the list always belongs to the signed-in account.
   { operationName: 'Likes', kind: 'timeline', scope: 'global' },
-  { operationName: 'UserOriginalsTimeline', kind: 'timeline', scope: 'user' },
-  { operationName: 'UserTweetsAndReplies', kind: 'timeline', scope: 'user' },
-  { operationName: 'UserHighlightsTweets', kind: 'timeline', scope: 'user' },
+  { operationName: 'UserOriginalsTimeline', kind: 'timeline', scope: 'user', popularVariable: 'sortByMostLiked' },
+  { operationName: 'UserTweetsAndReplies', kind: 'timeline', scope: 'user', popularVariable: 'sortByMostLiked' },
+  { operationName: 'UserHighlightsTweets', kind: 'timeline', scope: 'user', popularVariable: 'sortByMostLiked' },
   { operationName: 'UserRepliesTimeline', kind: 'timeline', scope: 'user' },
   { operationName: 'UserRepostsTimeline', kind: 'timeline', scope: 'user' },
   { operationName: 'UserArticlesTweets', kind: 'timeline', scope: 'user' },
@@ -44,8 +50,9 @@ export function getSupportedEndpoint(operationName: string): EndpointSupportReco
 
 /**
  * Identifies one ordered list. An operation serves several lists when a
- * variable selects one: `popular` for `sortByMostLiked` (the `?sort=popular`
- * views) and the search `product` (`Top`, `Latest`, `Media`).
+ * variable selects one: `popular` for its `popularVariable` (the
+ * `?sort=popular` profile views, the Popular sort of the Following feed) and
+ * the search `product` (`Top`, `Latest`, `Media`).
  */
 export function getTimelineNamespace(operationName: string, variant?: string): string {
   return variant ? `${operationName}#${variant}` : operationName;

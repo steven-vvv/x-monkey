@@ -45,7 +45,8 @@ export function loadDumpFixtures(dir = join(ROOT, 'dumps')): DumpFixture[] {
           source: `${source}#${record.id}`,
           operationName: record.request.graphql.operationName,
           response: record.response.body,
-          variables: record.request.graphql.variables,
+          // POST requests (the Following feed) send their variables in the JSON body.
+          variables: record.request.graphql.variables ?? (record.request.bodyFormat === 'json' ? record.request.body?.variables : undefined),
           pageUrl: record.page?.url,
         }));
     }

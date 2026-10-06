@@ -13,6 +13,7 @@ interface WalkContext {
   seenIds: Set<string>;
   /** Notices shown in place of unavailable posts, by the post id in their entry id. */
   tombstones: Map<string, string>;
+  bottomCursor?: string;
 }
 
 /** Entry ids end with the post id: `tweet-<id>`, `conversationthread-<root>-tweet-<id>`. */
@@ -58,6 +59,7 @@ function walkModuleItem(item: unknown, path: string, ctx: WalkContext): void {
 function walkEntry(entry: unknown, path: string, ctx: WalkContext): void {
   const content = (entry as { content?: unknown })?.content;
   if (!isPlainObject(content)) return;
+  if (content.cursorType === 'Bottom' && typeof content.value === 'string') ctx.bottomCursor = content.value;
 
   walkItemContent(content.itemContent, (entry as { entryId?: unknown }).entryId, `${path}.content.itemContent`, ctx);
   if (Array.isArray(content.items)) {
@@ -125,6 +127,7 @@ function parseInstructions(json: unknown, candidates: InstructionCandidate[], la
     posts: collector.posts,
     media: collector.media,
     postIds: ctx.orderedIds ?? [],
+    bottomCursor: ctx.bottomCursor,
     meta: { instructionPath: candidate?.path ?? null, warnings: collector.warnings },
   };
 }
@@ -132,6 +135,8 @@ function parseInstructions(json: unknown, candidates: InstructionCandidate[], la
 export interface TimelineParsedResponse extends ParsedResponse {
   /** Top-level posts in timeline order. */
   postIds: string[];
+  /** Requests the page below this one. */
+  bottomCursor?: string;
 }
 
 export function parseTimelineResponse(json: unknown): TimelineParsedResponse {

@@ -76,14 +76,12 @@ interface TrackedXhrRequest {
   startedAt: number;
 }
 
-function extractRequestVariables(url: string): Record<string, unknown> | null {
+/** GET requests carry the variables in the query; POST ones (home feeds) in the JSON body. */
+function extractRequestVariables(url: string, body: string | null): Record<string, unknown> | null {
   try {
-    const u = new URL(url);
-    const vars = u.searchParams.get('variables');
-    if (vars) {
-      const parsed = JSON.parse(vars);
-      return parsed && typeof parsed === 'object' ? parsed as Record<string, unknown> : null;
-    }
+    const vars = new URL(url).searchParams.get('variables');
+    const parsed = vars ? JSON.parse(vars) : body ? JSON.parse(body)?.variables : null;
+    return parsed && typeof parsed === 'object' ? parsed as Record<string, unknown> : null;
   } catch { /* ignore */ }
   return null;
 }
@@ -127,7 +125,8 @@ function resolveTimelineIdentity(
     return { variant: readStringVariable(request.variables, ['product']) ?? undefined, scope: query, aliases: query ? [query] : [] };
   }
 
-  const variant = request.variables?.sortByMostLiked === true ? 'popular' : undefined;
+  const popularVariable = endpoint.popularVariable;
+  const variant = popularVariable && request.variables?.[popularVariable] === true ? 'popular' : undefined;
   if (endpoint.scope !== 'user') return { variant, scope: null, aliases: [] };
 
   const ownerId = readStringVariable(request.variables, ['userId', 'rest_id']);
@@ -157,6 +156,8 @@ function ingestTimelineResponse(endpoint: EndpointSupportRecord, request: Graphq
     postIds: parsed.postIds,
     aliases,
     insertMode: endpoint.prepend ? 'prepend' : 'append',
+    cursor: readStringVariable(request.variables, ['cursor']) ?? undefined,
+    bottomCursor: parsed.bottomCursor,
   });
 
   notifyListeners();
@@ -242,7 +243,7 @@ export function installXhrInterceptor(): void {
       url: tracked.url,
       graphqlId: match[1],
       operationName: match[2],
-      variables: extractRequestVariables(tracked.url),
+      variables: extractRequestVariables(tracked.url, tracked.requestBody),
     };
 
     const responseBody = this.responseText;

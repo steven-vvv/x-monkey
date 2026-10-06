@@ -1,6 +1,7 @@
 import { reactive, computed, ref } from 'vue';
 import { unsafeWindow } from '$';
 import {
+  HOME_FEATURE_TIMELINES,
   getFeatureTimelineLabel,
   getFeatureTimelineNamespace,
   type FeatureTimelineSort,
@@ -102,20 +103,18 @@ const SEARCH_TAB_SOURCES: Record<string, FeatureTimelineSource> = {
   media: 'search-media',
 };
 
-function resolveInitialHomeSource(): FeatureTimelineSource {
-  const homeTimelineOrder = getTimelineCreatedOrderByAlias(getFeatureTimelineNamespace('home-timeline'));
-  const homeLatestOrder = getTimelineCreatedOrderByAlias(getFeatureTimelineNamespace('home-latest-timeline'));
-
-  if (homeTimelineOrder == null && homeLatestOrder == null) {
-    return 'home-timeline';
+/** The home list captured first (the tab X opened on), For You while there is none. */
+function resolveInitialHomeTimeline(): (typeof HOME_FEATURE_TIMELINES)[number] {
+  let initial = HOME_FEATURE_TIMELINES[0];
+  let initialOrder: number | null = null;
+  for (const timeline of HOME_FEATURE_TIMELINES) {
+    const order = getTimelineCreatedOrderByAlias(getFeatureTimelineNamespace(timeline.source, timeline.sort));
+    if (order != null && (initialOrder == null || order < initialOrder)) {
+      initial = timeline;
+      initialOrder = order;
+    }
   }
-  if (homeTimelineOrder == null) {
-    return 'home-latest-timeline';
-  }
-  if (homeLatestOrder == null) {
-    return 'home-timeline';
-  }
-  return homeLatestOrder < homeTimelineOrder ? 'home-latest-timeline' : 'home-timeline';
+  return initial;
 }
 
 function resolveFeatureStack(url: string): FeatureRoute[] {
@@ -135,7 +134,7 @@ function resolveFeatureStack(url: string): FeatureRoute[] {
   if (segments.length === 1 && segments[0] === 'home') {
     return [
       { page: 'home-root' },
-      { page: 'timeline', source: resolveInitialHomeSource() },
+      { page: 'timeline', ...resolveInitialHomeTimeline() },
     ];
   }
 
