@@ -89,6 +89,12 @@ Records are submitted verbatim. The server merges them with what it already
 stores (present fields win, absent fields are kept), so a timeline capture never
 erases data first archived from a post detail page.
 
+Users and posts captured by the userscript include optional `countsObservedAt`
+maps: each counter is paired with the UTC time its XHR response finished
+loading, with millisecond precision. Sparse captures update only the counters
+they contain and their times. Recapturing identical values updates these times
+without changing sync status; archive clients that omit the maps remain valid.
+
 Runtime behavior in the userscript:
 
 - Remote database sync is manual from the tweet detail panel.

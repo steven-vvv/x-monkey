@@ -10,7 +10,7 @@ import { z } from 'zod';
  * 1. 只有 `User`、`Post`、`Media` 三类独立实体，跨实体只用 ID 引用。
  * 2. 字段缺省表示“未知”：不写 `null`，不写空数组；合并时有值覆盖、缺省保留，数组整体替换。
  * 3. 文本区间为 Unicode 码点的半开区间 `[start, end)`。
- * 4. 时间为 UTC ISO-8601 秒精度；ID 为十进制字符串。
+ * 4. 时间为 UTC ISO-8601；X 提供的时间为秒精度，计数采集时间保留毫秒；ID 为十进制字符串。
  * 5. 只存事实：不存观察者状态、UI 开关和可由其他字段推出的数据。
  */
 
@@ -79,6 +79,16 @@ export const UserCountsSchema = strictObject({
 });
 export type UserCounts = z.infer<typeof UserCountsSchema>;
 
+/** 每个计数实际所在响应完成的 UTC 时间；稀疏响应只记录该响应给出的计数。 */
+export const UserCountsObservedAtSchema = strictObject({
+  followers: z.iso.datetime().optional(),
+  following: z.iso.datetime().optional(),
+  posts: z.iso.datetime().optional(),
+  mediaPosts: z.iso.datetime().optional(),
+  likes: z.iso.datetime().optional(),
+});
+export type UserCountsObservedAt = z.infer<typeof UserCountsObservedAtSchema>;
+
 /** 账号标签，来源 `affiliates_highlighted_label.label`。 */
 export const AffiliationSchema = strictObject({
   name: z.string(),
@@ -123,6 +133,7 @@ export const UserSchema = strictObject({
     categories: z.array(z.string()).min(1).optional(),
   }).optional(),
   counts: UserCountsSchema.optional(),
+  countsObservedAt: UserCountsObservedAtSchema.optional(),
 });
 export type User = z.infer<typeof UserSchema>;
 
@@ -267,6 +278,16 @@ export const PostCountsSchema = strictObject({
 });
 export type PostCounts = z.infer<typeof PostCountsSchema>;
 
+export const PostCountsObservedAtSchema = strictObject({
+  replies: z.iso.datetime().optional(),
+  reposts: z.iso.datetime().optional(),
+  quotes: z.iso.datetime().optional(),
+  likes: z.iso.datetime().optional(),
+  bookmarks: z.iso.datetime().optional(),
+  views: z.iso.datetime().optional(),
+});
+export type PostCountsObservedAt = z.infer<typeof PostCountsObservedAtSchema>;
+
 export const PostSchema = strictObject({
   id: IdSchema,
   authorId: IdSchema,
@@ -296,6 +317,8 @@ export const PostSchema = strictObject({
   article: ArticleSchema.optional(),
   place: PlaceSchema.optional(),
   counts: PostCountsSchema.optional(),
+  /** 按计数保存真实响应完成时间，不是提交归档的时间。 */
+  countsObservedAt: PostCountsObservedAtSchema.optional(),
   /** 编辑链的全部版本（含自身），仅编辑过时存在。 */
   editIds: z.array(IdSchema).min(2).optional(),
   communityNote: strictObject({

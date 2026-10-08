@@ -1,6 +1,6 @@
 import { reactive, computed, watch } from 'vue';
 import type { Media, Post, User } from '../archive/model';
-import { mergeArchiveRecord } from '../archive/merge';
+import { mergeCapturedArchiveRecord } from '../archive/merge';
 import {
   buildArchiveBatch,
   compareArchiveBatch,
@@ -58,7 +58,7 @@ function markDirty() {
 function upsertRecord<T extends { id: string }>(kind: RecordKind, map: Map<string, T>, record: T): boolean {
   const existing = map.get(record.id);
   if (existing) {
-    if (!mergeArchiveRecord(existing as Record<string, unknown>, record as Record<string, unknown>)) return false;
+    if (!mergeCapturedArchiveRecord(existing as Record<string, unknown>, record as Record<string, unknown>)) return false;
   } else {
     map.set(record.id, record);
   }

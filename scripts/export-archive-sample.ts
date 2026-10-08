@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import type { ArchiveBatch, Media, Post, User } from '../src/archive/model';
-import { mergeArchiveRecord } from '../src/archive/merge';
+import { mergeCapturedArchiveRecord } from '../src/archive/merge';
 import { getSupportedEndpoint } from '../src/lib/endpoint-support';
 import { parseEndpointResponse } from '../src/lib/parser';
 import { buildArchiveBatch } from '../src/lib/remote-db/adapter';
@@ -31,7 +31,7 @@ const media = new Map<string, Media>();
 function addAll<T extends { id: string }>(target: Map<string, T>, source: Map<string, T>): void {
   for (const [id, record] of source) {
     const existing = target.get(id);
-    if (existing) mergeArchiveRecord(existing as Record<string, unknown>, record as Record<string, unknown>);
+    if (existing) mergeCapturedArchiveRecord(existing as Record<string, unknown>, record as Record<string, unknown>);
     else target.set(id, structuredClone(record));
   }
 }
@@ -39,7 +39,7 @@ function addAll<T extends { id: string }>(target: Map<string, T>, source: Map<st
 for (const fixture of fixtures) {
   const endpoint = getSupportedEndpoint(fixture.operationName);
   if (!endpoint || !PUBLIC_SOURCES.test(fixture.operationName) || fixture.operationName === 'Likes') continue;
-  const parsed = parseEndpointResponse(endpoint.kind, fixture.response);
+  const parsed = parseEndpointResponse(endpoint.kind, fixture.response, fixture.observedAt);
   addAll(posts, parsed.posts);
   addAll(users, parsed.users);
   addAll(media, parsed.media);

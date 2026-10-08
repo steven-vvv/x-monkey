@@ -47,3 +47,42 @@ export function mergeArchiveRecord(target: Record<string, unknown>, incoming: Re
 
   return changed;
 }
+
+/**
+ * Merges each counter together with its capture time. Metadata-only changes
+ * update the record but do not report a change for local sync versions.
+ */
+export function mergeCapturedArchiveRecord(target: Record<string, unknown>, incoming: Record<string, unknown>): boolean {
+  const { counts, countsObservedAt, ...content } = incoming;
+  let changed = mergeArchiveRecord(target, content);
+  if (!isPlainObject(counts)) return changed;
+
+  const currentCounts = isPlainObject(target.counts) ? target.counts : {};
+  const currentTimes = isPlainObject(target.countsObservedAt) ? { ...target.countsObservedAt } : {};
+  const incomingTimes = isPlainObject(countsObservedAt) ? countsObservedAt : {};
+  for (const [key, value] of Object.entries(counts)) {
+    if (value === undefined) continue;
+    const observedAt = typeof incomingTimes[key] === 'string' ? incomingTimes[key] : undefined;
+    const currentTime = typeof currentTimes[key] === 'string' ? currentTimes[key] : undefined;
+    // A delayed/replayed observation must not overwrite a newer value.
+    if (observedAt && currentTime && Date.parse(observedAt) < Date.parse(currentTime)) continue;
+
+    const countChanged = !deepEqual(currentCounts[key], value);
+    if (countChanged) {
+      currentCounts[key] = cloneRecord(value);
+      changed = true;
+    }
+    if (observedAt) currentTimes[key] = observedAt;
+    // Untimed archive clients remain valid, but their changed value has no
+    // known capture time; retaining the previous value's time would mislabel it.
+    else if (countChanged) delete currentTimes[key];
+  }
+
+  if (Object.keys(currentCounts).length > 0) target.counts = currentCounts;
+  if (Object.keys(currentTimes).length > 0) {
+    if (!deepEqual(target.countsObservedAt, currentTimes)) target.countsObservedAt = currentTimes;
+  } else {
+    delete target.countsObservedAt;
+  }
+  return changed;
+}

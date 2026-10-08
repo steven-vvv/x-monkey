@@ -188,7 +188,7 @@ function ingestUserResponse(request: GraphqlRequestContext, parsed: ParsedRespon
   notifyListeners();
 }
 
-function handleGraphqlResponse(request: GraphqlRequestContext, responseBody: string): void {
+function handleGraphqlResponse(request: GraphqlRequestContext, responseBody: string, timestamp: number): void {
   const endpoint = getSupportedEndpoint(request.operationName);
   if (!endpoint) return;
 
@@ -201,12 +201,13 @@ function handleGraphqlResponse(request: GraphqlRequestContext, responseBody: str
   }
 
   try {
+    const observedAt = new Date(timestamp).toISOString();
     if (endpoint.kind === 'tweet-detail') {
-      ingestTweetDetailResponse(request, parseTweetDetailResponse(json));
+      ingestTweetDetailResponse(request, parseTweetDetailResponse(json, observedAt));
     } else if (endpoint.kind === 'user') {
-      ingestUserResponse(request, parseUserResponse(json));
+      ingestUserResponse(request, parseUserResponse(json, observedAt));
     } else {
-      ingestTimelineResponse(endpoint, request, parseTimelineResponse(json));
+      ingestTimelineResponse(endpoint, request, parseTimelineResponse(json, observedAt));
     }
   } catch (error) {
     GM_log(`[XHR Interceptor] Failed to handle ${request.operationName} response`, error);
@@ -234,6 +235,7 @@ export function installXhrInterceptor(): void {
     if (this.readyState !== 4) return;
     const tracked = trackedRequests.get(this);
     if (!tracked) return;
+    const timestamp = Date.now();
     trackedRequests.delete(this);
 
     const match = GRAPHQL_RE.exec(tracked.url);
@@ -252,7 +254,7 @@ export function installXhrInterceptor(): void {
     // Broadcast to all XHR capture listeners
     broadcastXhrCapture({
       id: String(++captureIdCounter),
-      timestamp: Date.now(),
+      timestamp,
       startedAt: tracked.startedAt,
       pageUrl: tracked.pageUrl,
       method: tracked.method,
@@ -269,7 +271,7 @@ export function installXhrInterceptor(): void {
     });
 
     if (this.status === 200) {
-      handleGraphqlResponse(request, responseBody);
+      handleGraphqlResponse(request, responseBody, timestamp);
     }
   }
 

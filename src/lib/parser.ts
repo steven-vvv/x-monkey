@@ -103,8 +103,8 @@ const TWEET_DETAIL_INSTRUCTION_CANDIDATES: InstructionCandidate[] = [
   { path: 'data.threaded_conversation_with_injections_v2.instructions', read: (r) => r?.data?.threaded_conversation_with_injections_v2?.instructions },
 ];
 
-function parseInstructions(json: unknown, candidates: InstructionCandidate[], label: string, ordered: boolean): TimelineParsedResponse {
-  const collector = new ArchiveCollector();
+function parseInstructions(json: unknown, candidates: InstructionCandidate[], label: string, ordered: boolean, observedAt?: string): TimelineParsedResponse {
+  const collector = new ArchiveCollector(observedAt);
   const ctx: WalkContext = { collector, orderedIds: ordered ? [] : undefined, seenIds: new Set(), tombstones: new Map() };
   const candidate = isPlainObject(json) ? candidates.find((item) => Array.isArray(item.read(json))) : undefined;
 
@@ -139,20 +139,20 @@ export interface TimelineParsedResponse extends ParsedResponse {
   bottomCursor?: string;
 }
 
-export function parseTimelineResponse(json: unknown): TimelineParsedResponse {
-  return parseInstructions(json, TIMELINE_INSTRUCTION_CANDIDATES, 'timeline', true);
+export function parseTimelineResponse(json: unknown, observedAt?: string): TimelineParsedResponse {
+  return parseInstructions(json, TIMELINE_INSTRUCTION_CANDIDATES, 'timeline', true, observedAt);
 }
 
-export function parseTweetDetailResponse(json: unknown): ParsedResponse {
-  return parseInstructions(json, TWEET_DETAIL_INSTRUCTION_CANDIDATES, 'tweet detail', false);
+export function parseTweetDetailResponse(json: unknown, observedAt?: string): ParsedResponse {
+  return parseInstructions(json, TWEET_DETAIL_INSTRUCTION_CANDIDATES, 'tweet detail', false, observedAt);
 }
 
 /**
  * Parses a profile request (`UserByScreenName`). Unavailable accounts, such as
  * suspended ones, come without an id and yield no record.
  */
-export function parseUserResponse(json: unknown): ParsedResponse {
-  const collector = new ArchiveCollector();
+export function parseUserResponse(json: unknown, observedAt?: string): ParsedResponse {
+  const collector = new ArchiveCollector(observedAt);
   const path = 'data.user.result';
   const result = (json as { data?: { user?: { result?: unknown } } } | undefined)?.data?.user?.result;
   const typename = isPlainObject(result) ? result.__typename : undefined;
@@ -168,8 +168,8 @@ export function parseUserResponse(json: unknown): ParsedResponse {
 }
 
 /** Parses a response of a supported operation by its kind. */
-export function parseEndpointResponse(kind: EndpointKind, json: unknown): ParsedResponse | TimelineParsedResponse {
-  if (kind === 'tweet-detail') return parseTweetDetailResponse(json);
-  if (kind === 'user') return parseUserResponse(json);
-  return parseTimelineResponse(json);
+export function parseEndpointResponse(kind: EndpointKind, json: unknown, observedAt?: string): ParsedResponse | TimelineParsedResponse {
+  if (kind === 'tweet-detail') return parseTweetDetailResponse(json, observedAt);
+  if (kind === 'user') return parseUserResponse(json, observedAt);
+  return parseTimelineResponse(json, observedAt);
 }

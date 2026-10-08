@@ -1,12 +1,14 @@
 import { MediaSchema, PostSchema, UserSchema, type Post } from '../src/archive/model';
 import { ArchiveCollector, collectTweet, readTombstone } from '../src/archive/normalize';
-import { mergeArchiveRecord } from '../src/archive/merge';
+import { mergeArchiveRecord, mergeCapturedArchiveRecord } from '../src/archive/merge';
 import { sliceCodePoints, unescapeXText } from '../src/archive/text';
 import { getSupportedEndpoint } from '../src/lib/endpoint-support';
 import { parseEndpointResponse, parseTimelineResponse, parseTweetDetailResponse, parseUserResponse, type TimelineParsedResponse } from '../src/lib/parser';
 import { getPlainText, getRichTextSegments } from '../src/lib/post-view';
 import { buildArchiveBatch, compareArchiveBatch } from '../src/lib/remote-db/adapter';
-import { clearDb, dbVersion, getPostCount, runDbBatch, upsertPost, upsertUser } from '../src/lib/db-service';
+import { archiveRecords, clearDb, dbVersion, getDbPost, getDbUser, getPostCount, runDbBatch, upsertPost, upsertUser } from '../src/lib/db-service';
+import { installXhrInterceptor, onXhrCapture, type CapturedXhr } from '../src/lib/fetch-interceptor';
+import { unsafeWindow } from '$';
 import { clearCaptureState } from '../src/lib/capture-state-service';
 import { getFeatureTimelineNamespace } from '../src/lib/feature-timeline';
 import { featureRoute, syncFeatureRoute } from '../src/lib/store';
@@ -417,6 +419,126 @@ function assertMergeScenarios(): void {
   check(!mergeArchiveRecord(stored, { id: '1', counts: { likes: 2 } }), 'unchanged merge reports no change');
 }
 
+function assertObservationScenarios(): void {
+  const first = '2030-01-01T01:00:00.123Z';
+  const second = '2030-01-01T01:00:01.456Z';
+  const third = '2030-01-01T01:00:02.789Z';
+  const post = PostSchema.parse({
+    id: '1', authorId: '2', createdAt: '2030-01-01T00:00:00Z',
+    counts: { likes: 1, views: 10 }, countsObservedAt: { likes: first, views: first },
+  });
+  UserSchema.parse({ id: '2', handle: 'a', name: 'A', counts: { followers: 0 }, countsObservedAt: { followers: first } });
+  check(!PostSchema.safeParse({ ...post, countsObservedAt: { likes: '2030-01-01T01:00:00+00:00' } }).success, 'capture time must use UTC Z');
+  check(!PostSchema.safeParse({ ...post, countsObservedAt: { likes: '2030-02-30T01:00:00Z' } }).success, 'invalid capture dates fail validation');
+  check(!UserSchema.safeParse({ id: '2', handle: 'a', name: 'A', countsObservedAt: { views: first } }).success, 'capture maps only accept counters for their entity');
+
+  check(!mergeCapturedArchiveRecord(post, { counts: { likes: 1 }, countsObservedAt: { likes: second } }), 'a timestamp-only recapture is not a record change');
+  check(post.countsObservedAt?.likes === second && post.countsObservedAt.views === first, 'sparse recapture preserves the earlier time of inherited counters');
+  check(mergeCapturedArchiveRecord(post, { counts: { likes: 0 }, countsObservedAt: { likes: third } }), 'changed zero count is merged with its capture time');
+  check(!mergeCapturedArchiveRecord(post, { counts: { likes: 99 }, countsObservedAt: { likes: first } }), 'an older count observation cannot overwrite a newer one');
+  check(post.counts?.likes === 0 && post.countsObservedAt?.likes === third, 'newer count and timestamp stay together');
+  check(mergeCapturedArchiveRecord(post, { counts: { views: 11 }, countsObservedAt: { views: second } }), 'an independent counter can arrive between two observations of another counter');
+  check(post.countsObservedAt?.views === second && post.countsObservedAt.likes === third, 'each counter keeps its own latest capture time');
+  mergeCapturedArchiveRecord(post, { countsObservedAt: { views: third } });
+  check(post.countsObservedAt?.views === second, 'a timestamp without its observed counter is not attached to an inherited value');
+  check(mergeCapturedArchiveRecord(post, { counts: { views: 12 } }), 'untimed archive clients can still update counters');
+  check(post.countsObservedAt?.views === undefined && post.countsObservedAt?.likes === third, 'untimed changed values do not retain the old value capture time');
+  check(!mergeCapturedArchiveRecord(post, { counts: { likes: 0 } }) && post.countsObservedAt?.likes === third, 'an identical untimed value preserves its known capture time');
+}
+
+function assertXhrObservationScenarios(): void {
+  class TestXhr {
+    readyState = 0;
+    status = 200;
+    statusText = 'OK';
+    responseText = '';
+    private listeners: Array<() => void> = [];
+    open(..._args: unknown[]) { this.readyState = 1; }
+    setRequestHeader(..._args: unknown[]) {}
+    send(..._args: unknown[]) {}
+    getAllResponseHeaders() { return 'content-type: application/json\r\n'; }
+    addEventListener(type: string, listener: () => void) { if (type === 'load') this.listeners.push(listener); }
+    finish(json: unknown, status = 200) {
+      this.responseText = JSON.stringify(json);
+      this.status = status;
+      this.readyState = 4;
+      for (const listener of this.listeners) listener.call(this);
+    }
+  }
+
+  const window = unsafeWindow as typeof unsafeWindow & { XMLHttpRequest?: unknown };
+  const originalXhr = window.XMLHttpRequest;
+  const originalNow = Date.now;
+  let now = Date.parse('2030-01-01T02:00:00.123Z');
+  const first = now;
+  const captures: CapturedXhr[] = [];
+  // Delays downstream parsing to prove it uses the captured completion time.
+  const unsubscribe = onXhrCapture((capture) => { captures.push(capture); now += 60_000; });
+  window.XMLHttpRequest = TestXhr;
+  Date.now = () => now;
+  try {
+    clearCaptureState();
+    installXhrInterceptor();
+    const complete = (operation: string, json: unknown, completedAt: number, status = 200) => {
+      const xhr = new TestXhr();
+      now = completedAt - 2000;
+      xhr.open('GET', `https://x.com/i/api/graphql/query/${operation}`);
+      xhr.send();
+      now = completedAt;
+      xhr.finish(json, status);
+    };
+    complete('HomeTimeline', timeline(entry(rawTweet('90', '1', {}, {
+      quoted_status_result: { result: rawTweet('91', '2') },
+    }))), first);
+    const firstIso = new Date(first).toISOString();
+    check(captures[0].timestamp === first && captures[0].startedAt === first - 2000, 'XHR request start and response completion have distinct timestamps');
+    check(getDbPost('90')?.countsObservedAt?.likes === firstIso && getDbPost('91')?.countsObservedAt?.views === firstIso, 'main and quoted post counts use response completion time before listener delays');
+    check(getDbUser('1')?.countsObservedAt?.followers === firstIso && getDbUser('2')?.countsObservedAt?.posts === firstIso, 'nested author counters use the same response completion time');
+
+    const sparseUser = rawUser('1', { relationship_counts: { followers: 9 }, tweet_counts: undefined, action_counts: undefined });
+    const sparsePost = rawTweet('90', '1', {
+      favorite_count: 0, reply_count: undefined, retweet_count: undefined, quote_count: undefined, bookmark_count: undefined,
+    }, { views: undefined, core: { user_results: { result: sparseUser } } });
+    const second = first + 5000;
+    const startVersion = dbVersion.value;
+    complete('HomeTimeline', timeline(entry(sparsePost)), second);
+    check(dbVersion.value === startVersion + 1, 'changed captured counters bump the local batch version once');
+    const secondIso = new Date(second).toISOString();
+    check(getDbPost('90')?.counts?.likes === 0 && getDbPost('90')?.counts?.views === 12, 'sparse XHR counts update observed values and keep previously known values');
+    check(getDbPost('90')?.countsObservedAt?.likes === secondIso && getDbPost('90')?.countsObservedAt?.views === firstIso, 'sparse post counters retain independent response times');
+    check(getDbUser('1')?.countsObservedAt?.followers === secondIso && getDbUser('1')?.countsObservedAt?.following === firstIso, 'sparse user counters retain independent response times');
+
+    const third = second + 5000;
+    complete('HomeTimeline', timeline(entry(sparsePost)), third);
+    check(dbVersion.value === startVersion + 1, 'metadata-only recaptures do not bump local versions');
+    const thirdIso = new Date(third).toISOString();
+    check(getDbPost('90')?.countsObservedAt?.likes === thirdIso && getDbUser('1')?.countsObservedAt?.followers === thirdIso, 'metadata-only recaptures retain the latest actual capture time');
+
+    const fourth = third + 5000;
+    complete('UserByScreenName', { data: { user: { result: sparseUser } } }, fourth);
+    check(getDbUser('1')?.countsObservedAt?.followers === new Date(fourth).toISOString(), 'profile responses carry their actual completion time');
+    const fifth = fourth + 5000;
+    complete('TweetDetail', { data: { threaded_conversation_with_injections_v2: { instructions: [{ entries: [entry(sparsePost)] }] } } }, fifth);
+    const fifthIso = new Date(fifth).toISOString();
+    check(getDbPost('90')?.countsObservedAt?.likes === fifthIso, 'detail responses carry their actual completion time');
+    complete('HomeTimeline', timeline(entry(rawTweet('90', '1'))), fifth + 5000, 500);
+    check(getDbPost('90')?.counts?.likes === 0 && getDbPost('90')?.countsObservedAt?.likes === fifthIso, 'failed responses do not replace count observations');
+
+    now += 3_600_000;
+    const { batch } = buildArchiveBatch(['90'], archiveRecords);
+    const submitted = JSON.parse(JSON.stringify(batch)) as typeof batch;
+    check(submitted.posts.find((post) => post.id === '90')?.countsObservedAt?.likes === fifthIso, 'later submissions preserve response completion time');
+    check(submitted.posts.find((post) => post.id === '90')?.countsObservedAt?.views === firstIso, 'submission keeps the earlier capture time of an inherited sparse value');
+    check(dbVersion.value === startVersion + 1, 'profile and detail metadata-only recaptures leave the local version unchanged');
+  } finally {
+    unsubscribe();
+    Date.now = originalNow;
+    if (originalXhr === undefined) delete window.XMLHttpRequest;
+    else window.XMLHttpRequest = originalXhr;
+    clearCaptureState();
+  }
+}
+
 function assertRemoteScenarios(): void {
   const collector = collect(rawTweet('70', '1', {
     retweeted_status_result: { result: rawTweet('71', '2', { extended_entities: { media: [rawMedia('700')] } }, {
@@ -436,6 +558,13 @@ function assertRemoteScenarios(): void {
   const found = <T extends { id: string }>(items: T[]) => items.map((item) => ({ id: item.id, status: 'found' as const, data: structuredClone(item) }));
   const response = { users: found(batch.users), posts: found(batch.posts), media: found(batch.media) };
   check(compareArchiveBatch(batch, response).status === 'in_sync', 'identical records are in sync');
+
+  for (const post of batch.posts) if (post.counts) post.countsObservedAt = { likes: '2030-01-01T03:00:00.123Z' };
+  for (const user of batch.users) user.countsObservedAt = { followers: '2030-01-01T03:00:01.456Z' };
+  check(compareArchiveBatch(batch, response).status === 'in_sync', 'local capture maps do not mismatch untimed remote archive records');
+  for (const item of response.posts) item.data.countsObservedAt = { likes: '2030-01-01T02:00:00Z' };
+  for (const item of response.users) item.data.countsObservedAt = { followers: '2030-01-01T04:00:00.789Z' };
+  check(compareArchiveBatch(batch, response).status === 'in_sync', 'older and newer remote capture times do not change sync status');
 
   const remotePost = response.posts.find((item) => item.id === '71')!.data as Post;
   remotePost.counts = { ...remotePost.counts, likes: 0 };
@@ -530,6 +659,8 @@ function main(): void {
   assertTaggedTextScenarios();
   assertTraversalScenarios();
   assertMergeScenarios();
+  assertObservationScenarios();
+  assertXhrObservationScenarios();
   assertRemoteScenarios();
   assertStoreScenarios();
   console.log('inline scenarios: ok');
@@ -545,7 +676,7 @@ function main(): void {
       unsupported.add(fixture.operationName);
       continue;
     }
-    const parsed = parseEndpointResponse(endpoint.kind, fixture.response);
+    const parsed = parseEndpointResponse(endpoint.kind, fixture.response, fixture.observedAt);
     assertParsedRecords(parsed, fixture.source);
 
     const ordered = (parsed as TimelineParsedResponse).postIds ?? [];

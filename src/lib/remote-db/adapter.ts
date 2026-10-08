@@ -88,7 +88,7 @@ export interface RemoteBatchComparison {
 
 const STATUS_PRECEDENCE: RemoteRecordStatus[] = ['failed', 'missing', 'mismatch', 'stale', 'in_sync'];
 
-type ComparableRecord = { id: string; counts?: object; card?: { poll?: { choices: Array<{ count?: number }>; updatedAt?: string } } };
+type ComparableRecord = { id: string; counts?: object; countsObservedAt?: object; card?: { poll?: { choices: Array<{ count?: number }>; updatedAt?: string } } };
 
 /**
  * Splits a record into its content and its counters. Counters change from one
@@ -97,6 +97,8 @@ type ComparableRecord = { id: string; counts?: object; card?: { poll?: { choices
  */
 function splitCounters(record: ComparableRecord): { content: Record<string, unknown>; counters: Record<string, unknown> } {
   const { counts, ...content } = cloneRecord(record);
+  // Capture metadata never affects whether another submission is needed.
+  delete content.countsObservedAt;
   const counters: Record<string, unknown> = counts ? { counts } : {};
   const poll = content.card?.poll;
   if (poll) {

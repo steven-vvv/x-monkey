@@ -11,6 +11,8 @@ export interface DumpFixture {
   /** Request variables, known for capture export records only. */
   variables?: Record<string, unknown>;
   pageUrl?: string;
+  /** Response completion time, known for capture exports only. */
+  observedAt?: string;
 }
 
 const ROOT = resolve(process.cwd());
@@ -48,6 +50,7 @@ export function loadDumpFixtures(dir = join(ROOT, 'dumps')): DumpFixture[] {
           // POST requests (the Following feed) send their variables in the JSON body.
           variables: record.request.graphql.variables ?? (record.request.bodyFormat === 'json' ? record.request.body?.variables : undefined),
           pageUrl: record.page?.url,
+          observedAt: record.timing?.completedAt,
         }));
     }
 

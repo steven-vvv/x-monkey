@@ -1,4 +1,4 @@
-import { mergeArchiveRecord } from './merge';
+import { mergeCapturedArchiveRecord } from './merge';
 import {
   ArticleSchema,
   CardSchema,
@@ -133,6 +133,8 @@ export class ArchiveCollector {
   readonly media = new Map<string, Media>();
   readonly warnings: string[] = [];
 
+  constructor(private readonly observedAt?: string) {}
+
   warn(path: string, message: string): void {
     this.warnings.push(`${path}: ${message}`);
   }
@@ -151,16 +153,22 @@ export class ArchiveCollector {
     }
 
     const existing = map.get(candidate.id);
-    if (existing) mergeArchiveRecord(existing as Json, candidate as Json);
+    if (existing) mergeCapturedArchiveRecord(existing as Json, candidate as Json);
     else map.set(candidate.id, candidate);
     return true;
   }
 
   addUser(user: User, path: string): boolean {
+    if (this.observedAt && user.counts) {
+      user.countsObservedAt = Object.fromEntries(Object.keys(user.counts).map((key) => [key, this.observedAt]));
+    }
     return this.add(this.users, UserSchema, user, path);
   }
 
   addPost(post: Post, path: string): boolean {
+    if (this.observedAt && post.counts) {
+      post.countsObservedAt = Object.fromEntries(Object.keys(post.counts).map((key) => [key, this.observedAt]));
+    }
     return this.add(this.posts, PostSchema, post, path);
   }
 
