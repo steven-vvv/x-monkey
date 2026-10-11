@@ -4,6 +4,7 @@ import { parseTimelineResponse, parseTweetDetailResponse, parseUserResponse, typ
 import { getDbUser, runDbBatch, upsertMedia, upsertPost, upsertUser } from './db-service';
 import type { ParsedResponse } from './types';
 import { buildTimelineRecordKey, ingestTimeline } from './timeline-store';
+import { noteArchiveCapture } from './auto-archive';
 
 // --- Simple notification listeners (for badge count etc.) ---
 type CaptureListener = () => void;
@@ -150,6 +151,7 @@ function ingestTimelineResponse(endpoint: EndpointSupportRecord, request: Graphq
   }
 
   ingestEntities(parsed);
+  noteArchiveCapture({ source: namespace, postIds: [...parsed.posts.keys()], userIds: [...parsed.users.keys()] });
   ingestTimeline({
     key: timelineKey,
     namespace,
@@ -177,6 +179,7 @@ function ingestTweetDetailResponse(request: GraphqlRequestContext, parsed: Parse
   if (focalId) GM_log(`[TweetDetail] focalTweetId: ${focalId}`);
 
   ingestEntities(parsed);
+  noteArchiveCapture({ source: 'tweet-detail', postIds: [...parsed.posts.keys()], userIds: [...parsed.users.keys()] });
   notifyListeners();
 }
 
@@ -186,6 +189,7 @@ function ingestUserResponse(request: GraphqlRequestContext, parsed: ParsedRespon
   if (parsed.users.size === 0) return;
 
   ingestEntities(parsed);
+  noteArchiveCapture({ source: 'user', postIds: [], userIds: [...parsed.users.keys()] });
   notifyListeners();
 }
 

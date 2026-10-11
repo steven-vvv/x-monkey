@@ -10,9 +10,12 @@ import {
   normalizeRemoteDbBaseUrl,
 } from '../../lib/remote-db';
 
+/** Fields applied the moment they change; never part of the draft. */
+const IMMEDIATE_KEYS: (keyof AppConfig)[] = ['uiVersion', 'homeFeedView', 'autoArchive', 'autoArchiveSkipForYou'];
+
 /**
  * Settings draft with the same semantics as the classic SettingsTab: edits go to `draft` and `dirtyFields`;
- * save / revert / resetLayout / resetAll only touch the draft until saved. `uiVersion` and `homeFeedView` are never part of the
+ * save / revert / resetLayout / resetAll only touch the draft until saved. `uiVersion`, `homeFeedView` and the auto-archive switches are never part of the
  * draft (they are applied immediately), so save() never writes them.
  */
 export function useSettingsDraft() {
@@ -58,9 +61,8 @@ export function useSettingsDraft() {
 
   function save() {
     if (hasInvalidBaseUrl.value) return;
-    const { uiVersion: _ui, homeFeedView: _feed, ...rest } = draft;
-    void _ui;
-    void _feed;
+    const { uiVersion: _ui, homeFeedView: _feed, autoArchive: _aa, autoArchiveSkipForYou: _aas, ...rest } = draft;
+    void [_ui, _feed, _aa, _aas];
     const next: Partial<AppConfig> = { ...rest };
     if (remoteDbConfigurable) next.remoteDbBaseUrl = normalizedBaseUrl.value ?? '';
     updateConfig(next);
@@ -84,7 +86,7 @@ export function useSettingsDraft() {
 
   function resetAll() {
     for (const key of Object.keys(DEFAULT_CONFIG) as (keyof AppConfig)[]) {
-      if (key === 'uiVersion' || key === 'homeFeedView') continue;
+      if (IMMEDIATE_KEYS.includes(key)) continue;
       setDraft(key, DEFAULT_CONFIG[key]);
     }
   }

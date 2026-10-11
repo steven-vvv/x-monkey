@@ -3,7 +3,7 @@ import { initConfig, getConfig, resetLayout, updateConfig } from './lib/config-s
 import { initTheme } from './lib/theme-service';
 import { currentUrl, syncFeatureRoute } from './lib/store';
 import { clearCaptureState } from './lib/capture-state-service';
-import { configureRemoteDbClient } from './lib/remote-db';
+import { REMOTE_DB_BUILD, configureRemoteDbClient } from './lib/remote-db';
 import { watch } from 'vue';
 import { unsafeWindow, GM_log, GM_registerMenuCommand, GM_unregisterMenuCommand } from '$';
 import './style.css';
@@ -104,6 +104,49 @@ function refreshUiVersionMenuCommand(): void {
   uiVersionMenuId = nextId;
 }
 
+let autoArchiveMenuId: MenuCommandId | undefined;
+let autoArchiveMenuVersion = 0;
+
+/** Only the new UI runs the auto-archive engine, so the command is hidden under the classic UI. */
+function refreshAutoArchiveMenuCommand(): void {
+  const enabled = getConfig().autoArchive;
+  const currentVersion = ++autoArchiveMenuVersion;
+  const caption = enabled ? 'Stop Auto Archive' : 'Start Auto Archive';
+
+  if (autoArchiveMenuId !== undefined) {
+    try {
+      GM_unregisterMenuCommand(autoArchiveMenuId);
+    } catch (error) {
+      GM_log('[Menu] Failed to unregister auto archive command', error);
+    } finally {
+      autoArchiveMenuId = undefined;
+    }
+  }
+  if (getConfig().uiVersion !== 'next') return;
+
+  const nextId = GM_registerMenuCommand(
+    caption,
+    () => {
+      const next = !getConfig().autoArchive;
+      updateConfig({ autoArchive: next });
+      GM_log(`[Menu] Auto archive ${next ? 'started' : 'stopped'}`);
+    },
+    { id: 'xd-toggle-auto-archive', autoClose: true, title: caption },
+  );
+
+  // Prevent stale command residue if rapid toggles trigger overlapping refreshes.
+  if (currentVersion !== autoArchiveMenuVersion) {
+    try {
+      GM_unregisterMenuCommand(nextId);
+    } catch {
+      // ignore stale cleanup failures
+    }
+    return;
+  }
+
+  autoArchiveMenuId = nextId;
+}
+
 function initShadowCssBridge(shadow: ShadowRoot, doc: Document): void {
   const injectedCss = new Set<string>();
 
@@ -176,6 +219,16 @@ async function mount() {
     },
     { immediate: true },
   );
+
+  if (REMOTE_DB_BUILD.enabled) {
+    watch(
+      () => [cfg.autoArchive, cfg.uiVersion],
+      () => {
+        refreshAutoArchiveMenuCommand();
+      },
+      { immediate: true },
+    );
+  }
 
   GM_registerMenuCommand('Reset Layout', () => {
     resetLayout();

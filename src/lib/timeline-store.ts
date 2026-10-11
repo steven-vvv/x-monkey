@@ -243,6 +243,16 @@ export function getTimelineFirstPageIdByAlias(
   return key ? timelineState[key]?.firstPageIds.get(postId) : undefined;
 }
 
+/** Ids of every post captured into a timeline whose namespace satisfies `match`. */
+export function collectTimelinePostIds(match: (namespace: string) => boolean): Set<string> {
+  const ids = new Set<string>();
+  for (const record of Object.values(timelineState)) {
+    if (!match(record.namespace)) continue;
+    for (const postId of record.seenIds) ids.add(postId);
+  }
+  return ids;
+}
+
 export function clearTimelineState(key?: string): void {
   if (key) {
     const record = timelineState[key];

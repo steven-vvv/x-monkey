@@ -96,7 +96,7 @@ function resetLayout() {
 
 function resetAllSettings() {
   for (const key of Object.keys(DEFAULT_CONFIG) as (keyof AppConfig)[]) {
-    if (key === 'uiVersion' || key === 'homeFeedView') continue;
+    if (key === 'uiVersion' || key === 'homeFeedView' || key === 'autoArchive' || key === 'autoArchiveSkipForYou') continue;
     setDraft(key, DEFAULT_CONFIG[key]);
   }
 }

@@ -36,6 +36,8 @@ const changeCounter = reactive({ value: 0 });
 const remoteDbState = getRemoteDbClientState();
 const remoteSyncStatuses = reactive<Record<string, RemoteRecordStatus | undefined>>({});
 const remoteSyncPendingPostIds = new Set<string>();
+/** Bumped when a submit confirms a post, so a status query already in flight cannot overwrite it. */
+const remoteSyncConfirmations = new Map<string, number>();
 let batchDepth = 0;
 let batchDirty = false;
 let remoteSyncScheduled = false;
@@ -94,6 +96,14 @@ export function upsertMedia(media: Media): void {
   if (upsertRecord('media', db.media, media)) enqueueRemoteSyncStatusRefresh(getPostsDependingOn('media', media.id));
 }
 
+const dbClearedListeners = new Set<() => void>();
+
+/** Calls `listener` after every `clearDb`; returns the unsubscribe function. */
+export function onDbCleared(listener: () => void): () => void {
+  dbClearedListeners.add(listener);
+  return () => dbClearedListeners.delete(listener);
+}
+
 export function clearDb(): void {
   db.posts.clear();
   db.users.clear();
@@ -101,6 +111,7 @@ export function clearDb(): void {
   recordVersions.clear();
   clearRemoteSyncStatuses();
   bump();
+  for (const listener of dbClearedListeners) listener();
 }
 
 export const dbVersion = computed(() => changeCounter.value);
@@ -189,12 +200,34 @@ function clearRemoteSyncStatuses(): void {
   remoteSyncEpoch += 1;
   remoteSyncRetryDelayMs = REMOTE_SYNC_RETRY_INITIAL_MS;
   remoteSyncPendingPostIds.clear();
+  remoteSyncConfirmations.clear();
   for (const postId of Object.keys(remoteSyncStatuses)) {
     delete remoteSyncStatuses[postId];
   }
 }
 
-function batchSignature(postId: string): string {
+/** Change counter of one record (0 if it was never stored); users are tracked for auto-archive dedup. */
+export function getRecordVersion(kind: RecordKind, id: string): number {
+  return recordVersions.get(`${kind}:${id}`) ?? 0;
+}
+
+/**
+ * Marks a post as in sync after a successful submit of the batch with `signature`.
+ * If the post changed since, its status is re-queried instead.
+ */
+export function markRemoteSyncInSync(postId: string, signature: string): void {
+  if (!db.posts.has(postId)) return;
+  if (batchSignature(postId) !== signature) {
+    enqueueRemoteSyncStatusRefresh([postId]);
+    return;
+  }
+  remoteSyncPendingPostIds.delete(postId);
+  remoteSyncConfirmations.set(postId, (remoteSyncConfirmations.get(postId) ?? 0) + 1);
+  remoteSyncStatuses[postId] = 'in_sync';
+}
+
+/** Identifies the exact record versions in a post's submission batch. */
+export function batchSignature(postId: string): string {
   const { batch } = buildArchiveBatch([postId], archiveRecords);
   return [
     ...batch.posts.map((item) => `post:${item.id}`),
@@ -227,6 +260,7 @@ async function processRemoteSyncQueue(): Promise<void> {
         postId,
         batch: buildArchiveBatch([postId], archiveRecords).batch,
         signature: batchSignature(postId),
+        confirmation: remoteSyncConfirmations.get(postId),
       }));
       const query = toArchiveQuery(buildArchiveBatch(postIds, archiveRecords).batch);
 
@@ -245,8 +279,8 @@ async function processRemoteSyncQueue(): Promise<void> {
       remoteSyncRetryDelayMs = REMOTE_SYNC_RETRY_INITIAL_MS;
       if (epoch !== remoteSyncEpoch) continue;
 
-      for (const { postId, batch, signature } of batches) {
-        if (!db.posts.has(postId)) continue;
+      for (const { postId, batch, signature, confirmation } of batches) {
+        if (!db.posts.has(postId) || remoteSyncConfirmations.get(postId) !== confirmation) continue;
         if (batchSignature(postId) !== signature) {
           remoteSyncPendingPostIds.add(postId);
           continue;

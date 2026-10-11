@@ -20,6 +20,8 @@ export interface AppConfig {
   remoteDbBaseUrl: string;
   uiVersion: UiVersion;
   homeFeedView: HomeFeedView;
+  autoArchive: boolean;
+  autoArchiveSkipForYou: boolean;
 }
 
 interface PersistedAppConfig extends Partial<AppConfig> {
@@ -40,10 +42,12 @@ export const DEFAULT_CONFIG: AppConfig = {
   remoteDbBaseUrl: '',
   uiVersion: 'next',
   homeFeedView: 'paged',
+  autoArchive: false,
+  autoArchiveSkipForYou: false,
 };
 
 const CONFIG_KEY = 'xd_config';
-const CONFIG_STORAGE_VERSION = 7;
+const CONFIG_STORAGE_VERSION = 8;
 
 const config = reactive<AppConfig>({ ...DEFAULT_CONFIG });
 
@@ -71,6 +75,10 @@ function resolvePersistedHomeFeedView(savedValue: unknown): HomeFeedView {
   return savedValue === 'paged' || savedValue === 'continuous' ? savedValue : DEFAULT_CONFIG.homeFeedView;
 }
 
+function resolvePersistedBoolean(savedValue: unknown, fallback: boolean): boolean {
+  return typeof savedValue === 'boolean' ? savedValue : fallback;
+}
+
 function normalizePersistedConfig(saved: PersistedAppConfig): AppConfig {
   const merged: AppConfig = {
     ...DEFAULT_CONFIG,
@@ -94,6 +102,8 @@ function normalizePersistedConfig(saved: PersistedAppConfig): AppConfig {
 
   merged.uiVersion = resolvePersistedUiVersion(saved.uiVersion);
   merged.homeFeedView = resolvePersistedHomeFeedView(saved.homeFeedView);
+  merged.autoArchive = resolvePersistedBoolean(saved.autoArchive, DEFAULT_CONFIG.autoArchive);
+  merged.autoArchiveSkipForYou = resolvePersistedBoolean(saved.autoArchiveSkipForYou, DEFAULT_CONFIG.autoArchiveSkipForYou);
 
   return merged;
 }
