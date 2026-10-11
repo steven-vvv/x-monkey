@@ -98,6 +98,8 @@
 }
 .xm-launcher:hover { border-color: var(--xm-accent); color: var(--xm-text); }
 .xm-launcher__rec { position: absolute; top: -2px; right: -2px; width: 9px; height: 9px; border-radius: 50%; background: var(--xm-danger); box-shadow: 0 0 0 2px var(--xm-bg); }
+/* 持续归档状态点（§11）：右下角 8px，与右上角录制红点可同时出现 */
+.xm-launcher__state { position: absolute; right: -2px; bottom: -2px; width: 8px; height: 8px; border-radius: 50%; box-shadow: 0 0 0 2px var(--xm-bg); }
 
 /* ---------------- 展开态：面板骨架 ---------------- */
 .xm-panel {
@@ -493,6 +495,7 @@
 /* ---------------- 实现补充（设计稿之外） ---------------- */
 /* 面板内层：uiScale 的 transform 作用在这一层；容器查询以它的（缩放前）宽度为准 */
 .xm-panel__inner {
+  position: relative;
   display: flex; flex-direction: column; overflow: hidden; border-radius: inherit;
   container-type: inline-size; container-name: xm-panel;
 }
@@ -593,3 +596,47 @@
 }
 /* 窄面板：跟随开关只留状态点（文字进 title） */
 @container xm-panel (max-width: 339px) { .xm-follow { font-size: 0; gap: 0; padding: 0 8px; } }
+
+/* ---------------- 持续归档（§11，F19–F22） ---------------- */
+/* 三种状态色：运行中 / 提交中 = ok，暂停 / 不可用 / 需要登录 / 等待重试 = warn，需要管理员 = danger */
+.xm-autoarc__dot--ok, .xm-launcher__state--ok { background: var(--xm-ok); }
+.xm-autoarc__dot--warn, .xm-launcher__state--warn { background: var(--xm-warn); }
+.xm-autoarc__dot--danger, .xm-launcher__state--danger { background: var(--xm-danger); }
+.xm-launcher.xm-shimmer .xm-launcher__state { z-index: 2; }
+
+/* 标题栏状态按钮：xm-iconbtn + 右下角 6px 状态点；有它时标签收紧，保证 360 宽不溢出 */
+.xm-header--autoarc .xm-tab { padding: 0 6px; gap: 4px; }
+.xm-autoarc { position: relative; }
+.xm-autoarc[aria-expanded="true"] { background: var(--xm-surface-3); color: var(--xm-text); }
+.xm-autoarc__dot { position: absolute; right: 5px; bottom: 5px; width: 6px; height: 6px; border-radius: 50%; box-shadow: 0 0 0 1.5px var(--xm-bg); }
+.xm-autoarc[aria-expanded="true"] .xm-autoarc__dot { box-shadow: 0 0 0 1.5px var(--xm-surface-3); }
+
+/* 浮层：宽 260，与标题栏右对齐 */
+.xm-popover { position: absolute; z-index: 11; top: 44px; right: 6px; width: 260px; max-height: calc(100% - 52px); overflow-y: auto; scrollbar-width: thin;
+  display: flex; flex-direction: column; gap: 12px; padding: 12px; border-radius: var(--xm-r-md);
+  background: var(--xm-bg); border: 1px solid var(--xm-border-strong); box-shadow: var(--xm-shadow); font-size: var(--xm-fs-xs); }
+.xm-popover__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.xm-popover__title { font-size: var(--xm-fs-sm); font-weight: 600; color: var(--xm-text); }
+.xm-autoarc__stats { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+.xm-autoarc__stat { display: flex; flex-direction: column; gap: 2px; min-width: 0; padding: 8px; border-radius: var(--xm-r-sm); background: var(--xm-surface-2); }
+.xm-autoarc__label { font-size: var(--xm-fs-2xs); color: var(--xm-text-3); white-space: nowrap; }
+.xm-autoarc__value { font-size: var(--xm-fs-lg); font-weight: 600; color: var(--xm-text); font-variant-numeric: tabular-nums; line-height: 1.3; }
+.xm-autoarc__stat--accent .xm-autoarc__value { color: var(--xm-accent); }
+.xm-autoarc__fails { border-radius: var(--xm-r-sm); background: var(--xm-danger-soft); color: var(--xm-danger); }
+.xm-autoarc__failrow { display: flex; align-items: center; gap: 6px; width: 100%; height: 28px; padding: 0 8px; border-radius: var(--xm-r-sm); color: inherit; font-size: var(--xm-fs-xs); font-weight: 600; cursor: pointer; text-align: left; }
+.xm-autoarc__failrow span { flex: 1; }
+.xm-autoarc__faillist { display: flex; flex-direction: column; gap: 4px; padding: 0 8px 8px 28px; font-size: var(--xm-fs-2xs); line-height: 1.45; color: var(--xm-text-2); word-break: break-word; }
+.xm-autoarc__failid { font-family: var(--xm-mono); font-variant-numeric: tabular-nums; color: var(--xm-text); }
+.xm-autoarc__more { color: var(--xm-text-3); }
+.xm-autoarc__meta { display: flex; flex-direction: column; gap: 2px; font-size: var(--xm-fs-2xs); color: var(--xm-text-3); font-variant-numeric: tabular-nums; }
+.xm-autoarc__err { color: var(--xm-danger); }
+.xm-autoarc__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.xm-autoarc__link { margin-left: auto; padding: 0 2px; color: var(--xm-accent); font-size: var(--xm-fs-xs); font-weight: 600; cursor: pointer; white-space: nowrap; }
+.xm-autoarc__link:hover { text-decoration: underline; }
+
+/* 当前页底栏：同步汇总前的“排队 n” */
+.xm-footer__queue { color: var(--xm-text-3); font-variant-numeric: tabular-nums; }
+
+/* 设置：缩进的子开关、禁用的开关 */
+.xm-set--sub { padding-left: 26px; }
+.xm-switch--disabled { opacity: .45; cursor: default; }

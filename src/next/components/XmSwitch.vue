@@ -7,9 +7,9 @@ const emit = defineEmits<{ (e: 'update:modelValue', value: boolean): void }>();
 <template>
   <span
     class="xm-switch"
-    :class="{ 'xm-switch--on': modelValue }"
+    :class="{ 'xm-switch--on': modelValue, 'xm-switch--disabled': disabled }"
     role="switch"
-    tabindex="0"
+    :tabindex="disabled ? -1 : 0"
     :aria-checked="modelValue"
     :aria-label="label"
     :aria-disabled="disabled || undefined"

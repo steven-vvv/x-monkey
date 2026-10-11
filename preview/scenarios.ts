@@ -12,7 +12,7 @@
  *     query: { ui: 'next', url: fixtureUrls.nasa, bg: 'dark', w: '420', h: '640' },
  *                                       // preview/main.ts query params, all strings:
  *                                       //   ui, theme, bg, url, tab, push, w, h, x, y, scale,
- *                                       //   remote (off|ready|anon|expired|error), capture=1, empty=1
+ *                                       //   remote (off|ready|anon|expired|error|busy|forbidden), autoArchive=1, skipForYou=1, capture=1, empty=1
  *     viewport: { width: 1100, height: 760 },   // optional, default 1100x760
  *     dpr: 1,                                   // optional device scale factor, default 1
  *     collapsed: false,                 // true = do NOT click the launcher first (shoot the launcher only)
@@ -37,6 +37,7 @@
  * Run one: `pnpm run preview:shoot -- --out <dir> --only next-feature-nasa`; list: `--list`.
  */
 import { classicScenarios } from './scenarios/classic';
+import { nextAutoArchiveScenarios } from './scenarios/next-autoarchive';
 import { nextCapturedScenarios } from './scenarios/next-captured';
 import { nextDetailScenarios } from './scenarios/next-detail';
 import { nextFeedScenarios } from './scenarios/next-feed';
@@ -71,4 +72,5 @@ export const scenarios: Scenario[] = [
   ...nextCapturedScenarios,
   ...nextToolsScenarios,
   ...nextSettingsScenarios,
+  ...nextAutoArchiveScenarios,
 ];

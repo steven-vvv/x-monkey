@@ -12,15 +12,18 @@
  *  - A view may own a popover (CurrentPageView's page menu). It closes on Esc itself and stops the event, so this
  *    shell's Esc handler (collapse) only runs when nothing is open.
  */
-import { computed, ref, watch } from 'vue';
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
+import { startAutoArchive, stopAutoArchive } from '../lib/auto-archive';
 import { getConfig } from '../lib/config-service';
 import { capturedPosts } from './captured-posts';
 import { activeTab, setActiveTab, type TabId } from '../lib/store';
 import { isCapturing } from '../lib/xhr-capture-service';
 import { formatCount } from './labels';
+import { useAutoArchiveStatus } from './composables/useAutoArchiveStatus';
 import { useFeedTabDot } from './composables/useFeedTabDot';
 import { usePanelGeometry } from './composables/usePanelGeometry';
 import { useShimmer } from './composables/useShimmer';
+import AutoArchivePopover from './components/AutoArchivePopover.vue';
 import XmIcon from './components/XmIcon.vue';
 import type { IconName } from './icons';
 import CapturedView from './views/CapturedView.vue';
@@ -46,6 +49,29 @@ const postCount = computed(() => capturedPosts.value.length);
 /** 当前页 tab dot: the home timeline of the feature route got a new page while another tab was active. */
 const featureDot = useFeedTabDot(expanded);
 
+/** 持续归档 (SPEC section 11): the engine lives as long as this shell; the header button and popover only show while it is on. */
+onMounted(startAutoArchive);
+onUnmounted(stopAutoArchive);
+const { status: archiveStatus } = useAutoArchiveStatus();
+const archiveShown = computed(() => cfg.autoArchive && archiveStatus.value !== null);
+const archiveLabel = computed(() => (archiveStatus.value ? `持续归档 · ${archiveStatus.value.text}` : ''));
+const launcherTitle = computed(() => (archiveShown.value ? `打开 x-monkey · 持续归档：${archiveStatus.value!.text}` : '打开 x-monkey'));
+const archiveOpen = ref(false);
+const archiveButton = ref<HTMLButtonElement | null>(null);
+
+function closeArchive(refocus = true): void {
+  if (!archiveOpen.value) return;
+  archiveOpen.value = false;
+  if (refocus) void nextTick(() => archiveButton.value?.focus());
+}
+
+function openArchiveSettings(): void {
+  closeArchive(false);
+  setActiveTab('settings');
+}
+
+watch(archiveShown, (shown) => { if (!shown) archiveOpen.value = false; });
+
 /** Collapsed launcher: one shimmer sweep when posts are captured (at most one per 2s). */
 const launcherShimmer = useShimmer(2000);
 watch(postCount, (count, previous) => {
@@ -58,11 +84,17 @@ function expand(): void {
 
 function collapse(): void {
   expanded.value = false;
+  archiveOpen.value = false;
 }
 
-/** Esc: first leave a focused text field, otherwise collapse the panel. */
+/** Esc: first close the 持续归档 popover, then leave a focused text field, otherwise collapse the panel. */
 function onPanelKeydown(event: KeyboardEvent): void {
   if (event.key !== 'Escape') return;
+  if (archiveOpen.value) {
+    event.stopPropagation();
+    closeArchive();
+    return;
+  }
   const target = event.target as HTMLElement | null;
   if (target && target.matches('input, textarea, select')) {
     target.blur();
@@ -79,8 +111,8 @@ function onPanelKeydown(event: KeyboardEvent): void {
       class="xm-launcher"
       role="button"
       tabindex="0"
-      title="打开 x-monkey"
-      aria-label="打开 x-monkey"
+      :title="launcherTitle"
+      :aria-label="launcherTitle"
       :style="geometry.launcherStyle.value"
       @pointerdown="geometry.onLauncherPointerDown($event, expand)"
       @keydown.enter.prevent="expand"
@@ -89,6 +121,7 @@ function onPanelKeydown(event: KeyboardEvent): void {
       <XmIcon name="captured" />
       <span class="xm-launcher__sheen" :class="{ 'xm-shimmer': launcherShimmer.active.value }" aria-hidden="true"></span>
       <span v-if="isCapturing" class="xm-launcher__rec" title="正在录制 XHR 请求"></span>
+      <span v-if="archiveShown" class="xm-launcher__state" :class="`xm-launcher__state--${archiveStatus!.tone}`" data-role="launcher-state"></span>
     </div>
 
     <div
@@ -99,7 +132,7 @@ function onPanelKeydown(event: KeyboardEvent): void {
       @keydown="onPanelKeydown"
     >
       <div class="xm-panel__inner" :style="geometry.contentScaleStyle.value">
-        <div class="xm-header" @pointerdown="geometry.onHeaderPointerDown">
+        <div class="xm-header" :class="{ 'xm-header--autoarc': archiveShown }" @pointerdown="geometry.onHeaderPointerDown">
           <div class="xm-tabs" role="tablist">
             <button
               v-for="tab in tabs"
@@ -118,6 +151,21 @@ function onPanelKeydown(event: KeyboardEvent): void {
               <span v-if="tab.id === 'feature' && featureDot" class="xm-tab__dot" title="有新页面" data-role="feature-dot"></span>
             </button>
           </div>
+          <button
+            v-if="archiveShown"
+            ref="archiveButton"
+            type="button"
+            class="xm-iconbtn xm-autoarc"
+            :title="archiveLabel"
+            :aria-label="archiveLabel"
+            aria-haspopup="dialog"
+            :aria-expanded="archiveOpen"
+            data-action="autoarchive"
+            @click="archiveOpen = !archiveOpen"
+          >
+            <XmIcon name="cloud-up" />
+            <span class="xm-autoarc__dot" :class="`xm-autoarc__dot--${archiveStatus!.tone}`"></span>
+          </button>
           <button type="button" class="xm-iconbtn" title="收起 (Esc)" aria-label="收起 (Esc)" data-action="collapse" @click="collapse">
             <XmIcon name="minus" />
           </button>
@@ -127,6 +175,8 @@ function onPanelKeydown(event: KeyboardEvent): void {
         <CapturedView v-else-if="activeTab === 'database'" />
         <ToolsView v-else-if="activeTab === 'tools'" />
         <SettingsView v-else-if="activeTab === 'settings'" />
+
+        <AutoArchivePopover v-if="archiveOpen && archiveStatus" :status="archiveStatus" @close="closeArchive()" @open-settings="openArchiveSettings" />
       </div>
       <div class="xm-resize" title="调整大小" @pointerdown="geometry.onResizePointerDown"></div>
     </div>

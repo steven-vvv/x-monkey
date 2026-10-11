@@ -22,6 +22,9 @@ import { GM_openInTab } from '$';
 import { PAGE_KINDS, SYNC_STATUS_ORDER, SYNC_STATUS_TITLES, formatClock, timelineLabel, timelineNavTitle } from '../labels';
 import { HOME_FEED_OPTIONS } from '../settings-labels';
 import { feedStateKey, getFeedState, goToFeedPage, pauseFeed, resetFeedState, resumeFeed } from '../feed-state';
+import { autoArchiveState } from '../../lib/auto-archive';
+import { formatExact } from '../auto-archive-labels';
+import { useAutoArchiveLoginBanner } from '../composables/useAutoArchiveLoginBanner';
 import { useShimmer } from '../composables/useShimmer';
 import { useTimelineSelection } from '../composables/useTimelineSelection';
 import PostDetail from '../components/PostDetail.vue';
@@ -383,6 +386,10 @@ const syncSummary = computed(() => {
   return SYNC_STATUS_ORDER.filter((status) => (counts.get(status) ?? 0) > 0).map((status) => ({ status, count: counts.get(status)! }));
 });
 
+// 持续归档: queue count in the footer and the 需要登录 banner (SPEC section 11).
+const archive = autoArchiveState;
+const loginBanner = useAutoArchiveLoginBanner();
+
 const bannerAction = computed(() => (selection.banner.value?.openSettings
   ? { label: '打开设置', onClick: () => setActiveTab('settings') }
   : undefined));
@@ -557,6 +564,16 @@ function selectItem(item: TimelineItem): void {
           :action="bannerAction"
           @close="selection.dismissBanner()"
         />
+        <XmBanner
+          v-if="loginBanner.visible.value"
+          class="xm-banner--dock"
+          tone="warn"
+          title="远端会话已过期，持续归档已暂停"
+          text="重新登录后会自动继续提交。"
+          :action="{ label: '打开设置', onClick: () => setActiveTab('settings') }"
+          data-role="autoarc-login-banner"
+          @close="loginBanner.dismiss()"
+        />
         <template v-if="remoteActions">
           <div v-if="selection.active.value" class="xm-footer" data-role="select-footer">
             <button type="button" class="xm-iconbtn" title="退出选择" aria-label="退出选择" @click="selection.toggleMode()"><XmIcon name="x" /></button>
@@ -568,6 +585,7 @@ function selectItem(item: TimelineItem): void {
           </div>
           <div v-else class="xm-footer" data-role="sync-footer">
             <div class="xm-footer__meta">
+              <span v-if="cfg.autoArchive && archive.queued > 0" class="xm-footer__queue" data-role="queued">排队 {{ formatExact(archive.queued) }}</span>
               <span v-for="entry in syncSummary" :key="entry.status" class="xm-legend" :title="SYNC_STATUS_TITLES[entry.status]">
                 <XmSyncMark :status="entry.status" /><span class="xm-num">{{ entry.count }}</span>
               </span>

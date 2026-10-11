@@ -6,7 +6,8 @@
  *   url=<x.com URL>        tab=feature|database|tools|settings
  *   push=tweet:ID,user:ID,xhr-capture,xhr-detail:ID   (applied to the active tab's stack)
  *   w,h = panel size       x,y = anchor              scale = ui scale in percent
- *   remote=off|ready|anon|expired|error   (default off)
+ *   remote=off|ready|anon|expired|error|busy|forbidden   (default off)
+ *   autoArchive=1 turns 持续归档 on before mount, skipForYou=1 also skips 「为你推荐」
  *   capture=1 seed XHR captures + capturing on        empty=1 do not seed the database
  * Scenario hook: window.__xmPreview.addHomePage(list, kind, count?, repeats?) (see XmPreviewHooks).
  */
@@ -89,7 +90,7 @@ async function main(): Promise<void> {
   await initConfig();
   const cfg = getConfig();
 
-  const remote = pick('remote', ['off', 'ready', 'anon', 'expired', 'error'] as const, 'off') as RemoteScenario;
+  const remote = pick('remote', ['off', 'ready', 'anon', 'expired', 'error', 'busy', 'forbidden'] as const, 'off') as RemoteScenario;
   configureMock({ scenario: remote, source: archiveRecords });
 
   updateConfig({
@@ -97,6 +98,8 @@ async function main(): Promise<void> {
     theme: pick('theme', ['page', 'light', 'dark'] as const, 'page') as ThemeMode,
     remoteDbEnabled: remote !== 'off',
     remoteDbBaseUrl: 'https://tdb.preview.local',
+    autoArchive: params.get('autoArchive') === '1',
+    autoArchiveSkipForYou: params.get('skipForYou') === '1',
     ...(num('w') !== undefined && { panelWidth: num('w') }),
     ...(num('h') !== undefined && { panelHeight: num('h') }),
     ...(num('x') !== undefined && { anchorX: num('x') }),

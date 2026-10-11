@@ -1,4 +1,5 @@
 /** Feeds the fixtures into the real stores, the way the XHR interceptor does. */
+import { noteArchiveCapture } from '../src/lib/auto-archive';
 import { MediaSchema, PostSchema, UserSchema } from '../src/archive/model';
 import { runDbBatch, upsertMedia, upsertPost, upsertUser } from '../src/lib/db-service';
 import { getFeatureTimelineNamespace } from '../src/lib/feature-timeline';
@@ -67,6 +68,7 @@ export function addHomePage(list: HomeList, kind: 'newer' | 'older', count = 6, 
   const capturedAt = (last?.capturedAt ?? FIXTURE_CLOCK) + 7 * 60_000;
   const pageId = ingestHomeResponse(list, { cursor, bottomCursor, postIds }, capturedAt);
   if (pageId === undefined) throw new Error('addHomePage: the response created no page');
+  noteArchiveCapture({ source: namespace, postIds, userIds: [] });
   return pageId;
 }
 

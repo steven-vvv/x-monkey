@@ -3,7 +3,8 @@
  * /api/v1/archive/query and /api/v1/archive/submit.
  *
  * Scenario (`?remote=`): ready (authenticated admin), anon, expired (submit gives 401, then the
- * session turns anonymous), error (network error), off (handled by the config, no requests).
+ * session turns anonymous), error (network error), off (handled by the config, no requests),
+ * busy (submit gives 503 server_busy; session fine), forbidden (submit gives 403; session fine).
  *
  * Post query status is decided by the last digit of the post id:
  *   1 identical (in_sync) | 2 lower counts (stale) | 3 different text (mismatch) | 4 failed | else missing.
@@ -19,7 +20,7 @@ import type {
 } from '../src/lib/remote-db/types';
 import type { Post } from '../src/archive/model';
 
-export type RemoteScenario = 'ready' | 'anon' | 'expired' | 'error' | 'off';
+export type RemoteScenario = 'ready' | 'anon' | 'expired' | 'error' | 'off' | 'busy' | 'forbidden';
 
 export interface MockRequestDetails {
   method?: string;
@@ -109,7 +110,7 @@ function route(details: MockRequestDetails): Reply {
   const body = details.data ? JSON.parse(details.data) as Record<string, never> : {};
 
   if (path === '/api/v1/session') {
-    if ((scenario === 'ready' || scenario === 'expired') && !sessionExpired) {
+    if ((scenario === 'ready' || scenario === 'expired' || scenario === 'busy' || scenario === 'forbidden') && !sessionExpired) {
       return { status: 200, body: { authenticated: true, registered: true, username: 'steven', role: 'admin', expires_at: '2026-10-12T00:00:00Z', account_url: ACCOUNT_URL } };
     }
     return { status: 200, body: { authenticated: false, registered: false, username: null, account_url: ACCOUNT_URL } };
@@ -117,6 +118,8 @@ function route(details: MockRequestDetails): Reply {
   if (path === '/api/v1/archive/query') return { status: 200, body: query(body) };
   if (path === '/api/v1/archive/submit') {
     if (scenario === 'expired') { sessionExpired = true; return { status: 401, body: { error: 'Session expired, please sign in again' } }; }
+    if (scenario === 'busy') return { status: 503, body: { error: 'server_busy' } };
+    if (scenario === 'forbidden') return { status: 403, body: { error: 'Administrator account required' } };
     return { status: 200, body: submit(body) };
   }
   return { status: 404, body: { error: `No route for ${path}` } };

@@ -37,6 +37,16 @@ function setHomeFeedView(value: HomeFeedView) {
   updateConfig({ homeFeedView: value });
 }
 
+/**
+ * 持续归档 (immediate, not in the draft). Needs the remote database enabled in the SAVED config; once it is on, the
+ * switch stays usable so it can still be turned off after the remote was disabled.
+ */
+const autoArchiveDisabled = computed(() => !cfg.autoArchive && !cfg.remoteDbEnabled);
+
+function toggleAutoArchive() {
+  if (!autoArchiveDisabled.value) updateConfig({ autoArchive: !cfg.autoArchive });
+}
+
 function openAccountPage() {
   const accountUrl = remoteState.session?.accountUrl;
   if (accountUrl) GM_openInTab(accountUrl, { active: true });
@@ -151,6 +161,24 @@ async function checkConnection(): Promise<void> {
             <div class="xm-set__ctrl xm-set__ctrl--status" data-role="remote-status">
               <XmStatusPill :tone="remoteStatus.tone" class="xm-set__status">{{ remoteStatus.text }}</XmStatusPill>
               <button v-if="showAccountAction" type="button" class="xm-btn xm-btn--sm xm-btn--primary" data-role="open-account" @click="openAccountPage">打开账户页<XmIcon name="external" class="xm-ico--sm" /></button>
+            </div>
+          </div>
+          <div class="xm-set" data-role="auto-archive">
+            <div class="xm-set__label" :class="{ 'xm-set__label--click': !autoArchiveDisabled }" @click="toggleAutoArchive">
+              持续归档
+              <span class="xm-set__desc">{{ autoArchiveDisabled ? '先启用并登录远端数据库' : '自动提交浏览时捕获的帖子，看过的都会入库。刷新页面前还没提交的会丢失。' }}</span>
+            </div>
+            <div class="xm-set__ctrl">
+              <XmSwitch :model-value="cfg.autoArchive" label="持续归档" :disabled="autoArchiveDisabled" @update:model-value="(v) => updateConfig({ autoArchive: v })" />
+            </div>
+          </div>
+          <div v-if="cfg.autoArchive" class="xm-set xm-set--sub" data-role="auto-archive-skip">
+            <div class="xm-set__label xm-set__label--click" @click="updateConfig({ autoArchiveSkipForYou: !cfg.autoArchiveSkipForYou })">
+              不归档「为你推荐」
+              <span class="xm-set__desc">推荐流内容多，且每条媒体都会转存</span>
+            </div>
+            <div class="xm-set__ctrl">
+              <XmSwitch :model-value="cfg.autoArchiveSkipForYou" label="不归档「为你推荐」" @update:model-value="(v) => updateConfig({ autoArchiveSkipForYou: v })" />
             </div>
           </div>
           <div v-if="remoteDbConfigurable" class="xm-set xm-set--stack">

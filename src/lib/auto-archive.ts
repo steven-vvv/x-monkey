@@ -50,8 +50,8 @@ export interface AutoArchiveState {
   /** Posts by their worst record status; users counts profile-only submissions. */
   stats: { requests: number; accepted: number; unchanged: number; partial: number; failed: number; users: number };
   lastSubmittedAt: number | null;
-  /** The latest error; kept after recovery, compare `at` with `lastSubmittedAt`. */
-  lastError: { message: string; at: number } | null;
+  /** The latest error; kept after recovery, compare `at` with `lastSubmittedAt`. `status` is 0 without an HTTP response. */
+  lastError: { message: string; status: number; at: number } | null;
   /** Newest last, at most `MAX_FAILURES`; user entries have ids like `user:123`. */
   failures: Array<{ id: string; reason: string }>;
   /** Increments each time the phase enters `needs-login`. */
@@ -326,8 +326,8 @@ function failSingle(key: string, reason: string): 'ok' {
 
 /** Returns 'stop' when the keys went back to the queue (or the attempt must pause the loop). */
 async function handleSubmitError(error: unknown, keys: string[]): Promise<'ok' | 'stop'> {
-  state.lastError = { message: error instanceof Error ? error.message : String(error), at: Date.now() };
   const status = error instanceof RemoteDbHttpError ? error.status : 0;
+  state.lastError = { message: error instanceof Error ? error.message : String(error), status, at: Date.now() };
 
   if (status === 400 || status === 413) {
     if (keys.length === 1) return failSingle(keys[0], state.lastError.message);
