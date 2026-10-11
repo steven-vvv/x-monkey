@@ -63,6 +63,47 @@ function refreshVisibilityMenuCommand(): void {
   visibilityMenuId = nextId;
 }
 
+let uiVersionMenuId: MenuCommandId | undefined;
+let uiVersionMenuVersion = 0;
+
+function refreshUiVersionMenuCommand(): void {
+  const uiVersion = getConfig().uiVersion;
+  const currentVersion = ++uiVersionMenuVersion;
+  const caption = uiVersion === 'next' ? 'Use Classic UI' : 'Use New UI';
+
+  if (uiVersionMenuId !== undefined) {
+    try {
+      GM_unregisterMenuCommand(uiVersionMenuId);
+    } catch (error) {
+      GM_log('[Menu] Failed to unregister UI version command', error);
+    } finally {
+      uiVersionMenuId = undefined;
+    }
+  }
+
+  const nextId = GM_registerMenuCommand(
+    caption,
+    () => {
+      const nextUi = getConfig().uiVersion === 'next' ? 'classic' : 'next';
+      updateConfig({ uiVersion: nextUi });
+      GM_log(`[Menu] UI version set to ${nextUi}`);
+    },
+    { id: 'xd-toggle-ui-version', autoClose: true, title: caption },
+  );
+
+  // Prevent stale command residue if rapid toggles trigger overlapping refreshes.
+  if (currentVersion !== uiVersionMenuVersion) {
+    try {
+      GM_unregisterMenuCommand(nextId);
+    } catch {
+      // ignore stale cleanup failures
+    }
+    return;
+  }
+
+  uiVersionMenuId = nextId;
+}
+
 function initShadowCssBridge(shadow: ShadowRoot, doc: Document): void {
   const injectedCss = new Set<string>();
 
@@ -124,6 +165,14 @@ async function mount() {
     () => cfg.panelVisible,
     () => {
       refreshVisibilityMenuCommand();
+    },
+    { immediate: true },
+  );
+
+  watch(
+    () => cfg.uiVersion,
+    () => {
+      refreshUiVersionMenuCommand();
     },
     { immediate: true },
   );

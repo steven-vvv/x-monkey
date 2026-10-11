@@ -3,6 +3,7 @@ import { GM_getValue, GM_setValue, GM_addValueChangeListener, GM_removeValueChan
 import type { GmValueListenerId } from '$';
 
 export type ThemeMode = 'dark' | 'light' | 'page';
+export type UiVersion = 'next' | 'classic';
 
 export interface AppConfig {
   anchorX: number;
@@ -16,6 +17,7 @@ export interface AppConfig {
   theme: ThemeMode;
   remoteDbEnabled: boolean;
   remoteDbBaseUrl: string;
+  uiVersion: UiVersion;
 }
 
 interface PersistedAppConfig extends Partial<AppConfig> {
@@ -34,10 +36,11 @@ export const DEFAULT_CONFIG: AppConfig = {
   theme: 'page',
   remoteDbEnabled: false,
   remoteDbBaseUrl: '',
+  uiVersion: 'next',
 };
 
 const CONFIG_KEY = 'xd_config';
-const CONFIG_STORAGE_VERSION = 5;
+const CONFIG_STORAGE_VERSION = 6;
 
 const config = reactive<AppConfig>({ ...DEFAULT_CONFIG });
 
@@ -55,6 +58,10 @@ function resolvePersistedRemoteDbEnabled(savedValue: unknown): boolean {
 
 function resolvePersistedMaskSensitiveMediaWarnings(savedValue: unknown): boolean {
   return typeof savedValue === 'boolean' ? savedValue : DEFAULT_CONFIG.maskSensitiveMediaWarnings;
+}
+
+function resolvePersistedUiVersion(savedValue: unknown): UiVersion {
+  return savedValue === 'next' || savedValue === 'classic' ? savedValue : DEFAULT_CONFIG.uiVersion;
 }
 
 function normalizePersistedConfig(saved: PersistedAppConfig): AppConfig {
@@ -77,6 +84,8 @@ function normalizePersistedConfig(saved: PersistedAppConfig): AppConfig {
   merged.maskSensitiveMediaWarnings = resolvePersistedMaskSensitiveMediaWarnings(
     savedVersion >= 5 ? saved.maskSensitiveMediaWarnings : DEFAULT_CONFIG.maskSensitiveMediaWarnings,
   );
+
+  merged.uiVersion = resolvePersistedUiVersion(saved.uiVersion);
 
   return merged;
 }

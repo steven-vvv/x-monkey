@@ -96,6 +96,7 @@ function resetLayout() {
 
 function resetAllSettings() {
   for (const key of Object.keys(DEFAULT_CONFIG) as (keyof AppConfig)[]) {
+    if (key === 'uiVersion') continue;
     setDraft(key, DEFAULT_CONFIG[key]);
   }
 }
@@ -235,6 +236,12 @@ async function checkRemoteDbConnection(): Promise<void> {
           <select class="xd-settings-select" :value="draft.theme" @change="setDraft('theme', ($event.target as HTMLSelectElement).value as ThemeMode)">
             <option v-for="opt in themeOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
           </select>
+        </div>
+      </SettingsSection>
+
+      <SettingsSection title="UI Version" hint="The new interface is the default. Switching applies immediately and is not part of the draft.">
+        <div class="xd-settings-row">
+          <button class="xd-btn xd-btn--sm xd-btn--accent" @click="updateConfig({ uiVersion: 'next' })">Switch to new UI</button>
         </div>
       </SettingsSection>
 

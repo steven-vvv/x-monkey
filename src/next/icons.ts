@@ -1,0 +1,53 @@
+/**
+ * Icon set for the redesigned UI: name -> inner SVG markup (24x24 viewBox, stroke styling comes from .xm-ico).
+ * Ported from the <symbol> defs in design/x-monkey/mockup.html. Static internal table; safe for v-html.
+ */
+
+export const ICONS = {
+  'page': '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M7 6.5h.01M10 6.5h.01"/>',
+  'captured': '<rect x="3" y="4" width="18" height="5" rx="1"/><path d="M5 9v9a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9M10 13h4"/>',
+  'tools': '<path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3.5 17.5a2.1 2.1 0 0 0 3 3l5.8-5.8a4 4 0 0 0 5.4-5.4l-2.6 2.6-2.4-.6-.6-2.4z"/>',
+  'settings': '<path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/>',
+  'minus': '<path d="M6 12h12"/>',
+  'back': '<path d="M15 18l-6-6 6-6"/>',
+  'chev-r': '<path d="M9 6l6 6-6 6"/>',
+  'chev-d': '<path d="M6 9l6 6 6-6"/>',
+  'x': '<path d="M17 7L7 17M7 7l10 10"/>',
+  'check': '<path d="M5 12.5l4.5 4.5L19 7.5"/>',
+  'search': '<circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4.2-4.2"/>',
+  'external': '<path d="M14 4h6v6M20 4l-8.5 8.5M18 14v4.5a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 4 18.5v-11A1.5 1.5 0 0 1 5.5 6H10"/>',
+  'refresh': '<path d="M20 12a8 8 0 0 1-14.3 4.9M4 12a8 8 0 0 1 14.3-4.9"/><path d="M18.5 3v4.5H14M5.5 21v-4.5H10"/>',
+  'upload': '<path d="M7.5 18.5a4.5 4.5 0 0 1-.6-9A6 6 0 0 1 18.4 11a3.8 3.8 0 0 1-.9 7.5"/><path d="M12 13v8M9 16l3-3 3 3"/>',
+  'reply': '<path d="M20.5 11.5a8.5 8.5 0 0 1-12.6 7.4L3.5 20.5l1.6-4.4a8.5 8.5 0 1 1 15.4-4.6z"/>',
+  'repost': '<path d="M17 3l3.5 3.5L17 10"/><path d="M4 11.5V10a3.5 3.5 0 0 1 3.5-3.5h13M7 21l-3.5-3.5L7 14"/><path d="M20 12.5V14a3.5 3.5 0 0 1-3.5 3.5h-13"/>',
+  'heart': '<path d="M12 20s-7.5-4.6-7.5-10.2A4.3 4.3 0 0 1 12 7.2a4.3 4.3 0 0 1 7.5 2.6C19.5 15.4 12 20 12 20z"/>',
+  'views': '<path d="M5 20v-7M10 20V5M15 20v-9M20 20v-5"/>',
+  'bookmark': '<path d="M6.5 3.5h11v17l-5.5-4-5.5 4z"/>',
+  'quote': '<path d="M5 7h5v5c0 2.8-1.6 4.6-4 5.5M14 7h5v5c0 2.8-1.6 4.6-4 5.5"/>',
+  'image': '<rect x="3.5" y="4.5" width="17" height="15" rx="2"/><circle cx="9" cy="10" r="1.8"/><path d="M20.5 16l-5-5-9.5 8.5"/>',
+  'play': '<path d="M8 5.5v13l10.5-6.5z" fill="currentColor"/>',
+  'eye-off': '<path d="M3 3l18 18M10.6 5.1A9.7 9.7 0 0 1 12 5c6 0 9.5 7 9.5 7a16.6 16.6 0 0 1-3.2 4.2M6.6 6.6C3.9 8.4 2.5 12 2.5 12s3.5 7 9.5 7a9.6 9.6 0 0 0 5.4-1.6M9.9 9.9a3 3 0 0 0 4.2 4.2"/>',
+  'alert': '<path d="M10.3 4.3L2.6 17.6A2 2 0 0 0 4.3 20.5h15.4a2 2 0 0 0 1.7-2.9L13.7 4.3a2 2 0 0 0-3.4 0zM12 9.5v4M12 17h.01"/>',
+  'info': '<circle cx="12" cy="12" r="8.5"/><path d="M12 11v5M12 8h.01"/>',
+  'pin': '<path d="M12 21s7-6.2 7-11.5a7 7 0 0 0-14 0C5 14.8 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/>',
+  'link': '<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>',
+  'download': '<path d="M12 4v11M7.5 10.5L12 15l4.5-4.5M5 20h14"/>',
+  'copy': '<rect x="8.5" y="8.5" width="11" height="11" rx="2"/><path d="M15.5 8.5V6a1.5 1.5 0 0 0-1.5-1.5H6A1.5 1.5 0 0 0 4.5 6v8A1.5 1.5 0 0 0 6 15.5h2.5"/>',
+  'record': '<circle cx="12" cy="12" r="5.5" fill="currentColor" stroke="none"/>',
+  'stop': '<rect x="7" y="7" width="10" height="10" rx="1.5" fill="currentColor" stroke="none"/>',
+  'trash': '<path d="M4.5 7h15M10 11v6M14 11v6M6.5 7l.8 12a1.5 1.5 0 0 0 1.5 1.5h6.4a1.5 1.5 0 0 0 1.5-1.5l.8-12M9 7V4.5h6V7"/>',
+  'home': '<path d="M4 10.5L12 4l8 6.5V19a1 1 0 0 1-1 1h-4.5v-6h-5v6H5a1 1 0 0 1-1-1z"/>',
+  'user': '<circle cx="12" cy="8.5" r="3.8"/><path d="M4.5 20.5a7.5 7.5 0 0 1 15 0"/>',
+  'activity': '<path d="M3 12h4l2.5-7 5 14 2.5-7h4"/>',
+  'sparkle': '<path d="M12 3.5l1.9 5.1 5.1 1.9-5.1 1.9L12 17.5l-1.9-5.1L5 10.5l5.1-1.9z"/><path d="M18.5 16v4M16.5 18h4"/>',
+  'flame': '<path d="M12 21c3.9 0 6.5-2.6 6.5-6.2 0-3.8-3.2-5.9-3.8-10.3-2.4 1.4-3.9 3.8-3.9 6.3-1-.5-1.9-1.5-2.4-2.9C6.6 9.6 5.5 12 5.5 14.8 5.5 18.4 8.1 21 12 21z"/>',
+  'people': '<circle cx="9" cy="9" r="3.3"/><path d="M3 19.5a6 6 0 0 1 12 0M16 6a3.2 3.2 0 0 1 0 6.3M18 14.2a6 6 0 0 1 3 5.3"/>',
+  'verified': '<path d="M12 3l2.2 1.6 2.7-.1.9 2.6 2.2 1.6-.8 2.6.8 2.6-2.2 1.6-.9 2.6-2.7-.1L12 21l-2.2-1.6-2.7.1-.9-2.6-2.2-1.6.8-2.6-.8-2.6 2.2-1.6.9-2.6 2.7.1z"/><path d="M9 12l2 2 4-4"/>',
+  'calendar': '<rect x="4" y="5.5" width="16" height="15" rx="2"/><path d="M4 10h16M9 3.5v4M15 3.5v4"/>',
+  'note': '<path d="M5 4.5h14v11l-4.5 4.5H5z"/><path d="M14.5 20v-4.5H19M8.5 9h7M8.5 12.5h4"/>',
+  'article': '<rect x="4.5" y="3.5" width="15" height="17" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/>',
+  'poll': '<path d="M5 6h9M5 12h14M5 18h6"/>',
+  'lock': '<rect x="5" y="10.5" width="14" height="10" rx="2"/><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5"/>',
+} as const;
+
+export type IconName = keyof typeof ICONS;

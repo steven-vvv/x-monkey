@@ -187,6 +187,9 @@ export const featureBreadcrumbs = computed<Breadcrumb[]>(() => {
   });
 });
 
+/** Read-only: the routes from the stack root to the current one. */
+export const featureStackView = computed<readonly FeatureRoute[]>(() => nav.featureStack.slice(0, nav.featureIndex + 1));
+
 export function featureNavigateTo(route: FeatureRoute): void {
   // Max depth: home-root -> timeline -> tweet -> user (4 levels)
   if (nav.featureIndex >= 3) {
@@ -215,6 +218,9 @@ export const dbBreadcrumbs = computed<Breadcrumb[]>(() => {
     return { label, index: i, active: i === nav.dbIndex };
   });
 });
+
+/** Read-only: the routes from the stack root to the current one. */
+export const dbStackView = computed<readonly DbRoute[]>(() => nav.dbStack.slice(0, nav.dbIndex + 1));
 
 export function dbNavigateTo(route: DbRoute): void {
   if (route.page === 'tweet') {
@@ -260,6 +266,9 @@ export const toolsBreadcrumbs = computed<Breadcrumb[]>(() => {
     return { label, index: i, active: i === nav.toolsIndex };
   });
 });
+
+/** Read-only: the routes from the stack root to the current one. */
+export const toolsStackView = computed<readonly ToolsRoute[]>(() => nav.toolsStack.slice(0, nav.toolsIndex + 1));
 
 export function toolsNavigateTo(route: ToolsRoute): void {
   if (route.page === 'xhr-capture') {
