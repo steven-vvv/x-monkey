@@ -240,3 +240,17 @@ export function withheldLabel(codes: readonly string[]): string {
   });
   return `在 ${names.join('、')} 不可见`;
 }
+
+// ---- home feed pages ----
+
+/** Capture time of a feed page as `HH:mm:ss` (local time). */
+export function formatClock(ms: number): string {
+  const date = new Date(ms);
+  return `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+}
+
+export const PAGE_KINDS: Record<'initial' | 'newer' | 'older', { label: string; icon: IconName }> = {
+  initial: { label: '首屏', icon: 'home' },
+  newer: { label: '更新', icon: 'arrow-up' },
+  older: { label: '更早', icon: 'arrow-down' },
+};

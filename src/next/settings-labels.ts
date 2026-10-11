@@ -12,6 +12,11 @@ export const UI_VERSION_OPTIONS = [
   { value: 'classic' as const, label: '旧版' },
 ];
 
+export const HOME_FEED_OPTIONS = [
+  { value: 'paged' as const, label: '按页' },
+  { value: 'continuous' as const, label: '连续' },
+];
+
 export const SCALE_OPTIONS = [25, 50, 75, 100, 125, 150, 175, 200];
 
 export const BASE_URL_ERROR = '请输入完整的 http(s) 地址，例如 https://example.com';

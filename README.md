@@ -10,6 +10,8 @@ A lightweight userscript panel for continuously capturing and browsing X (Twitte
   in-memory database. Promoted posts are skipped.
 - Shows a draggable/resizable Vue panel with four tabs:
   - **当前页** (Feature): the timeline of the current page (profile tabs, bookmarks, likes, search results, home feeds) and post details, backed by the in-memory database.
+    In the new UI the home feeds (For You, Following) are shown one captured response per page by default,
+    with follow / pause and a new-page hint; 设置 → 首页信息流 switches back to one continuous list.
   - **已捕获** (Database): full captured post list with a local filter, and entity detail views.
   - **工具** (Tools): XHR capture; selected requests can be exported with their page URL, request and response.
   - **设置** (Settings): panel size, scale, theme mode, behavior and remote database options.

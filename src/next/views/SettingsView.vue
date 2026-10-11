@@ -2,11 +2,11 @@
 // 设置 tab: grouped cards over a draft (see useSettingsDraft). View contract: see NextApp.vue.
 import { computed } from 'vue';
 import { GM_openInTab } from '$';
-import { updateConfig, type UiVersion } from '../../lib/config-service';
+import { updateConfig, type HomeFeedView, type UiVersion } from '../../lib/config-service';
 import { configureRemoteDbClient, getRemoteDbClientState } from '../../lib/remote-db';
 import { useSettingsDraft } from '../composables/useSettingsDraft';
 import {
-  BASE_URL_ERROR, SCALE_OPTIONS, THEME_OPTIONS, UI_VERSION_OPTIONS,
+  BASE_URL_ERROR, HOME_FEED_OPTIONS, SCALE_OPTIONS, THEME_OPTIONS, UI_VERSION_OPTIONS,
   describeRemoteStatus, isRemoteChecking, remoteHint,
 } from '../settings-labels';
 import XmIcon from '../components/XmIcon.vue';
@@ -30,6 +30,11 @@ const showAccountAction = computed(() => Boolean(remoteState.session?.accountUrl
 /** Applied immediately; not part of the draft. */
 function setUiVersion(value: UiVersion) {
   updateConfig({ uiVersion: value });
+}
+
+/** Applied immediately; not part of the draft. */
+function setHomeFeedView(value: HomeFeedView) {
+  updateConfig({ homeFeedView: value });
 }
 
 function openAccountPage() {
@@ -103,6 +108,12 @@ async function checkConnection(): Promise<void> {
       <div class="xm-group">
         <div class="xm-group__title">行为</div>
         <div class="xm-group__card">
+          <div class="xm-set">
+            <div class="xm-set__label">首页信息流<span class="xm-set__desc">为你推荐、关注按捕获到的每次响应分页</span></div>
+            <div class="xm-set__ctrl">
+              <XmSegmented :model-value="cfg.homeFeedView" :options="HOME_FEED_OPTIONS" aria-label="首页信息流" data-role="home-feed" @update:model-value="setHomeFeedView" />
+            </div>
+          </div>
           <div class="xm-set">
             <div class="xm-set__label xm-set__label--click" @click="setDraft('autoClearOnNavigate', !draft.autoClearOnNavigate)">
               切换页面时清空捕获<span v-if="isFieldDirty('autoClearOnNavigate')" class="xm-dirty" title="未保存"></span>

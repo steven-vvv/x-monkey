@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // Timeline row. `post` = displayed post (original for reposts); `author`; `media`; `repostedBy` (user who reposted);
 // `syncStatus`; `selecting` shows the checkbox column and `selected` its state. Emits select (row click / Enter / Space)
-// and open-media(url) (media cell click).
+// and open-media(url) (media cell click). Slot `head-extra`: extra inline content after the time (e.g. the repeat chip).
 import { computed } from 'vue';
 import type { Media, Post, User } from '../../archive/model';
 import type { RemoteRecordStatus } from '../../lib/remote-db';
@@ -77,6 +77,7 @@ function onKey(event: KeyboardEvent): void {
         <span class="xm-handle" :title="'@' + handle">@{{ handle }}</span>
         <span class="xm-dot">·</span>
         <span class="xm-time">{{ time }}</span>
+        <slot name="head-extra" />
       </div>
       <div v-if="text" class="xm-post__text">{{ text }}</div>
       <XmMediaStrip :media="media" :post="post" @open-media="emit('open-media', $event)" />

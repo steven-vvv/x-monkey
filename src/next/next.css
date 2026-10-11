@@ -97,7 +97,6 @@
   transition: border-color var(--xm-t), color var(--xm-t);
 }
 .xm-launcher:hover { border-color: var(--xm-accent); color: var(--xm-text); }
-.xm-launcher__count { font-size: var(--xm-fs-xs); font-weight: 600; color: var(--xm-accent); padding-right: 2px; }
 .xm-launcher__rec { position: absolute; top: -2px; right: -2px; width: 9px; height: 9px; border-radius: 50%; background: var(--xm-danger); box-shadow: 0 0 0 2px var(--xm-bg); }
 
 /* ---------------- 展开态：面板骨架 ---------------- */
@@ -498,8 +497,99 @@
   container-type: inline-size; container-name: xm-panel;
 }
 /* 视图根：填满标签栏下方的区域 */
-.xm-view { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.xm-view { flex: 1; min-height: 0; display: flex; flex-direction: column; position: relative; }
 .xm-panel:focus { outline: none; }
 .xm-banner--dock { margin-bottom: 8px; }
 .xm-banner__text { white-space: pre-line; }
 .xm-launcher:focus-visible { border-radius: var(--xm-r-pill); }
+
+/* ============================================================
+   首页信息流分页（F14–F18）
+   ============================================================ */
+
+/* 一次性微光：类加上时扫过一次（≈1.1s），之后保持静态。重新触发靠重建元素（换 key）。 */
+@keyframes xm-shimmer-sweep { from { transform: translateX(-100%); } to { transform: translateX(100%); } }
+.xm-shimmer { position: relative; overflow: hidden; isolation: isolate; }
+.xm-shimmer::after {
+  content: ""; position: absolute; inset: 0; z-index: 1; pointer-events: none; transform: translateX(-100%);
+  background: linear-gradient(100deg, transparent 15%, color-mix(in srgb, var(--xm-accent) 32%, transparent) 50%, transparent 85%);
+  animation: xm-shimmer-sweep 1.1s ease-out 1 forwards;
+}
+@media (prefers-reduced-motion: reduce) { .xm-shimmer::after { display: none; } }
+
+/* 分页条：导航条下方一行 */
+.xm-pager { display: flex; align-items: center; gap: 2px; min-height: 36px; padding: 0 6px 0 4px; border-bottom: 1px solid var(--xm-border); flex-shrink: 0; }
+.xm-pager__label {
+  display: inline-flex; align-items: center; gap: 4px; height: 26px; padding: 0 6px; border-radius: var(--xm-r-sm);
+  font-size: var(--xm-fs-xs); font-weight: 600; white-space: nowrap; cursor: pointer;
+}
+.xm-pager__label:hover { background: var(--xm-hover); }
+.xm-pager__label small { font-weight: 400; color: var(--xm-text-3); font-size: var(--xm-fs-xs); }
+.xm-pager__label .xm-ico { color: var(--xm-text-3); }
+.xm-pager__info { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; font-size: var(--xm-fs-2xs); color: var(--xm-text-3); white-space: nowrap; overflow: hidden; font-variant-numeric: tabular-nums; }
+.xm-pager__info > span:last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.xm-pager__kind { flex-shrink: 0; display: inline-flex; align-items: center; gap: 2px; color: var(--xm-text-2); }
+.xm-pager__kind .xm-ico { width: 12px; height: 12px; }
+.xm-iconbtn--dot { position: relative; }
+.xm-iconbtn--dot::after { content: ""; position: absolute; top: 4px; right: 4px; width: 6px; height: 6px; border-radius: 50%; background: var(--xm-accent); box-shadow: 0 0 0 2px var(--xm-bg); }
+
+/* 跟随开关 */
+.xm-follow { display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 8px; border-radius: var(--xm-r-pill); font-size: var(--xm-fs-2xs); font-weight: 600; white-space: nowrap; cursor: pointer; flex-shrink: 0;
+  background: var(--xm-surface-3); color: var(--xm-text-2); }
+.xm-follow::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: transparent; box-shadow: inset 0 0 0 1.5px currentColor; }
+.xm-follow--on { background: var(--xm-accent-soft); color: var(--xm-accent); }
+.xm-follow--on::before { background: currentColor; box-shadow: none; }
+
+/* 新页面提示胶囊：列表顶部吸顶（与 X 的“显示新帖”同一位置） */
+.xm-newpill-wrap { position: sticky; top: 0; z-index: 3; display: flex; justify-content: center; padding: 8px 0 0; height: 0; overflow: visible; }
+.xm-newpill {
+  display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 12px 0 10px; border-radius: var(--xm-r-pill);
+  background: var(--xm-accent); color: var(--xm-on-accent); font-size: var(--xm-fs-xs); font-weight: 600; white-space: nowrap; cursor: pointer;
+  box-shadow: var(--xm-shadow-sm);
+}
+.xm-newpill .xm-ico { width: 14px; height: 14px; }
+.xm-newpill.xm-shimmer::after { background: linear-gradient(100deg, transparent 15%, rgba(255, 255, 255, 0.45) 50%, transparent 85%); }
+
+/* 标签上的“有新内容”点 */
+.xm-tab__dot { width: 6px; height: 6px; border-radius: 50%; background: var(--xm-accent); flex-shrink: 0; }
+
+/* 启动器：无计数，仅图标；新捕获时扫一次微光 */
+/* 实现：微光放在内层 .xm-launcher__sheen（裁剪成圆形），这样右上角的录制红点不被 overflow 裁掉 */
+.xm-launcher > .xm-launcher__sheen { position: absolute; inset: 0; border-radius: inherit; pointer-events: none; }
+.xm-launcher__rec { z-index: 2; }
+
+/* 页列表弹层 */
+.xm-scrim { position: absolute; inset: 0; z-index: 10; }
+.xm-menu { position: absolute; z-index: 11; min-width: 240px; max-height: 280px; overflow-y: auto; padding: 4px; border-radius: var(--xm-r-md);
+  background: var(--xm-bg); border: 1px solid var(--xm-border-strong); box-shadow: var(--xm-shadow); scrollbar-width: thin; }
+.xm-menu__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 6px 8px; border-bottom: 1px solid var(--xm-border); margin-bottom: 4px; font-size: var(--xm-fs-2xs); color: var(--xm-text-3); }
+.xm-menu__item { display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 8px; border-radius: var(--xm-r-sm); font-size: var(--xm-fs-xs); cursor: pointer; font-variant-numeric: tabular-nums; }
+.xm-menu__item:hover { background: var(--xm-hover); }
+.xm-menu__item[aria-current="true"] { background: var(--xm-surface-3); font-weight: 600; }
+.xm-menu__num { width: 44px; flex-shrink: 0; }
+.xm-menu__kind { display: inline-flex; align-items: center; gap: 3px; color: var(--xm-text-2); width: 56px; flex-shrink: 0; }
+.xm-menu__kind .xm-ico { width: 12px; height: 12px; }
+.xm-menu__time { color: var(--xm-text-3); flex: 1; }
+.xm-menu__count { color: var(--xm-text-2); }
+.xm-menu__new { font-size: 10px; font-weight: 700; color: var(--xm-accent); }
+
+/* 本页重复帖：页末折叠 */
+.xm-repeats { display: flex; align-items: center; gap: 6px; padding: 10px 12px; font-size: var(--xm-fs-xs); color: var(--xm-text-3); cursor: pointer; border-bottom: 1px solid var(--xm-border); }
+.xm-repeats:hover { background: var(--xm-hover); color: var(--xm-text-2); }
+.xm-post--repeat { opacity: .72; }
+.xm-post__repeat-chip { display: inline-flex; align-items: center; height: 16px; padding: 0 5px; border-radius: 4px; background: var(--xm-surface-3); color: var(--xm-text-3); font-size: 10px; font-weight: 600; margin-left: 4px; flex-shrink: 0; }
+.xm-pageend { padding: 14px 12px 18px; text-align: center; font-size: var(--xm-fs-2xs); color: var(--xm-text-3); }
+.xm-pageend .xm-btn { margin-top: 8px; }
+
+/* 实现补充：分页 */
+.xm-iconbtn:disabled { opacity: .35; cursor: default; pointer-events: none; }
+.xm-pager--bar { justify-content: space-between; }
+.xm-pager--bar .xm-pager__info { padding-left: 8px; }
+.xm-menu { max-height: min(280px, calc(100% - 80px)); max-width: calc(100% - 44px); }
+.xm-menu__item { width: 100%; text-align: left; }
+.xm-menu__time { min-width: 0; }
+@container xm-panel (max-width: 339px) {
+  .xm-pager__kind-text { display: none; }
+}
+/* 窄面板：跟随开关只留状态点（文字进 title） */
+@container xm-panel (max-width: 339px) { .xm-follow { font-size: 0; gap: 0; padding: 0 8px; } }

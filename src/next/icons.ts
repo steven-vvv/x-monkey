@@ -47,6 +47,10 @@ export const ICONS = {
   'note': '<path d="M5 4.5h14v11l-4.5 4.5H5z"/><path d="M14.5 20v-4.5H19M8.5 9h7M8.5 12.5h4"/>',
   'article': '<rect x="4.5" y="3.5" width="15" height="17" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/>',
   'poll': '<path d="M5 6h9M5 12h14M5 18h6"/>',
+  'arrow-up': '<path d="M12 19V5M6 11l6-6 6 6"/>',
+  'arrow-down': '<path d="M12 5v14M6 13l6 6 6-6"/>',
+  'pages': '<rect x="7" y="3.5" width="12.5" height="15" rx="2"/><path d="M4.5 7v11.5a2 2 0 0 0 2 2H15"/>',
+  'latest': '<path d="M7 6l6 6-6 6M17 5v14"/>',
   'lock': '<rect x="5" y="10.5" width="14" height="10" rx="2"/><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5"/>',
 } as const;
 

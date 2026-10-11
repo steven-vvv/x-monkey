@@ -9,14 +9,18 @@
  *  - A view owns its navigation (it reads/writes its own stack in lib/store.ts) and local state; switching tabs
  *    unmounts it, the stacks survive in the store.
  *  - Views never position themselves and never touch the panel geometry.
+ *  - A view may own a popover (CurrentPageView's page menu). It closes on Esc itself and stops the event, so this
+ *    shell's Esc handler (collapse) only runs when nothing is open.
  */
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { getConfig } from '../lib/config-service';
 import { capturedPosts } from './captured-posts';
 import { activeTab, setActiveTab, type TabId } from '../lib/store';
 import { isCapturing } from '../lib/xhr-capture-service';
 import { formatCount } from './labels';
+import { useFeedTabDot } from './composables/useFeedTabDot';
 import { usePanelGeometry } from './composables/usePanelGeometry';
+import { useShimmer } from './composables/useShimmer';
 import XmIcon from './components/XmIcon.vue';
 import type { IconName } from './icons';
 import CapturedView from './views/CapturedView.vue';
@@ -36,8 +40,17 @@ const tabs: { id: TabId; label: string; icon: IconName }[] = [
   { id: 'settings', label: '设置', icon: 'settings' },
 ];
 
-/** Same count as the 已捕获 list, so the badge and launcher agree with it. */
+/** Same count as the 已捕获 tab list. */
 const postCount = computed(() => capturedPosts.value.length);
+
+/** 当前页 tab dot: the home timeline of the feature route got a new page while another tab was active. */
+const featureDot = useFeedTabDot(expanded);
+
+/** Collapsed launcher: one shimmer sweep when posts are captured (at most one per 2s). */
+const launcherShimmer = useShimmer(2000);
+watch(postCount, (count, previous) => {
+  if (!expanded.value && count > previous) launcherShimmer.trigger();
+});
 
 function expand(): void {
   expanded.value = true;
@@ -74,7 +87,7 @@ function onPanelKeydown(event: KeyboardEvent): void {
       @keydown.space.prevent="expand"
     >
       <XmIcon name="captured" />
-      <span v-if="postCount > 0" class="xm-launcher__count xm-num">{{ formatCount(postCount) }}</span>
+      <span class="xm-launcher__sheen" :class="{ 'xm-shimmer': launcherShimmer.active.value }" aria-hidden="true"></span>
       <span v-if="isCapturing" class="xm-launcher__rec" title="正在录制 XHR 请求"></span>
     </div>
 
@@ -102,6 +115,7 @@ function onPanelKeydown(event: KeyboardEvent): void {
               <XmIcon :name="tab.icon" />
               <span class="xm-tab__label">{{ tab.label }}</span>
               <span v-if="tab.id === 'database' && postCount > 0" class="xm-tab__badge xm-num">{{ formatCount(postCount) }}</span>
+              <span v-if="tab.id === 'feature' && featureDot" class="xm-tab__dot" title="有新页面" data-role="feature-dot"></span>
             </button>
           </div>
           <button type="button" class="xm-iconbtn" title="收起 (Esc)" aria-label="收起 (Esc)" data-action="collapse" @click="collapse">
