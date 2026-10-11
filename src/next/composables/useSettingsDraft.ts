@@ -12,8 +12,8 @@ import {
 
 /**
  * Settings draft with the same semantics as the classic SettingsTab: edits go to `draft` and `dirtyFields`;
- * save / revert / resetLayout / resetAll only touch the draft until saved. `uiVersion` is never part of the
- * draft (it is applied immediately by the view), so save() never writes it.
+ * save / revert / resetLayout / resetAll only touch the draft until saved. `uiVersion` and `homeFeedView` are never part of the
+ * draft (they are applied immediately), so save() never writes them.
  */
 export function useSettingsDraft() {
   const cfg = getConfig();
@@ -58,8 +58,9 @@ export function useSettingsDraft() {
 
   function save() {
     if (hasInvalidBaseUrl.value) return;
-    const { uiVersion: _ignored, ...rest } = draft;
-    void _ignored;
+    const { uiVersion: _ui, homeFeedView: _feed, ...rest } = draft;
+    void _ui;
+    void _feed;
     const next: Partial<AppConfig> = { ...rest };
     if (remoteDbConfigurable) next.remoteDbBaseUrl = normalizedBaseUrl.value ?? '';
     updateConfig(next);
@@ -83,7 +84,7 @@ export function useSettingsDraft() {
 
   function resetAll() {
     for (const key of Object.keys(DEFAULT_CONFIG) as (keyof AppConfig)[]) {
-      if (key === 'uiVersion') continue;
+      if (key === 'uiVersion' || key === 'homeFeedView') continue;
       setDraft(key, DEFAULT_CONFIG[key]);
     }
   }

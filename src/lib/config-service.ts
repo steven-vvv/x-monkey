@@ -4,6 +4,7 @@ import type { GmValueListenerId } from '$';
 
 export type ThemeMode = 'dark' | 'light' | 'page';
 export type UiVersion = 'next' | 'classic';
+export type HomeFeedView = 'paged' | 'continuous';
 
 export interface AppConfig {
   anchorX: number;
@@ -18,6 +19,7 @@ export interface AppConfig {
   remoteDbEnabled: boolean;
   remoteDbBaseUrl: string;
   uiVersion: UiVersion;
+  homeFeedView: HomeFeedView;
 }
 
 interface PersistedAppConfig extends Partial<AppConfig> {
@@ -37,10 +39,11 @@ export const DEFAULT_CONFIG: AppConfig = {
   remoteDbEnabled: false,
   remoteDbBaseUrl: '',
   uiVersion: 'next',
+  homeFeedView: 'paged',
 };
 
 const CONFIG_KEY = 'xd_config';
-const CONFIG_STORAGE_VERSION = 6;
+const CONFIG_STORAGE_VERSION = 7;
 
 const config = reactive<AppConfig>({ ...DEFAULT_CONFIG });
 
@@ -62,6 +65,10 @@ function resolvePersistedMaskSensitiveMediaWarnings(savedValue: unknown): boolea
 
 function resolvePersistedUiVersion(savedValue: unknown): UiVersion {
   return savedValue === 'next' || savedValue === 'classic' ? savedValue : DEFAULT_CONFIG.uiVersion;
+}
+
+function resolvePersistedHomeFeedView(savedValue: unknown): HomeFeedView {
+  return savedValue === 'paged' || savedValue === 'continuous' ? savedValue : DEFAULT_CONFIG.homeFeedView;
 }
 
 function normalizePersistedConfig(saved: PersistedAppConfig): AppConfig {
@@ -86,6 +93,7 @@ function normalizePersistedConfig(saved: PersistedAppConfig): AppConfig {
   );
 
   merged.uiVersion = resolvePersistedUiVersion(saved.uiVersion);
+  merged.homeFeedView = resolvePersistedHomeFeedView(saved.homeFeedView);
 
   return merged;
 }

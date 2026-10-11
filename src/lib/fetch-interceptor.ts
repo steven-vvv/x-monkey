@@ -136,7 +136,7 @@ function resolveTimelineIdentity(
   return { variant, scope: ownerId ?? screenName, aliases };
 }
 
-function ingestTimelineResponse(endpoint: EndpointSupportRecord, request: GraphqlRequestContext, parsed: TimelineParsedResponse): void {
+function ingestTimelineResponse(endpoint: EndpointSupportRecord, request: GraphqlRequestContext, parsed: TimelineParsedResponse, capturedAt: number): void {
   const label = endpoint.operationName;
   logParseWarnings(label, parsed);
 
@@ -158,6 +158,7 @@ function ingestTimelineResponse(endpoint: EndpointSupportRecord, request: Graphq
     insertMode: endpoint.prepend ? 'prepend' : 'append',
     cursor: readStringVariable(request.variables, ['cursor']) ?? undefined,
     bottomCursor: parsed.bottomCursor,
+    capturedAt,
   });
 
   notifyListeners();
@@ -207,7 +208,7 @@ function handleGraphqlResponse(request: GraphqlRequestContext, responseBody: str
     } else if (endpoint.kind === 'user') {
       ingestUserResponse(request, parseUserResponse(json, observedAt));
     } else {
-      ingestTimelineResponse(endpoint, request, parseTimelineResponse(json, observedAt));
+      ingestTimelineResponse(endpoint, request, parseTimelineResponse(json, observedAt), timestamp);
     }
   } catch (error) {
     GM_log(`[XHR Interceptor] Failed to handle ${request.operationName} response`, error);
