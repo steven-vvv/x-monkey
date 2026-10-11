@@ -62,6 +62,15 @@ const nav = reactive<NavState>({
   toolsIndex: 0,
 });
 
+/**
+ * The route at `index`, clamped to the stack. Navigation replaces a stack and its index in separate writes, and a
+ * sync watcher (useFeedTabDot) reads the route in between: /home (index 1) -> a post (one-route stack) would see
+ * `stack[1] === undefined`, its error aborts the second write and the route stays undefined for good.
+ */
+function routeAt<T>(stack: T[], index: number): T {
+  return stack[Math.min(index, stack.length - 1)];
+}
+
 export const currentUrl = ref(unsafeWindow.location.href);
 
 const RESERVED_USER_ROOTS = new Set([
@@ -172,7 +181,7 @@ export function setActiveTab(tab: TabId): void {
 export const activeTab = computed(() => nav.activeTab);
 
 // --- Feature tab navigation ---
-export const featureRoute = computed<FeatureRoute>(() => nav.featureStack[nav.featureIndex]);
+export const featureRoute = computed<FeatureRoute>(() => routeAt(nav.featureStack, nav.featureIndex));
 
 export const featureBreadcrumbs = computed<Breadcrumb[]>(() => {
   return nav.featureStack.slice(0, nav.featureIndex + 1).map((r, i) => {
@@ -208,7 +217,7 @@ export function featureNavigateToIndex(index: number): void {
 }
 
 // --- Database tab navigation ---
-export const dbRoute = computed<DbRoute>(() => nav.dbStack[nav.dbIndex]);
+export const dbRoute = computed<DbRoute>(() => routeAt(nav.dbStack, nav.dbIndex));
 
 export const dbBreadcrumbs = computed<Breadcrumb[]>(() => {
   return nav.dbStack.slice(0, nav.dbIndex + 1).map((r, i) => {
@@ -256,7 +265,7 @@ export function dbNavigateToIndex(index: number): void {
 }
 
 // --- Tools tab navigation ---
-export const toolsRoute = computed<ToolsRoute>(() => nav.toolsStack[nav.toolsIndex]);
+export const toolsRoute = computed<ToolsRoute>(() => routeAt(nav.toolsStack, nav.toolsIndex));
 
 export const toolsBreadcrumbs = computed<Breadcrumb[]>(() => {
   return nav.toolsStack.slice(0, nav.toolsIndex + 1).map((r, i) => {
