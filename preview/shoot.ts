@@ -40,7 +40,19 @@ async function runStep(page: Page, scenario: Scenario, step: Step): Promise<void
   else if ('hover' in step) await (await target(page, scenario, step.hover, 'hover')).hover();
   else if ('fill' in step) await (await target(page, scenario, step.fill[0], 'fill')).fill(step.fill[1]);
   else if ('press' in step) await page.keyboard.press(step.press);
-  else if ('wait' in step) await page.waitForTimeout(step.wait);
+  else if ('call' in step) {
+    const [fn, ...args] = step.call;
+    try {
+      await page.evaluate(([name, params]) => {
+        const hooks = (window as unknown as { __xmPreview?: Record<string, (...a: unknown[]) => unknown> }).__xmPreview;
+        const hook = hooks?.[name as string];
+        if (typeof hook !== 'function') throw new Error(`no preview hook "${name}"`);
+        return hook(...(params as unknown[]));
+      }, [fn, args] as const);
+    } catch (error) {
+      throw new Error(`scenario "${scenario.name}": call ${fn} failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  } else if ('wait' in step) await page.waitForTimeout(step.wait);
   else if ('scroll' in step) {
     const locator = await target(page, scenario, step.scroll[0], 'scroll');
     await locator.evaluate((el, top) => { el.scrollTop = top; }, step.scroll[1]);

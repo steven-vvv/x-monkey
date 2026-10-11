@@ -8,6 +8,7 @@
  *   w,h = panel size       x,y = anchor              scale = ui scale in percent
  *   remote=off|ready|anon|expired|error   (default off)
  *   capture=1 seed XHR captures + capturing on        empty=1 do not seed the database
+ * Scenario hook: window.__xmPreview.addHomePage(list, kind, count?, repeats?) (see XmPreviewHooks).
  */
 import { watch } from 'vue';
 import { initConfig, getConfig, updateConfig, type ThemeMode, type UiVersion } from '../src/lib/config-service';
@@ -19,8 +20,17 @@ import { archiveRecords } from '../src/lib/db-service';
 import { configureRemoteDbClient } from '../src/lib/remote-db';
 import { unsafeWindow } from '$';
 import { configureMock, type RemoteScenario } from './remote-mock';
-import { seedCaptures, seedDatabase } from './seed';
+import { addHomePage, seedCaptures, seedDatabase } from './seed';
 import '../src/style.css';
+
+/** Hooks for screenshot scenarios (`{ call: [name, ...args] }` steps in preview/shoot.ts). */
+export interface XmPreviewHooks {
+  /** Captures one more home response; returns the new page id. `repeats` = ids already seen on earlier pages. */
+  addHomePage(list: 'forYou' | 'following', kind: 'newer' | 'older', count?: number, repeats?: number): number;
+}
+declare global {
+  interface Window { __xmPreview?: XmPreviewHooks }
+}
 
 const params = new URLSearchParams(window.location.search);
 const pick = <T extends string>(name: string, allowed: readonly T[], fallback: T): T => {
@@ -125,6 +135,7 @@ async function main(): Promise<void> {
   createApp(App).mount(appEl);
   initTheme(shadow);
 
+  window.__xmPreview = { addHomePage };
   (window as unknown as { __xmReady?: boolean }).__xmReady = true;
 }
 

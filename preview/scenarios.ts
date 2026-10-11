@@ -3,7 +3,7 @@
  *
  * Scenarios live in preview/scenarios/*.ts, one array per area, concatenated at the bottom of this file:
  *   classic.ts (classic UI + harness smoke tests), next-shell.ts (launcher, panel, current page),
- *   next-detail.ts, next-captured.ts, next-tools.ts, next-settings.ts (owned by the matching feature work;
+ *   next-detail.ts, next-feed.ts (home feed paging), next-captured.ts, next-tools.ts, next-settings.ts (owned by the matching feature work;
  *   adding a scenario there never needs an edit to this file).
  * To add one, append an object to the area's array:
  *
@@ -24,6 +24,10 @@
  *       { press: 'Enter' },
  *       { wait: 400 },                  // milliseconds
  *       { scroll: ['.xm-body', 600] },  // [selector, scrollTop]
+ *       { call: ['addHomePage', 'forYou', 'newer', 6, 2] },
+ *                                       // window.__xmPreview[fn](...args) in the page (hooks: preview/main.ts XmPreviewHooks):
+ *                                       // addHomePage(list 'forYou'|'following', kind 'newer'|'older', count = 6, repeats = 0)
+ *                                       // captures one more home response; add a { wait } afterwards if the UI animates
  *     ],
  *   }
  *
@@ -35,6 +39,7 @@
 import { classicScenarios } from './scenarios/classic';
 import { nextCapturedScenarios } from './scenarios/next-captured';
 import { nextDetailScenarios } from './scenarios/next-detail';
+import { nextFeedScenarios } from './scenarios/next-feed';
 import { nextSettingsScenarios } from './scenarios/next-settings';
 import { nextShellScenarios } from './scenarios/next-shell';
 import { nextToolsScenarios } from './scenarios/next-tools';
@@ -45,7 +50,8 @@ export type Step =
   | { fill: [selector: string, text: string] }
   | { press: string }
   | { wait: number }
-  | { scroll: [selector: string, top: number] };
+  | { scroll: [selector: string, top: number] }
+  | { call: [fn: string, ...args: (string | number)[]] };
 
 export interface Scenario {
   name: string;
@@ -61,6 +67,7 @@ export const scenarios: Scenario[] = [
   ...classicScenarios,
   ...nextShellScenarios,
   ...nextDetailScenarios,
+  ...nextFeedScenarios,
   ...nextCapturedScenarios,
   ...nextToolsScenarios,
   ...nextSettingsScenarios,

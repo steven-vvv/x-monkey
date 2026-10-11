@@ -473,16 +473,80 @@ export const FIXTURE_IDS = {
 } as const;
 
 export const fixtureUsers = buildUsers;
-export const fixtureMedia = buildMedia;
-export const fixturePosts = buildPosts;
+export const fixtureMedia = () => [...buildMedia(), ...FEED_FIXTURE_NUMBERS.flatMap((n) => makeFeedPost(n).media)];
+export const fixturePosts = () => [...buildPosts(), ...FEED_FIXTURE_NUMBERS.map((n) => makeFeedPost(n).post)];
 
-/** Timeline contents by list; seed.ts ingests them with the interceptor's key rules. */
+// ------------------------------------------------------- home feed pages
+
+const FEED_AUTHORS = [U.nasa, U.xinghe, U.ada, U.business, U.long, U.noAvatar, U.bot, U.parody] as const;
+const FEED_TEXTS = [
+  '新页面帖子：今天的观测窗口比预期更长，云层在午夜前散开。',
+  'A short note on the new scheduling tool: it plans around weather, not just orbits.',
+  '刚收到的消息，整理在下面。#首页信息流',
+  'Reading list for the weekend: three papers on dust grain alignment.',
+  '这一条是后来才被推荐出来的。',
+  'Small thing, big difference: calibrate before you stack.',
+] as const;
+
+/**
+ * A synthetic home-feed post for number `n` (ids must not collide: fixtures use 101-199, the runtime hook 200+).
+ * Every third post carries one photo from /__media/. The last id digit follows the remote-status convention.
+ * `ageMinutes` is how long before the fixture clock the post was created.
+ */
+export function makeFeedPost(n: number, label?: string, ageMinutes = 30 + (n % 40)): { post: Post; media: Media[] } {
+  const body = label ?? FEED_TEXTS[n % FEED_TEXTS.length];
+  const media = n % 3 === 0 ? [photo(500 + n, `feed-${n}`, 1200, 800)] : [];
+  const post: Post = {
+    id: pid(n), authorId: FEED_AUTHORS[n % FEED_AUTHORS.length], createdAt: iso(-ageMinutes), lang: /[\u4e00-\u9fff]/.test(body) ? 'zh' : 'en',
+    ...(media.length ? { mediaIds: media.map((m) => m.id) } : {}),
+    text: rich(body),
+    ...counts(100 + n * 7, 10 + n, n % 9),
+  };
+  return { post, media };
+}
+
+const FEED_FIXTURE_NUMBERS = [101, 102, 103, 104, 105, 106, 107, 108, 111, 112, 113, 114] as const;
+
+export interface HomePageFixture {
+  list: 'forYou' | 'following';
+  /** Cursor the response was requested with (absent for initial / newer pages). */
+  cursor?: string;
+  bottomCursor: string;
+  /** Minutes relative to the fixture clock (10:00Z on 2026-10-10). */
+  capturedAtOffsetMinutes: number;
+  postIds: string[];
+}
+
+/** Home lists as captured responses: ingested in order through the real `ingestTimeline`. */
+export function fixtureHomePages(): HomePageFixture[] {
+  const P = FIXTURE_IDS.posts;
+  return [
+    // For You: initial, older (continues 1), newer (with repeats from 1 and 2), older (continues 2, one repeat from 1).
+    { list: 'forYou', bottomCursor: 'fy-b1', capturedAtOffsetMinutes: -42,
+      postIds: [P.quoteCaptured, P.textEntitiesPhoto, P.paidAi, P.repostPhotos, P.quoteTombstone, P.bot, P.businessCard] },
+    { list: 'forYou', cursor: 'fy-b1', bottomCursor: 'fy-b2', capturedAtOffsetMinutes: -39,
+      postIds: [P.noAvatarShort, P.longStyled, P.sensitiveMedia, P.repostVideo, P.longChinese, P.community, P.replyTombstone] },
+    { list: 'forYou', bottomCursor: 'fy-b3', capturedAtOffsetMinutes: -14,
+      postIds: [pid(101), P.textEntitiesPhoto, pid(102), pid(103), P.longChinese, pid(104), pid(105)] },
+    { list: 'forYou', cursor: 'fy-b2', bottomCursor: 'fy-b4', capturedAtOffsetMinutes: -9,
+      postIds: [pid(106), P.businessCard, pid(107), pid(108)] },
+    // Following: initial, older, newer (one repeat).
+    { list: 'following', bottomCursor: 'fo-b1', capturedAtOffsetMinutes: -60,
+      postIds: [pid(15), pid(17), pid(18), pid(19)] },
+    { list: 'following', cursor: 'fo-b1', bottomCursor: 'fo-b2', capturedAtOffsetMinutes: -55,
+      postIds: [pid(22), pid(23), pid(13), pid(14)] },
+    { list: 'following', bottomCursor: 'fo-b3', capturedAtOffsetMinutes: -20,
+      postIds: [pid(111), pid(112), pid(15), pid(113), pid(114)] },
+  ];
+}
+
+export const FIXTURE_CLOCK = NOW;
+
+/** Timeline contents by list (home lists are `fixtureHomePages`); seed.ts ingests them with the interceptor's key rules. */
 export function fixtureTimelines() {
   const P = FIXTURE_IDS.posts;
   const ids = {
     nasaPosts: [P.textEntitiesPhoto, P.fourPhotos, P.video, P.poll, P.article, P.linkCard, P.communityNote, P.gif, P.threePhotos, P.fivePhotos, P.policies],
-    homeForYou: [P.quoteCaptured, P.textEntitiesPhoto, P.paidAi, P.repostPhotos, P.quoteTombstone, P.bot, P.businessCard, P.noAvatarShort, P.longStyled, P.sensitiveMedia, P.repostVideo, P.longChinese, P.community, P.replyTombstone],
-    homeFollowing: [pid(15), pid(17), pid(18), pid(19), pid(22), pid(23), pid(13), pid(14)],
     bookmarks: [pid(23), pid(5), pid(7), pid(21), pid(32), pid(33), pid(34), pid(22), pid(11)],
     searchLatest: [pid(35), pid(13), pid(1), pid(2), pid(16), pid(15)],
   };
