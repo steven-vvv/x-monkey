@@ -9,10 +9,16 @@ A lightweight userscript panel for continuously capturing and browsing X (Twitte
   [`../design/x-archive-model.md`](../design/x-archive-model.md)) held in an
   in-memory database. Promoted posts are skipped.
 - Shows a draggable/resizable Vue panel with four tabs:
-  - **Feature**: the timeline of the current page (profile tabs, bookmarks, likes, search results, home feeds) and post details, backed by the in-memory database.
-  - **Database**: full captured post list and entity detail views.
-  - **Tools**: XHR capture; selected requests can be exported with their page URL, request and response.
-  - **Settings**: panel size, scale, theme mode, and behavior options.
+  - **当前页** (Feature): the timeline of the current page (profile tabs, bookmarks, likes, search results, home feeds) and post details, backed by the in-memory database.
+  - **已捕获** (Database): full captured post list with a local filter, and entity detail views.
+  - **工具** (Tools): XHR capture; selected requests can be exported with their page URL, request and response.
+  - **设置** (Settings): panel size, scale, theme mode, behavior and remote database options.
+- Has two interfaces. The redesigned one (Simplified Chinese, `src/next/`) is the
+  default; its design notes and mockup are in
+  [`../design/x-monkey/`](../design/x-monkey/). The previous English one is kept as
+  the classic UI (`src/ClassicApp.vue`, `src/pages/`, `src/components/`). Switch
+  between them under 设置 → 界面版本, the classic Settings tab's "UI Version"
+  section, or the userscript menu (`Use Classic UI` / `Use New UI`).
 - Keeps captured entities for the current page session by default; optional auto-clear is available for navigation changes.
 - Uses Shadow DOM style isolation and runtime theme switching.
 
@@ -28,6 +34,24 @@ A lightweight userscript panel for continuously capturing and browsing X (Twitte
 pnpm install
 pnpm run dev
 ```
+
+### UI preview
+
+`preview/` mounts the app outside x.com with stubbed userscript APIs, synthetic
+fixtures, a mocked remote database and placeholder images. It is never part of
+the userscript build.
+
+```bash
+pnpm run preview:ui                      # dev server on http://127.0.0.1:5180/?ui=next&url=https://x.com/NASA
+pnpm run preview:shoot -- --out <dir>    # screenshots of every scenario in preview/scenarios/
+pnpm run preview:shoot -- --list         # scenario names; --only a,b runs a subset
+pnpm run typecheck:preview
+```
+
+Screenshots use the system Chromium at `/usr/bin/chromium-browser` through
+`playwright-core` (no browser download). `PREVIEW_PORT` changes the port so
+several runs can share a machine. Query parameters and the scenario format are
+documented at the top of `preview/scenarios.ts`.
 
 ## Build
 

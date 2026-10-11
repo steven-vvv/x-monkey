@@ -10,7 +10,10 @@
     "analyze:dumps": "tsx scripts/analyze-dumps.ts",
     "verify:parsers": "tsx --tsconfig scripts/tsconfig.json scripts/verify-parsers-runner.ts",
     "verify:tweet-raw-schema": "tsx scripts/verify-tweet-raw-schema-coverage.ts",
-    "export:archive-sample": "tsx scripts/export-archive-sample.ts"
+    "export:archive-sample": "tsx scripts/export-archive-sample.ts",
+    "preview:ui": "vite --config vite.preview.config.ts",
+    "preview:shoot": "tsx preview/shoot.ts",
+    "typecheck:preview": "vue-tsc -p preview/tsconfig.json --noEmit"
   },
   "dependencies": {
     "vue": "^3.5.43",
@@ -20,6 +23,7 @@
   "devDependencies": {
     "@types/node": "^26.6.4",
     "@vitejs/plugin-vue": "^6.0.9",
+    "playwright-core": "^1.64.0",
     "tsx": "^4.23.15",
     "typescript": "^6.0.3",
     "vite": "^8.3.2",
