@@ -46,6 +46,6 @@ export function describeRemoteStatus(state: RemoteDbClientState): { text: string
 
 export function remoteHint(configurable: boolean): string {
   return configurable
-    ? '“检测”立即在内存中应用当前开关与地址；“保存”才会写入存储。查询需要已注册账户，提交需要管理员。'
-    : '“检测”重新检测可用性；“保存”写入开关设置。查询需要已注册账户，提交需要管理员。';
+    ? '“检测”立即在内存中应用当前开关与地址；“保存”才会写入存储。查询需要已注册账户，提交需要贡献者或管理员。'
+    : '“检测”重新检测可用性；“保存”写入开关设置。查询需要已注册账户，提交需要贡献者或管理员。';
 }

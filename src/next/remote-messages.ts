@@ -32,7 +32,7 @@ export function submitSuccessMessage(result: RemoteDbSubmitResponse): RemoteMess
 export function toRemoteErrorMessage(error: unknown): RemoteMessage {
   if (error instanceof RemoteDbHttpError) {
     if (error.status === 401) return { tone: 'danger', title: '远端会话已过期', text: '请在设置中重新登录后再提交。', openSettings: true };
-    if (error.status === 403) return { tone: 'danger', title: '需要管理员账户才能提交' };
+    if (error.status === 403) return { tone: 'danger', title: '需要贡献者或管理员账户才能提交' };
   }
   const text = error instanceof Error && error.message.trim() ? error.message : '提交到远端数据库失败';
   return { tone: 'danger', title: '提交失败', text };

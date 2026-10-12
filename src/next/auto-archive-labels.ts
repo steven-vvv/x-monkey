@@ -24,7 +24,7 @@ const TEXTS: Record<Exclude<AutoArchivePhase, 'off' | 'backoff'>, string> = {
   paused: '已暂停',
   unavailable: '远端不可用',
   'needs-login': '需要登录',
-  forbidden: '需要管理员账户',
+  forbidden: '需要贡献者或管理员账户',
 };
 
 /** `null` when the engine is off (no entry point is shown). `now` only matters in `backoff`. */
@@ -39,7 +39,7 @@ export function describeAutoArchive(phase: AutoArchivePhase, retryAt: number | n
 
 const HTTP_ERRORS: Record<number, string> = {
   401: '会话已过期',
-  403: '需要管理员账户',
+  403: '需要贡献者或管理员账户',
   413: '请求体过大',
   503: '服务器繁忙',
 };

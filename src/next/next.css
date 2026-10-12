@@ -598,7 +598,7 @@
 @container xm-panel (max-width: 339px) { .xm-follow { font-size: 0; gap: 0; padding: 0 8px; } }
 
 /* ---------------- 持续归档（§11，F19–F22） ---------------- */
-/* 三种状态色：运行中 / 提交中 = ok，暂停 / 不可用 / 需要登录 / 等待重试 = warn，需要管理员 = danger */
+/* 三种状态色：运行中 / 提交中 = ok，暂停 / 不可用 / 需要登录 / 等待重试 = warn，需要贡献者或管理员 = danger */
 .xm-autoarc__dot--ok, .xm-launcher__state--ok { background: var(--xm-ok); }
 .xm-autoarc__dot--warn, .xm-launcher__state--warn { background: var(--xm-warn); }
 .xm-autoarc__dot--danger, .xm-launcher__state--danger { background: var(--xm-danger); }

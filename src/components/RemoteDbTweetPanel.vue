@@ -47,7 +47,7 @@ let queryToken = 0;
 function toErrorMessage(error: unknown, fallback: string): string {
   if (error instanceof RemoteDbHttpError) {
     if (error.status === 401) return 'Remote database session expired. Open Settings and sign in again.';
-    if (error.status === 403) return 'Remote database sync requires an administrator account.';
+    if (error.status === 403) return 'Remote database sync requires a contributor or administrator account.';
   }
   return error instanceof Error && error.message.trim() ? error.message : fallback;
 }
