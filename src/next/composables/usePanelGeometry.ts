@@ -59,9 +59,11 @@ export function usePanelGeometry() {
     width: `${cfg.panelWidth}px`,
     height: `${cfg.panelHeight}px`,
     zIndex: Z_INDEX,
+    '--xm-scale': String(cfg.uiScale / 100),
   }));
 
-  /** uiScale is applied as a transform on an inner layer; the layer is enlarged/shrunk so it still fills the panel. */
+  /** uiScale is applied as a transform on an inner layer; the layer is enlarged/shrunk so it still fills the panel.
+   * The panel's own corner radius and resize grip follow it through `--xm-scale`, or they would cover the scaled footer. */
   const contentScaleStyle = computed<CSSProperties>(() => {
     const scale = cfg.uiScale / 100;
     return {

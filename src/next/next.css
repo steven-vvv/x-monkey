@@ -105,7 +105,7 @@
 .xm-panel {
   position: relative; display: flex; flex-direction: column; overflow: hidden;
   background: var(--xm-bg); border: 1px solid var(--xm-border-strong);
-  border-radius: var(--xm-r-lg); box-shadow: var(--xm-shadow);
+  border-radius: calc(var(--xm-r-lg) * var(--xm-scale, 1)); box-shadow: var(--xm-shadow);
   container-type: inline-size; container-name: xm-panel;
 }
 
@@ -159,9 +159,9 @@
 .xm-footer__meta { flex: 1; min-width: 0; font-size: var(--xm-fs-xs); color: var(--xm-text-2); display: flex; align-items: center; gap: 10px; white-space: nowrap; overflow: hidden; }
 .xm-footer__meta strong { color: var(--xm-text); font-weight: 600; }
 
-.xm-resize { position: absolute; right: 0; bottom: 0; width: 14px; height: 14px; cursor: nwse-resize; }
+.xm-resize { position: absolute; right: 0; bottom: 0; width: calc(14px * var(--xm-scale, 1)); height: calc(14px * var(--xm-scale, 1)); cursor: nwse-resize; }
 .xm-resize::after {
-  content: ""; position: absolute; right: 3px; bottom: 3px; width: 7px; height: 7px;
+  content: ""; position: absolute; right: calc(3px * var(--xm-scale, 1)); bottom: calc(3px * var(--xm-scale, 1)); width: calc(7px * var(--xm-scale, 1)); height: calc(7px * var(--xm-scale, 1));
   background: radial-gradient(circle, var(--xm-text-3) 1px, transparent 1.2px) 0 0 / 3.5px 3.5px;
   clip-path: polygon(100% 0, 100% 100%, 0 100%);
   opacity: .7;

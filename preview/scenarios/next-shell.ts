@@ -67,6 +67,8 @@ export const nextShellScenarios: Scenario[] = [
   { name: 'next-tab-captured', query: { ...panel, tab: 'database', bg: 'dark', h: '300' } },
   // Scaled UI (uiScale 150) and a panel anchored past the viewport edge (clamped at render time).
   { name: 'next-timeline-scale150', query: { ...panel, url: fixtureUrls.nasa, bg: 'dark', scale: '150', w: '480', h: '520' } },
+  // 25% scale: corner radius and resize grip shrink with it so the footer's save button stays clickable.
+  { name: 'next-settings-scale25', query: { ui: 'next', tab: 'settings', bg: 'dark', scale: '25', w: '480', h: '520' }, dpr: 3, steps: [{ click: '.xm-switch >> nth=0' }, { wait: 200 }] },
   { name: 'next-clamped', query: { ...panel, url: fixtureUrls.nasa, bg: 'light', x: '1000', y: '700' } },
 
   // Sensitive media (home For You list, shown continuous so every post is on one list): masked, then revealed by hovering the cell.
