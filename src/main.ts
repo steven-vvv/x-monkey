@@ -10,6 +10,15 @@ import './style.css';
 
 installXhrInterceptor();
 
+/**
+ * Poll `location.href` as a fallback for `urlchange`. Off by default: Tampermonkey's `window.onurlchange` works on fresh
+ * loads (2026-10-21: /, /home and /i/bookmarks entries all reported `(urlchange)`), but in one long session it never
+ * fired and the panel stayed on "此页面没有可采集的列表" until the page was reloaded. The cause was not found and has
+ * not been reproduced. If it comes back (no `[URL Change]` line after a navigation and the panel is stale), set this
+ * to true: the poll catches every navigation within 500ms and logs it as `(poll)`.
+ */
+const URL_POLL_FALLBACK = false;
+
 type CssBridgeWindow = Window & {
   __XD_CSS_SINK__?: (cssText: string) => void;
   __XD_CSS_QUEUE__?: string[];
@@ -235,9 +244,11 @@ async function mount() {
     GM_log('[Menu] Layout reset to defaults');
   }, 'r');
 
-  const handleUrlChange = (url: string, clearCapture = true): void => {
+  // `source` tells the signals apart: a hit from 'poll' or 'popstate' that `urlchange` did not report first means the
+  // userscript manager missed a navigation.
+  const handleUrlChange = (url: string, source: 'urlchange' | 'popstate' | 'poll' | 'mount', clearCapture = true): void => {
     if (url === currentUrl.value) return;
-    GM_log(`[URL Change] ${url}`);
+    GM_log(`[URL Change] (${source}) ${url}`);
     currentUrl.value = url;
     syncFeatureRoute();
 
@@ -249,16 +260,16 @@ async function mount() {
 
   // The store captured the URL at document-start, which can be https://x.com/ before X redirects to /home; catch up
   // without clearing what was already captured. Not every userscript manager fires `urlchange` for SPA navigation,
-  // so also follow popstate and poll the location.
-  handleUrlChange(unsafeWindow.location.href, false);
+  // so also follow popstate, and poll the location when URL_POLL_FALLBACK is on.
+  handleUrlChange(unsafeWindow.location.href, 'mount', false);
 
   // Use sandbox window for event listening (receives events from unsafeWindow)
   if (window.onurlchange === null) {
-    window.addEventListener('urlchange', (info: { url: string }) => handleUrlChange(info.url));
+    window.addEventListener('urlchange', (info: { url: string }) => handleUrlChange(info.url, 'urlchange'));
     GM_log('[URL Change Listener] Installed successfully');
   }
-  unsafeWindow.addEventListener('popstate', () => handleUrlChange(unsafeWindow.location.href));
-  setInterval(() => handleUrlChange(unsafeWindow.location.href), 500);
+  unsafeWindow.addEventListener('popstate', () => handleUrlChange(unsafeWindow.location.href, 'popstate'));
+  if (URL_POLL_FALLBACK) setInterval(() => handleUrlChange(unsafeWindow.location.href, 'poll'), 500);
 }
 
 if (unsafeWindow.document.readyState === 'loading') {
