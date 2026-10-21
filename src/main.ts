@@ -235,21 +235,30 @@ async function mount() {
     GM_log('[Menu] Layout reset to defaults');
   }, 'r');
 
+  const handleUrlChange = (url: string, clearCapture = true): void => {
+    if (url === currentUrl.value) return;
+    GM_log(`[URL Change] ${url}`);
+    currentUrl.value = url;
+    syncFeatureRoute();
+
+    if (clearCapture && cfg.autoClearOnNavigate) {
+      GM_log('[Auto Clear] URL changed, clearing capture state');
+      clearCaptureState();
+    }
+  };
+
+  // The store captured the URL at document-start, which can be https://x.com/ before X redirects to /home; catch up
+  // without clearing what was already captured. Not every userscript manager fires `urlchange` for SPA navigation,
+  // so also follow popstate and poll the location.
+  handleUrlChange(unsafeWindow.location.href, false);
+
   // Use sandbox window for event listening (receives events from unsafeWindow)
   if (window.onurlchange === null) {
-    window.addEventListener('urlchange', (info: { url: string }) => {
-      GM_log(`[URL Change] ${info.url}`);
-      const prevUrl = currentUrl.value;
-      currentUrl.value = info.url;
-      syncFeatureRoute();
-
-      if (cfg.autoClearOnNavigate && prevUrl !== info.url) {
-        GM_log('[Auto Clear] URL changed, clearing capture state');
-        clearCaptureState();
-      }
-    });
+    window.addEventListener('urlchange', (info: { url: string }) => handleUrlChange(info.url));
     GM_log('[URL Change Listener] Installed successfully');
   }
+  unsafeWindow.addEventListener('popstate', () => handleUrlChange(unsafeWindow.location.href));
+  setInterval(() => handleUrlChange(unsafeWindow.location.href), 500);
 }
 
 if (unsafeWindow.document.readyState === 'loading') {
