@@ -15,6 +15,7 @@ const TONES: Record<Exclude<AutoArchivePhase, 'off'>, AutoArchiveTone> = {
   unavailable: 'warn',
   'needs-login': 'warn',
   backoff: 'warn',
+  standby: 'ok',
   forbidden: 'danger',
 };
 
@@ -24,6 +25,7 @@ const TEXTS: Record<Exclude<AutoArchivePhase, 'off' | 'backoff'>, string> = {
   paused: '已暂停',
   unavailable: '远端不可用',
   'needs-login': '需要登录',
+  standby: '其他标签页提交中',
   forbidden: '需要贡献者或管理员账户',
 };
 
@@ -60,4 +62,13 @@ export function formatExact(value: number): string {
 /** Failure ids: `user:123` -> 用户 123, anything else is a post id. */
 export function describeFailureId(id: string): { kind: string; id: string } {
   return id.startsWith('user:') ? { kind: '用户', id: id.slice(5) } : { kind: '帖子', id };
+}
+
+/** Persisted-queue line of the popover; `null` when there is nothing to say. */
+export function describeOutbox(outbox: { records: number; dropped: number; resumed: number }): { text: string; tone: AutoArchiveTone } | null {
+  if (outbox.dropped > 0) {
+    return { text: `离线队列已满（上限 3 MB），已丢弃最早的 ${formatExact(outbox.dropped)} 条未提交记录`, tone: 'danger' };
+  }
+  if (outbox.records > 0) return { text: `已暂存 ${formatExact(outbox.records)} 条记录，服务器确认后移除`, tone: 'ok' };
+  return null;
 }

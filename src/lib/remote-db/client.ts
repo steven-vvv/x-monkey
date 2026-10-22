@@ -14,11 +14,18 @@ import type {
 } from './types';
 
 const REMOTE_DB_REQUEST_TIMEOUT_MS = 15000;
+/**
+ * A submit runs every record of the batch in sequence on the server, so it can take far longer than a query. The
+ * timeout stays below the server's 60 s write timeout (which closes the connection) and Cloudflare's ~100 s 524. An
+ * earlier 15 s limit aborted healthy large batches halfway ("context canceled" on the server).
+ */
+const REMOTE_DB_SUBMIT_TIMEOUT_MS = 55_000;
 
 interface JsonRequestOptions {
   method: 'GET' | 'POST';
   path: string;
   body?: unknown;
+  timeoutMs?: number;
 }
 
 const remoteDbState = reactive<RemoteDbClientState>({
@@ -39,6 +46,14 @@ const remoteDbState = reactive<RemoteDbClientState>({
 });
 
 let sessionRequestToken = 0;
+
+/** The request did not finish in time; the server may still have processed it. */
+export class RemoteDbTimeoutError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'RemoteDbTimeoutError';
+  }
+}
 
 export class RemoteDbHttpError extends Error {
   status: number;
@@ -183,7 +198,7 @@ function gmRequest(url: string, options: JsonRequestOptions): Promise<string> {
       method: options.method,
       url,
       anonymous: false,
-      timeout: REMOTE_DB_REQUEST_TIMEOUT_MS,
+      timeout: options.timeoutMs ?? REMOTE_DB_REQUEST_TIMEOUT_MS,
       headers: options.body === undefined
         ? { Accept: 'application/json' }
         : {
@@ -208,7 +223,10 @@ function gmRequest(url: string, options: JsonRequestOptions): Promise<string> {
         try {
           payload = JSON.parse(response.responseText);
         } catch {
-          reject(new Error(`Remote database returned invalid JSON for ${options.path}`));
+          // A proxy error page (Cloudflare 524, 502...) keeps its status so callers can tell it from a bad payload.
+          reject(response.status < 200 || response.status >= 300
+            ? new RemoteDbHttpError(response.status, `Remote database request failed (${response.status})`)
+            : new Error(`Remote database returned invalid JSON for ${options.path}`));
           return;
         }
 
@@ -227,7 +245,7 @@ function gmRequest(url: string, options: JsonRequestOptions): Promise<string> {
         reject(new Error(`Remote database request failed for ${options.path}`));
       },
       ontimeout: () => {
-        reject(new Error(`Remote database request timed out for ${options.path}`));
+        reject(new RemoteDbTimeoutError(`Remote database request timed out for ${options.path}`));
       },
       onabort: () => {
         reject(new Error(`Remote database request aborted for ${options.path}`));
@@ -385,6 +403,7 @@ export async function submitRemoteDbArchive(submission: RemoteDbSubmission): Pro
       method: 'POST',
       path: '/api/v1/archive/submit',
       body: submission,
+      timeoutMs: REMOTE_DB_SUBMIT_TIMEOUT_MS,
     });
 
     remoteDbState.lastError = null;

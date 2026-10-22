@@ -9,7 +9,7 @@ import {
   resumeAutoArchive,
   retryAutoArchiveFailures,
 } from '../../lib/auto-archive';
-import { describeAutoArchiveError, describeFailureId, formatExact, type AutoArchiveStatus } from '../auto-archive-labels';
+import { describeAutoArchiveError, describeFailureId, describeOutbox, formatExact, type AutoArchiveStatus } from '../auto-archive-labels';
 import { formatClock } from '../labels';
 import XmIcon from './XmIcon.vue';
 import XmStatusPill from './XmStatusPill.vue';
@@ -38,6 +38,9 @@ const errorLine = computed(() => {
   if (state.lastSubmittedAt && error.at <= state.lastSubmittedAt) return null;
   return `${formatClock(error.at)} · ${describeAutoArchiveError(error.status, error.message)}`;
 });
+
+/** The persisted queue (survives reloads); a red line when the size cap discarded records. */
+const outboxLine = computed(() => describeOutbox(state.outbox));
 
 function togglePause(): void {
   if (paused.value) resumeAutoArchive();
@@ -73,6 +76,7 @@ function togglePause(): void {
     </div>
 
     <div class="xm-autoarc__meta">
+      <span v-if="outboxLine" :class="{ 'xm-autoarc__err': outboxLine.tone === 'danger' }" data-role="autoarc-outbox">{{ outboxLine.text }}</span>
       <span>{{ lastSubmit }}</span>
       <span v-if="errorLine" class="xm-autoarc__err" data-role="autoarc-error">{{ errorLine }}</span>
     </div>

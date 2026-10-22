@@ -8,3 +8,5 @@ export const GM_getValue = async <T>(_key: string, fallback: T): Promise<T> => f
 export const GM_setValue = () => {};
 export const GM_addValueChangeListener = () => 0;
 export const GM_removeValueChangeListener = () => {};
+export const GM_deleteValue = () => {};
+export const GM_listValues = async (): Promise<string[]> => [];
