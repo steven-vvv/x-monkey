@@ -1,14 +1,12 @@
 import type { RemoteDbSubmission, RemoteDbSubmitBody } from './types';
 
 /**
- * Whether submits carry `merge: "explicit"`. tweet-db-v2 decodes the archive
- * batch with `DisallowUnknownFields`, so a server without the `merge` field
- * answers 400 `invalid_batch` to the whole request. Switch this on only once
- * every server this build talks to knows the key; until then user records go
- * out with the same shape and the server keeps its sparse merge, which ignores
- * `null` and typed empty values.
+ * Whether submits carry `merge: "explicit"`. tweet-db-v2 understands it since
+ * the 2026-10-30 release (b1b183f); an older server decodes the batch with
+ * `DisallowUnknownFields` and would answer 400 `invalid_batch`, so turn this
+ * off when pointing a build at one.
  */
-export const SUBMIT_EXPLICIT_MERGE = false;
+export const SUBMIT_EXPLICIT_MERGE = true;
 
 /**
  * Builds the `POST /api/v1/archive/submit` body. `merge: "explicit"` tells the
