@@ -1,6 +1,7 @@
 import { reactive } from 'vue';
 import { GM_log, GM_xmlhttpRequest } from '$';
 import { REMOTE_DB_BUILD, normalizeRemoteDbBaseUrl } from './build';
+import { buildSubmitBody } from './submit-body';
 import type {
   RemoteDbClientConfig,
   RemoteDbClientState,
@@ -402,7 +403,7 @@ export async function submitRemoteDbArchive(submission: RemoteDbSubmission): Pro
     const response = await requestJson<RemoteDbSubmitResponse>({
       method: 'POST',
       path: '/api/v1/archive/submit',
-      body: submission,
+      body: buildSubmitBody(submission),
       timeoutMs: REMOTE_DB_SUBMIT_TIMEOUT_MS,
     });
 

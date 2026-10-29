@@ -15,9 +15,9 @@ const badge = computed(() => verifiedBadge(props.user));
 const bio = computed(() => getPlainText(props.user.bio));
 const joined = computed(() => formatJoined(props.user.createdAt));
 const stats = computed(() => toProfileStats(props.user));
-const withheld = computed(() => (props.user.withheldIn ? withheldLabel(props.user.withheldIn) : ''));
+const withheld = computed(() => (props.user.withheldIn?.length ? withheldLabel(props.user.withheldIn) : ''));
 const hasChips = computed(() => Boolean(
-  props.user.affiliation?.name || props.user.parody || props.user.protected || props.user.interstitial || props.user.withheldIn,
+  props.user.affiliation?.name || props.user.parody || props.user.protected || props.user.interstitial || props.user.withheldIn?.length,
 ));
 const website = computed(() => props.user.website);
 </script>

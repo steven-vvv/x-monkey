@@ -105,7 +105,7 @@ export function getRichTextSegments(value: RichText): TextSegment[] {
 }
 
 /** Visible text with links expanded, for previews and search-like displays. */
-export function getPlainText(value: RichText | undefined): string {
+export function getPlainText(value: RichText | null | undefined): string {
   if (!value) return '';
   return getRichTextSegments(value).map((segment) => segment.text).join('').trim();
 }

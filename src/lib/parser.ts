@@ -156,7 +156,7 @@ export function parseUserResponse(json: unknown, observedAt?: string): ParsedRes
   const path = 'data.user.result';
   const result = (json as { data?: { user?: { result?: unknown } } } | undefined)?.data?.user?.result;
   const typename = isPlainObject(result) ? result.__typename : undefined;
-  if (typename === 'User') collectUser(result, path, collector);
+  if (typename === 'User') collectUser(result, path, collector, 'profile');
   else if (typename !== 'UserUnavailable') collector.warn('user', `no user at ${path}`);
 
   return {

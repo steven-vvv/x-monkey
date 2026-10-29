@@ -8,7 +8,8 @@ import { z } from 'zod';
  *
  * 约定：
  * 1. 只有 `User`、`Post`、`Media` 三类独立实体，跨实体只用 ID 引用。
- * 2. 字段缺省表示“未知”：不写 `null`，不写空数组；合并时有值覆盖、缺省保留，数组整体替换。
+ * 2. 字段缺省表示“未知”：`Post`、`Media` 不写 `null`，不写空数组；合并时有值覆盖、缺省保留，数组整体替换。
+ *    `User` 的资料字段是三态（缺省 / `null` / 类型化空值），见 `UserSchema`。
  * 3. 文本区间为 Unicode 码点的半开区间 `[start, end)`。
  * 4. 时间为 UTC ISO-8601；X 提供的时间为秒精度，计数采集时间保留毫秒；ID 为十进制字符串。
  * 5. 只存事实：不存观察者状态、UI 开关和可由其他字段推出的数据。
@@ -101,6 +102,13 @@ export const AffiliationSchema = strictObject({
 });
 export type Affiliation = z.infer<typeof AffiliationSchema>;
 
+/**
+ * 用户资料字段的三态（仅 `User`，且仅在提交时带 `merge: "explicit"` 才有清除效果）：
+ * 缺省 = 未观察到；`null` = 观察到账号没有该项；类型化的空值（`""`、`[]`、`{ text: "" }`）= 该项存在但为空。
+ * 完整主页响应才会写 `null`；嵌入在时间线等响应里的用户只写有值或类型化空值。
+ */
+const observed = <T extends z.ZodType>(schema: T) => schema.nullable().optional();
+
 export const UserSchema = strictObject({
   id: IdSchema,
   handle: z.string(),
@@ -108,30 +116,31 @@ export const UserSchema = strictObject({
   createdAt: InstantSchema.optional(),
   avatarUrl: z.string().optional(),
   /** `Circle`、`Square`、`Hexagon`。 */
-  avatarShape: z.string().optional(),
-  bannerUrl: z.string().optional(),
-  bio: RichTextSchema.optional(),
-  location: z.string().optional(),
-  website: z.string().optional(),
-  pinnedPostIds: z.array(IdSchema).min(1).optional(),
+  avatarShape: observed(z.string()),
+  bannerUrl: observed(z.string()),
+  /** 空简介为 `{ text: "" }`，与服务端把 `bio` 当作 RichText 投影一致。 */
+  bio: observed(RichTextSchema),
+  location: observed(z.string()),
+  website: observed(z.string()),
+  pinnedPostIds: observed(z.array(IdSchema)),
   protected: z.boolean().optional(),
-  sensitive: z.boolean().optional(),
+  sensitive: observed(z.boolean()),
   /** 打开主页前的警示页类型，样本值 `sensitive_media`。 */
-  interstitial: z.string().optional(),
+  interstitial: observed(z.string()),
   /** 账号被限制显示的国家或地区代码（`withheld_in_countries`），样本值 `SA`、`AE`。 */
-  withheldIn: z.array(z.string()).min(1).optional(),
-  verified: strictObject({
+  withheldIn: observed(z.array(z.string())),
+  verified: observed(strictObject({
     blue: z.boolean().optional(),
     /** `Business`、`Government`。 */
-    type: z.string().optional(),
-  }).optional(),
-  affiliation: AffiliationSchema.optional(),
-  /** `Parody`、`Commentary`、`Fan`。 */
-  parody: z.string().optional(),
-  professional: strictObject({
-    type: z.string().optional(),
-    categories: z.array(z.string()).min(1).optional(),
-  }).optional(),
+    type: observed(z.string()),
+  })),
+  affiliation: observed(AffiliationSchema),
+  /** `Parody`、`Commentary`、`Fan`；`""` = 无标签。 */
+  parody: observed(z.string()),
+  professional: observed(strictObject({
+    type: observed(z.string()),
+    categories: observed(z.array(z.string())),
+  })),
   counts: UserCountsSchema.optional(),
   countsObservedAt: UserCountsObservedAtSchema.optional(),
 });

@@ -209,7 +209,7 @@ function assertUserScenarios(): void {
   check(current.counts?.posts === 3 && current.bannerUrl && current.pinnedPostIds?.[0] === '40', 'user counts, banner, pinned');
   check(current.interstitial === 'sensitive_media', 'profile warning type');
   const plain = collect(rawTweet('42', '1', {}, { core: { user_results: { result: rawUser('1', { profile_metadata: { profile_interstitial_type: '' } }) } } })).users.get('1')!;
-  check(plain.bannerUrl === undefined && plain.interstitial === undefined, 'empty banner and empty warning type are absent');
+  check(plain.bannerUrl === '' && plain.interstitial === '' && plain.bio?.text === '', 'embedded empty banner, warning type and bio are typed empties');
   const withheld = collect(rawTweet('43', '1', {}, { core: { user_results: { result: rawUser('1', {
     profile_bio: { description: 'Bio', withheld_in_countries: ['SA'] },
   }) } } })).users.get('1')!;
@@ -218,6 +218,7 @@ function assertUserScenarios(): void {
   // Profile requests: a normal account, and a suspended one that has no id.
   const profile = parseUserResponse({ data: { user: { result: rawUser('44') } } });
   check(profile.users.get('44')?.handle === 'user_44' && profile.meta.warnings.length === 0, 'profile response yields the user');
+  check(profile.users.get('44')?.website === null && profile.users.get('44')?.professional === null && profile.users.get('44')?.location === null, 'profile response reports missing containers as null');
   const suspended = parseUserResponse({ data: { user: { result: { __typename: 'UserUnavailable', reason: 'Suspended', message: 'User is suspended' } } } });
   check(suspended.users.size === 0 && suspended.meta.warnings.length === 0, 'unavailable profile yields nothing');
 }
@@ -517,6 +518,8 @@ function assertXhrObservationScenarios(): void {
     const fourth = third + 5000;
     complete('UserByScreenName', { data: { user: { result: sparseUser } } }, fourth);
     check(getDbUser('1')?.countsObservedAt?.followers === new Date(fourth).toISOString(), 'profile responses carry their actual completion time');
+    const afterProfile = dbVersion.value;
+    check(afterProfile === startVersion + 2 && getDbUser('1')?.website === null, 'a profile response records newly observed absences (null) once');
     const fifth = fourth + 5000;
     complete('TweetDetail', { data: { threaded_conversation_with_injections_v2: { instructions: [{ entries: [entry(sparsePost)] }] } } }, fifth);
     const fifthIso = new Date(fifth).toISOString();
@@ -529,7 +532,7 @@ function assertXhrObservationScenarios(): void {
     const submitted = JSON.parse(JSON.stringify(batch)) as typeof batch;
     check(submitted.posts.find((post) => post.id === '90')?.countsObservedAt?.likes === fifthIso, 'later submissions preserve response completion time');
     check(submitted.posts.find((post) => post.id === '90')?.countsObservedAt?.views === firstIso, 'submission keeps the earlier capture time of an inherited sparse value');
-    check(dbVersion.value === startVersion + 1, 'profile and detail metadata-only recaptures leave the local version unchanged');
+    check(dbVersion.value === afterProfile, 'detail and later metadata-only recaptures leave the local version unchanged');
   } finally {
     unsubscribe();
     Date.now = originalNow;

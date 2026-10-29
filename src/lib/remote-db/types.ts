@@ -55,6 +55,9 @@ export interface RemoteDbQueryResponse {
 /** `POST /api/v1/archive/submit` sends archive records verbatim. */
 export type RemoteDbSubmission = ArchiveBatch;
 
+/** The submit request body: the batch plus the optional merge mode. */
+export type RemoteDbSubmitBody = RemoteDbSubmission & { merge?: 'explicit' };
+
 /**
  * - `accepted`: stored or merged into the stored record
  * - `unchanged`: merging changed nothing

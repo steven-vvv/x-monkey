@@ -333,10 +333,75 @@ function normalizeAffiliation(user: Json): User['affiliation'] {
 }
 
 /**
- * Normalizes a `User` node. Since 2026-10 X omits `legacy` and serves its
- * fields from dedicated objects; `legacy` remains the fallback.
+ * Where a `User` node came from. A `profile` response (`UserByScreenName`) is
+ * authoritative for the whole account, so a field X does not carry is reported
+ * as `null` ("observed absent"). An `embedded` node (timeline author, tweet
+ * detail, user ref ...) is a partial view: a field is emitted only when its
+ * source container is in the node, with its value or typed empty value, and
+ * never as `null`, because absence there only means "not included".
  */
-export function collectUser(input: unknown, path: string, collector: ArchiveCollector): string | undefined {
+export type UserContext = 'profile' | 'embedded';
+
+/** Drops `undefined` fields only; unlike `compact` it keeps `null`, `''`, `[]` and `{}`. */
+function defined<T extends Json>(value: T): T {
+  return Object.fromEntries(Object.entries(value).filter(([, entry]) => entry !== undefined)) as T;
+}
+
+/**
+ * Text of a string field: the first non-blank candidate (dedicated object before
+ * `legacy`), `''` when X sends only blank strings, `undefined` when none is a string.
+ */
+function observedText(...candidates: unknown[]): string | undefined {
+  const texts = candidates.map(asString).filter((text): text is string => text !== undefined);
+  if (texts.length === 0) return undefined;
+  return texts.find((text) => text.trim() !== '') ?? '';
+}
+
+/** The first non-empty array among the candidates, else the first array, else `undefined`. */
+function observedList(...candidates: unknown[]): unknown[] | undefined {
+  const lists = candidates.filter(Array.isArray);
+  return lists.find((list) => list.length > 0) ?? lists[0];
+}
+
+/**
+ * Website from `entities.url.urls`: `''` for an empty list, `undefined` when
+ * the container or the expanded link is missing.
+ */
+function observedWebsite(entities: unknown): string | undefined {
+  const urls = read(entities, 'url', 'urls');
+  if (!Array.isArray(urls)) return undefined;
+  return urls.length === 0 ? '' : asText(read(urls[0], 'expanded_url'));
+}
+
+/**
+ * Normalizes a `User` node. Since 2026-10 X omits `legacy` and serves its
+ * fields from dedicated objects; `legacy` remains the fallback, and a
+ * container found in either counts as present.
+ *
+ * `context` decides what a missing container means (the "gap"). Mapping of the
+ * profile fields, source = dedicated object, then `legacy`:
+ *
+ * - bannerUrl: banner.image_url, profile_banner_url. Empty `''`.
+ * - bio: profile_bio.description (+ entities), description (+ entities). Empty `{ text: '' }`.
+ * - location: location.location, location. Empty `''`.
+ * - website: entities.url.urls[0].expanded_url. Empty `''` (`urls: []`).
+ * - pinnedPostIds: pinned_items.tweet_ids_str, pinned_tweet_ids_str. Empty `[]`.
+ *   A bare `pinned_items: {}` means "none pinned" only in a profile; embedded it is a gap.
+ * - withheldIn: profile_bio.withheld_in_countries, withheld_in_countries. Empty `[]`.
+ * - interstitial: profile_metadata.profile_interstitial_type, same name on legacy. Empty `''`.
+ * - parody: parody_commentary_fan_label. `None` or blank is the empty `''`.
+ * - avatarShape: profile_image_shape. Empty `''`.
+ * - sensitive: possibly_sensitive (boolean, no empty form).
+ * - verified: is_blue_verified -> blue, verification.verified_type -> type (empty `''`).
+ *   In a profile `type` is `null` when missing; embedded it is omitted.
+ * - affiliation: affiliates_highlighted_label.label. No empty form: an empty label is a gap.
+ * - professional: professional.professional_type -> type, professional.category[].name
+ *   -> categories (empty `[]`). Missing members of a present container follow the gap rule.
+ *
+ * Gap: `null` in a profile, omitted when embedded. `createdAt`, `avatarUrl` and
+ * `protected` are facts every account has, so they are omitted when missing in both.
+ */
+export function collectUser(input: unknown, path: string, collector: ArchiveCollector, context: UserContext = 'embedded'): string | undefined {
   const node = asObject(read(input, 'result')) ?? asObject(input);
   if (!node) return undefined;
 
@@ -349,45 +414,69 @@ export function collectUser(input: unknown, path: string, collector: ArchiveColl
     return undefined;
   }
 
-  const profileBio = asObject(node.profile_bio);
-  const bioSource = profileBio?.description !== undefined
-    ? { text: asString(profileBio.description) ?? '', entities: asObject(profileBio.entities) }
-    : { text: unescapeXText(asString(legacy?.description) ?? '').text, entities: asObject(legacy?.entities) };
-  const bioLength = codePointLength(bioSource.text);
-  const bio = asText(bioSource.text)
-    ? toRichText(bioSource.text, collectEntities({ urls: read(bioSource.entities, 'description', 'urls') }, (offset) => offset, bioLength))
-    : undefined;
+  const profile = context === 'profile';
+  const gap = profile ? null : undefined;
 
-  const parody = asText(node.parody_commentary_fan_label);
+  const profileBio = asObject(node.profile_bio);
+  const dedicatedBio = asString(profileBio?.description);
+  const legacyBio = asString(legacy?.description);
+  const bioSource = dedicatedBio !== undefined
+    ? { text: dedicatedBio, entities: asObject(profileBio?.entities) }
+    : legacyBio !== undefined
+      ? { text: unescapeXText(legacyBio).text, entities: asObject(legacy?.entities) }
+      : undefined;
+  let bio: RichText | null | undefined = gap;
+  if (bioSource) {
+    const text = bioSource.text.trim() === '' ? '' : bioSource.text;
+    bio = toRichText(text, collectEntities({ urls: read(bioSource.entities, 'description', 'urls') }, (offset) => offset, codePointLength(text)));
+  }
+
+  const websiteEntities = bioSource?.entities ?? asObject(profileBio?.entities) ?? asObject(legacy?.entities);
+
+  const pinnedList = observedList(read(node, 'pinned_items', 'tweet_ids_str'), legacy?.pinned_tweet_ids_str)
+    ?? (profile && asObject(node.pinned_items) ? [] : undefined);
+  const withheldList = observedList(read(node, 'profile_bio', 'withheld_in_countries'), legacy?.withheld_in_countries);
+
+  const parodyLabel = asString(node.parody_commentary_fan_label);
+  const parody = parodyLabel === undefined ? gap : parodyLabel.trim() === '' || parodyLabel === 'None' ? '' : parodyLabel;
+
+  const blue = asBoolean(node.is_blue_verified);
+  const verifiedType = observedText(read(node, 'verification', 'verified_type'));
+  const verified = blue === undefined && verifiedType === undefined
+    ? gap
+    : defined({ blue, type: verifiedType ?? gap });
+
+  const professional = asObject(node.professional);
+  const professionalType = observedText(professional?.professional_type);
+  const categoryItems = professional?.category;
+  const professionalCategories = Array.isArray(categoryItems)
+    ? categoryItems.map((item) => asText(read(item, 'name'))).filter((value): value is string => !!value)
+    : undefined;
+  const professionalOut = professionalType === undefined && professionalCategories === undefined
+    ? gap
+    : defined({ type: professionalType ?? gap, categories: professionalCategories ?? gap });
+
   const user: User = {
     id,
     handle,
     name,
-    ...compact({
+    ...defined({
       createdAt: toInstant(read(node, 'core', 'created_at') ?? legacy?.created_at),
       avatarUrl: asText(read(node, 'avatar', 'image_url')) ?? asText(legacy?.profile_image_url_https),
-      avatarShape: asText(node.profile_image_shape),
-      bannerUrl: asText(read(node, 'banner', 'image_url')) ?? asText(legacy?.profile_banner_url),
+      avatarShape: observedText(node.profile_image_shape) ?? gap,
+      bannerUrl: observedText(read(node, 'banner', 'image_url'), legacy?.profile_banner_url) ?? gap,
       bio,
-      location: asText(read(node, 'location', 'location')) ?? asText(legacy?.location),
-      website: asText(read(asArray(read(bioSource.entities, 'url', 'urls'))[0], 'expanded_url')),
-      pinnedPostIds: nonEmpty(asArray(read(node, 'pinned_items', 'tweet_ids_str') ?? legacy?.pinned_tweet_ids_str)
-        .map(asId).filter((value): value is string => !!value)),
+      location: observedText(read(node, 'location', 'location'), legacy?.location) ?? gap,
+      website: observedWebsite(websiteEntities) ?? gap,
+      pinnedPostIds: pinnedList ? pinnedList.map(asId).filter((value): value is string => !!value) : gap,
       protected: asBoolean(read(node, 'privacy', 'protected')) ?? asBoolean(legacy?.protected),
-      sensitive: asBoolean(node.possibly_sensitive) ?? asBoolean(legacy?.possibly_sensitive),
-      interstitial: asText(read(node, 'profile_metadata', 'profile_interstitial_type')) ?? asText(legacy?.profile_interstitial_type),
-      withheldIn: nonEmpty(asArray(read(node, 'profile_bio', 'withheld_in_countries') ?? legacy?.withheld_in_countries)
-        .map(asText).filter((value): value is string => !!value)),
-      verified: compact({
-        blue: asBoolean(node.is_blue_verified),
-        type: asText(read(node, 'verification', 'verified_type')),
-      }),
-      affiliation: normalizeAffiliation(node),
-      parody: parody && parody !== 'None' ? parody : undefined,
-      professional: compact({
-        type: asText(read(node, 'professional', 'professional_type')),
-        categories: nonEmpty(asArray(read(node, 'professional', 'category')).map((item) => asText(read(item, 'name'))).filter((value): value is string => !!value)),
-      }),
+      sensitive: asBoolean(node.possibly_sensitive) ?? asBoolean(legacy?.possibly_sensitive) ?? gap,
+      interstitial: observedText(read(node, 'profile_metadata', 'profile_interstitial_type'), legacy?.profile_interstitial_type) ?? gap,
+      withheldIn: withheldList ? withheldList.map(asText).filter((value): value is string => !!value) : gap,
+      verified,
+      affiliation: normalizeAffiliation(node) ?? gap,
+      parody,
+      professional: professionalOut,
       counts: compact({
         followers: asCount(read(node, 'relationship_counts', 'followers')) ?? asCount(legacy?.followers_count),
         following: asCount(read(node, 'relationship_counts', 'following')) ?? asCount(legacy?.friends_count),
