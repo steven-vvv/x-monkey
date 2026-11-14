@@ -35,6 +35,18 @@ export function GM_setValue(name: string, value: unknown): void {
   }
 }
 
+export function GM_deleteValue(name: string): void {
+  const old = values.get(name);
+  if (!values.delete(name)) return;
+  for (const listener of valueListeners.values()) {
+    if (listener.name === name) listener.cb(name, old, undefined, false);
+  }
+}
+
+export function GM_listValues(): Promise<string[]> {
+  return Promise.resolve([...values.keys()]);
+}
+
 export function GM_addValueChangeListener(name: string, cb: (name: string, oldValue?: unknown, newValue?: unknown, remote?: boolean) => void): GmValueListenerId {
   const id = nextId++;
   valueListeners.set(id, { name, cb });
