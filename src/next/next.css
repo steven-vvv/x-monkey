@@ -356,6 +356,8 @@
 .xm-grid--1 { grid-template-columns: 1fr; }
 .xm-grid--1 .xm-media { aspect-ratio: 16 / 9; }
 .xm-grid--3 .xm-media:first-child { grid-row: span 2; aspect-ratio: auto; }
+.xm-grid--many { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.xm-grid--many .xm-media { aspect-ratio: 1; }
 
 .xm-embed { border: 1px solid var(--xm-border); border-radius: var(--xm-r-md); padding: 10px; display: flex; flex-direction: column; gap: 5px; background: var(--xm-bg); }
 .xm-embed--click { cursor: pointer; transition: background var(--xm-t); }

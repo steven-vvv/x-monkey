@@ -190,6 +190,8 @@ function buildMedia(): Media[] {
     { id: mid(12), type: 'gif', url: '/__media/gif/rover-wave.jpg', width: 480, height: 270, video: { durationMs: 3_200, variants: [{ url: '/__media/gif/rover-wave.mp4', type: 'video/mp4', bitrate: 0 }] } },
     photo(13, 'tri-1', 1200, 900), photo(14, 'tri-2', 900, 1200), photo(15, 'tri-3', 1600, 900),
     photo(16, 'five-1', 1200, 800), photo(17, 'five-2', 800, 1200), photo(18, 'five-3', 1000, 1000), photo(19, 'five-4', 1600, 900), photo(20, 'five-5', 1200, 900),
+    // 20 photos (the per-post limit since 2026-11): ids 30..49, mixed aspect ratios.
+    ...Array.from({ length: 20 }, (_, i) => photo(30 + i, `twenty-${i + 1}`, [1200, 900, 1000][i % 3]!, [800, 1200, 1000][i % 3]!)),
     photo(21, 'nebula', 2000, 1334, '猎户座大星云的长曝光照片'), photo(22, 'nebula-wide', 2000, 800),
     photo(23, 'thread-1', 1200, 900, 'Terminal screenshot'), photo(24, 'thread-2', 1000, 600),
     photo(25, 'twin-1', 1200, 900), photo(26, 'twin-2', 1200, 900),
@@ -441,6 +443,12 @@ function buildPosts(): Post[] {
       ...counts(1_450, 180, 52),
     },
     { id: P(34), authorId: U.ada, createdAt: iso(-3_900), repostOf: P(23) },
+    // 36: twenty photos
+    {
+      id: P(36), authorId: U.nasa, createdAt: iso(-4_000), lang: 'en', mediaIds: Array.from({ length: 20 }, (_, i) => mid(30 + i)),
+      text: rich('Full album from the open house, all twenty photos.'),
+      ...counts(1_800, 120, 27),
+    },
     // 35: search results extras
     {
       id: P(35), authorId: U.xinghe, createdAt: iso(-700), lang: 'zh', mediaIds: [mid(21)],
@@ -461,7 +469,7 @@ export const FIXTURE_IDS = {
   /** Posts illustrating individual features. */
   posts: {
     textEntitiesPhoto: pid(1), fourPhotos: pid(2), video: pid(3), poll: pid(4), article: pid(5), linkCard: pid(6),
-    communityNote: pid(7), sensitiveMedia: pid(8), gif: pid(9), threePhotos: pid(10), fivePhotos: pid(11), policies: pid(12),
+    communityNote: pid(7), sensitiveMedia: pid(8), gif: pid(9), threePhotos: pid(10), fivePhotos: pid(11), twentyPhotos: pid(36), policies: pid(12),
     paidAi: pid(13), community: pid(14), quoteCaptured: pid(15), quoteTombstone: pid(16), repostPhotos: pid(17), repostVideo: pid(18),
     noAvatarShort: pid(19), bot: pid(20), businessCard: pid(21), longChinese: pid(22), longStyled: pid(23), replyTombstone: pid(24),
   },
@@ -546,7 +554,7 @@ export const FIXTURE_CLOCK = NOW;
 export function fixtureTimelines() {
   const P = FIXTURE_IDS.posts;
   const ids = {
-    nasaPosts: [P.textEntitiesPhoto, P.fourPhotos, P.video, P.poll, P.article, P.linkCard, P.communityNote, P.gif, P.threePhotos, P.fivePhotos, P.policies],
+    nasaPosts: [P.textEntitiesPhoto, P.fourPhotos, P.video, P.poll, P.article, P.linkCard, P.communityNote, P.gif, P.threePhotos, P.fivePhotos, P.twentyPhotos, P.policies],
     bookmarks: [pid(23), pid(5), pid(7), pid(21), pid(32), pid(33), pid(34), pid(22), pid(11)],
     searchLatest: [pid(35), pid(13), pid(1), pid(2), pid(16), pid(15)],
   };

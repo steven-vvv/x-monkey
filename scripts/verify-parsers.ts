@@ -175,6 +175,12 @@ function assertRelationScenarios(): void {
   const media = source.media.get('501')!;
   check(media.sourcePostId === '29' && media.sourceUserId === '5' && source.users.has('5'), 'media source user from source_user_results');
   check(source.posts.get('30')!.mediaIds!.join() === '501', 'post references media by id');
+
+  // X allows up to 20 media per post (2026-11): none are dropped, order is kept.
+  const manyIds = ['601', '602', '603', '604', '605', '606'];
+  const many = collect(rawTweet('31', '1', { extended_entities: { media: manyIds.map((id) => rawMedia(id)) } }));
+  check(many.posts.get('31')!.mediaIds!.join() === manyIds.join(), 'multi-photo post keeps every media id in order');
+  check(manyIds.every((id) => many.media.get(id)?.type === 'photo'), 'multi-photo post stores every media record');
 }
 
 function assertUserScenarios(): void {

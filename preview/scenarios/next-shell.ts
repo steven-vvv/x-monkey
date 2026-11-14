@@ -19,6 +19,10 @@ export const nextShellScenarios: Scenario[] = [
   { name: 'next-timeline-dark', query: { ...panel, url: fixtureUrls.nasa, bg: 'dark' } },
   { name: 'next-timeline-dim', query: { ...panel, url: fixtureUrls.nasa, bg: 'dim' } },
   { name: 'next-timeline-remote', query: { ...panel, url: fixtureUrls.nasa, bg: 'light', remote: 'ready' } },
+  // Rows with more than 4 media: the strip shows "+n" on the 4th cell (clicking it opens the post detail).
+  { name: 'next-timeline-media-overflow-light', query: { ...panel, url: fixtureUrls.nasa, bg: 'light' }, steps: [{ scroll: ['.xm-body', 5000] }, { wait: 150 }] },
+  { name: 'next-timeline-media-overflow-dark', query: { ...panel, url: fixtureUrls.nasa, bg: 'dark' }, steps: [{ scroll: ['.xm-body', 5000] }, { wait: 150 }] },
+  { name: 'next-timeline-media-overflow-open', query: { ...panel, url: fixtureUrls.nasa, bg: 'light' }, steps: [{ scroll: ['.xm-body', 5000] }, { wait: 150 }, { click: '.xm-media--overflow' }, { wait: 300 }] },
   { name: 'next-timeline-remote-scrolled', query: { ...panel, url: fixtureUrls.nasa, bg: 'dark', remote: 'ready' }, steps: [{ scroll: ['.xm-body', 700] }] },
 
   // Batch selection (F3).

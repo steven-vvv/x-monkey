@@ -44,6 +44,8 @@ export const nextDetailScenarios: Scenario[] = [
   // Media layouts.
   tweet('sensitive', P.sensitiveMedia, { bg: 'dark' }),
   tweet('five-photos', P.fivePhotos),
+  tweet('twenty-photos', P.twentyPhotos),
+  tweet('twenty-photos-dark', P.twentyPhotos, { bg: 'dark' }, [{ scroll: ['.xm-body', 5000] }, { wait: 150 }]),
   tweet('three-photos', P.threePhotos, { bg: 'dark' }),
   tweet('four-photos', P.fourPhotos),
   tweet('gif', P.gif),
