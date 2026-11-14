@@ -687,6 +687,17 @@ export const QuickPromoteEligibilitySchema = strictObject({
 });
 export type QuickPromoteEligibility = z.infer<typeof QuickPromoteEligibilitySchema>;
 
+/** 仅订阅者可回复时，限定回复用户的引用结果。 */
+export const SuperFollowsReplyUserResultSchema = strictObject({
+  result: strictObject({
+    __typename: z.string(),
+    core: strictObject({
+      screen_name: z.string(),
+    }),
+  }),
+});
+export type SuperFollowsReplyUserResult = z.infer<typeof SuperFollowsReplyUserResultSchema>;
+
 /** Grok 相关扩展。 */
 export const GrokAnnotationsSchema = strictObject({
   is_image_editable_by_grok: z.boolean().optional(),
@@ -1065,6 +1076,7 @@ function createTweetDataShape() {
   nested_quoted_tweet_results: OptionalTweetResultEnvelopeSchema.optional(),
   rest_id: z.string(),
   source: z.string().optional(),
+  superFollowsReplyUserResult: SuperFollowsReplyUserResultSchema.optional(),
   unmention_data: UnmentionDataSchema.optional(),
   views: ViewsSchema.optional(),
   };
@@ -1183,6 +1195,7 @@ export interface TweetData {
   nested_quoted_tweet_results?: OptionalTweetResultEnvelope;
   rest_id: string;
   source?: string;
+  superFollowsReplyUserResult?: SuperFollowsReplyUserResult;
   unmention_data?: UnmentionData;
   views?: Views;
 }
