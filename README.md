@@ -61,7 +61,28 @@ documented at the top of `preview/scenarios.ts`.
 pnpm run build
 ```
 
-Build output is generated in `dist/` as a userscript bundle.
+Build output is generated in `dist/`: the userscript `x-monkey.user.js` and its
+header-only `x-monkey.meta.js`.
+
+### Releases and updates
+
+The header embeds `@updateURL` (`…/releases/latest/download/x-monkey.meta.js`)
+and `@downloadURL` (`…/releases/latest/download/x-monkey.user.js`) on
+github.com/steven-vvv/x-monkey. Userscript managers fetch the small meta file
+and install only when its `@version` is newer than the installed one, so an
+older `latest` release or a local build ahead of it never downgrades anyone.
+
+To release:
+
+1. Bump `version` in `package.json` (plain `MAJOR.MINOR.PATCH`) in a
+   `chore(release): prepare vX.Y.Z` commit, then run
+   `pnpm run check:release-version`: it fails unless the version is strictly
+   greater than every existing `v*` tag.
+2. `pnpm run build`, tag `vX.Y.Z` and publish a non-prerelease GitHub release
+   (GitHub's `latest` skips prereleases and drafts) with **both**
+   `dist/x-monkey.user.js` and `dist/x-monkey.meta.js` attached under those exact
+   names. Releases up to v0.3.1 have no meta file; a manager that cannot fetch
+   it simply skips the check.
 
 The scripts read fixtures from `dumps/`, which is gitignored: raw response
 files named `<Operation>-<hash>.json` and XHR capture exports from the Tools

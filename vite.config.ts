@@ -11,6 +11,15 @@ interface RemoteDbBuildFileConfig {
 }
 
 const REMOTE_DB_BUILD_CONFIG_FILE = 'remote-db.config.json';
+
+/**
+ * Userscript managers poll the release `latest` metadata and install from the
+ * same release. They only update when the remote `@version` is newer than the
+ * installed one, so a lower-numbered `latest` (or a local build that is ahead
+ * of it) never causes a downgrade; `pnpm run check:release-version` keeps
+ * release versions strictly increasing.
+ */
+const RELEASE_DOWNLOAD_BASE = 'https://github.com/steven-vvv/x-monkey/releases/latest/download';
 const DEFAULT_REMOTE_DB_BUILD_CONFIG: Required<RemoteDbBuildFileConfig> = {
   enabled: true,
   configurable: true,
@@ -81,8 +90,12 @@ export default defineConfig(({ mode }) => {
           connect: remoteDbConnect,
           "run-at": 'document-start',
           sandbox: 'JavaScript',
+          updateURL: `${RELEASE_DOWNLOAD_BASE}/x-monkey.meta.js`,
+          downloadURL: `${RELEASE_DOWNLOAD_BASE}/x-monkey.user.js`,
         },
         build: {
+          fileName: 'x-monkey.user.js',
+          metaFileName: 'x-monkey.meta.js',
           externalGlobals: {
             vue: cdn.jsdelivr('Vue', 'dist/vue.global.prod.js'),
           },
