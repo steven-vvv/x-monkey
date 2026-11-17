@@ -1,4 +1,5 @@
-import type { CapturedXhr } from './fetch-interceptor';
+import type { CapturedXhr } from './captured-xhr';
+import type { IncompatDiagnosis, IncompatRecord } from './incompat-diagnosis';
 
 export const XHR_CAPTURE_EXPORT_FORMAT = 'x-monkey.xhr-capture';
 export const XHR_CAPTURE_EXPORT_VERSION = 1;
@@ -94,7 +95,7 @@ function createRawJsonWriter() {
   };
 }
 
-function buildExportRecord(capture: CapturedXhr, writer: ReturnType<typeof createRawJsonWriter>) {
+function buildExportRecord(capture: CapturedXhr, writer: ReturnType<typeof createRawJsonWriter>, diagnosis?: IncompatDiagnosis) {
   const graphql: Record<string, unknown> = {
     queryId: capture.graphqlId,
     operationName: capture.operationName,
@@ -127,18 +128,29 @@ function buildExportRecord(capture: CapturedXhr, writer: ReturnType<typeof creat
       headers: getCaptureResponseHeaders(capture),
       ...writer.body(capture.responseBody),
     },
+    // Optional and last: readers that only look at page / request / response ignore it.
+    ...(diagnosis && { diagnosis }),
   };
 }
 
-/** Serializes captures (request, response and page context) into one JSON document. */
-export function buildXhrCaptureExport(captures: readonly CapturedXhr[]): string {
+function buildExport(items: ReadonlyArray<{ capture: CapturedXhr; diagnosis?: IncompatDiagnosis }>): string {
   const writer = createRawJsonWriter();
   return writer.stringify({
     format: XHR_CAPTURE_EXPORT_FORMAT,
     version: XHR_CAPTURE_EXPORT_VERSION,
     exportedAt: new Date().toISOString(),
-    records: captures.map((capture) => buildExportRecord(capture, writer)),
+    records: items.map((item) => buildExportRecord(item.capture, writer, item.diagnosis)),
   });
+}
+
+/** Serializes captures (request, response and page context) into one JSON document. */
+export function buildXhrCaptureExport(captures: readonly CapturedXhr[]): string {
+  return buildExport(captures.map((capture) => ({ capture })));
+}
+
+/** Same document for auto-captured incompatible responses; each record also carries why it was flagged (`diagnosis`). */
+export function buildIncompatCaptureExport(records: readonly IncompatRecord[]): string {
+  return buildExport(records);
 }
 
 function formatFileTimestamp(date: Date): string {
@@ -153,4 +165,8 @@ export function getXhrCaptureExportFilename(captures: readonly CapturedXhr[]): s
     return `xhr-capture-${capture.operationName}-${hashHex(capture.responseBody)}.json`;
   }
   return `xhr-capture-${formatFileTimestamp(new Date())}-${captures.length}.json`;
+}
+
+export function getIncompatExportFilename(count: number): string {
+  return `xhr-incompat-${formatFileTimestamp(new Date())}-${count}.json`;
 }

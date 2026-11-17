@@ -34,7 +34,9 @@ export type DbRoute =
 export type ToolsRoute =
   | { page: 'list' }
   | { page: 'xhr-capture' }
-  | { page: 'xhr-detail'; captureId: string };
+  | { page: 'xhr-detail'; captureId: string }
+  | { page: 'incompat' }
+  | { page: 'incompat-detail'; captureId: string };
 
 export interface Breadcrumb {
   label: string;
@@ -271,7 +273,8 @@ export const toolsBreadcrumbs = computed<Breadcrumb[]>(() => {
   return nav.toolsStack.slice(0, nav.toolsIndex + 1).map((r, i) => {
     let label = 'Tools';
     if (r.page === 'xhr-capture') label = 'XHR Capture';
-    else if (r.page === 'xhr-detail') label = 'Detail';
+    else if (r.page === 'incompat') label = 'Incompatible';
+    else if (r.page === 'xhr-detail' || r.page === 'incompat-detail') label = 'Detail';
     return { label, index: i, active: i === nav.toolsIndex };
   });
 });
@@ -280,7 +283,7 @@ export const toolsBreadcrumbs = computed<Breadcrumb[]>(() => {
 export const toolsStackView = computed<readonly ToolsRoute[]>(() => nav.toolsStack.slice(0, nav.toolsIndex + 1));
 
 export function toolsNavigateTo(route: ToolsRoute): void {
-  if (route.page === 'xhr-capture') {
+  if (route.page === 'xhr-capture' || route.page === 'incompat') {
     if (nav.toolsIndex === 0) {
       nav.toolsStack.splice(1);
       nav.toolsStack.push(route);
@@ -290,7 +293,7 @@ export function toolsNavigateTo(route: ToolsRoute): void {
       nav.toolsStack.splice(2);
       nav.toolsIndex = 1;
     }
-  } else if (route.page === 'xhr-detail') {
+  } else if (route.page === 'xhr-detail' || route.page === 'incompat-detail') {
     if (nav.toolsIndex >= 2) {
       nav.toolsStack[nav.toolsIndex] = route;
     } else {

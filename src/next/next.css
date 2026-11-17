@@ -437,6 +437,7 @@
 /* 工具栏（在列表上方） */
 .xm-toolbar { display: flex; align-items: center; gap: 6px; padding: 8px; border-bottom: 1px solid var(--xm-border); flex-shrink: 0; }
 .xm-toolbar__spacer { flex: 1; }
+.xm-toolbar__switch { display: inline-flex; align-items: center; gap: 6px; font-size: var(--xm-fs-xs); color: var(--xm-text-2); cursor: pointer; white-space: nowrap; }
 .xm-toolbar__meta { font-size: var(--xm-fs-xs); color: var(--xm-text-3); white-space: nowrap; font-variant-numeric: tabular-nums; }
 
 /* XHR 列表 */

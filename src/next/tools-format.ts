@@ -1,5 +1,6 @@
 /** Formatting and copy for the "工具" views (XHR capture list and detail). Pure functions, no store access. */
 import type { CapturedXhr } from '../lib/xhr-capture-service';
+import type { IncompatReason } from '../lib/incompat-diagnosis';
 
 /** Characters of a body shown in the detail view; the full content is copied / downloaded. */
 export const PREVIEW_LIMIT = 4000;
@@ -89,4 +90,28 @@ export const TOOLS_COPY = {
 
 export function requestCountLabel(count: number): string {
   return `${count} 个请求`;
+}
+
+export const INCOMPAT_COPY = {
+  entryTitle: '不兼容请求',
+  entryDesc: '自动保存解析失败或丢弃了记录的请求，仅存于内存',
+  switchLabel: '自动捕获',
+  emptyOff: '开启后，解析不了或只解析了一部分的请求会自动保存在这里',
+  emptyOn: '暂未遇到不兼容的请求',
+  memoryNote: '仅存于内存，刷新页面后清空',
+} as const;
+
+export const INCOMPAT_REASON_LABEL: Record<IncompatReason, string> = {
+  'handler-error': '解析出错',
+  'no-instructions': '无法识别结构',
+  'parse-warnings': '部分记录被丢弃',
+  'invalid-json': '响应不是 JSON',
+};
+
+export function incompatCountLabel(count: number): string {
+  return `${count} 条`;
+}
+
+export function droppedLabel(count: number): string {
+  return `已丢弃较早的 ${count} 条`;
 }

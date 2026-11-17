@@ -9,6 +9,7 @@
  *   remote=off|ready|anon|expired|error|busy|forbidden   (default off)
  *   autoArchive=1 turns 持续归档 on before mount, skipForYou=1 also skips 「为你推荐」
  *   capture=1 seed XHR captures + capturing on        empty=1 do not seed the database
+ *   incompat=on|off|dropped|empty-on seed the 不兼容请求 records / switch state (push: incompat, incompat-detail:incompat-N)
  * Scenario hook: window.__xmPreview.addHomePage(list, kind, count?, repeats?) (see XmPreviewHooks).
  */
 import { watch } from 'vue';
@@ -21,7 +22,7 @@ import { archiveRecords } from '../src/lib/db-service';
 import { configureRemoteDbClient } from '../src/lib/remote-db';
 import { unsafeWindow } from '$';
 import { configureMock, type RemoteScenario } from './remote-mock';
-import { addHomePage, seedCaptures, seedDatabase } from './seed';
+import { addHomePage, seedCaptures, seedDatabase, seedIncompat } from './seed';
 import '../src/style.css';
 
 /** Hooks for screenshot scenarios (`{ call: [name, ...args] }` steps in preview/shoot.ts). */
@@ -79,6 +80,8 @@ function applyPush(tab: TabId, steps: string[]): void {
     else if (tab === 'database' && kind === 'user') dbNavigateTo({ page: 'user', userId: arg });
     else if (tab === 'tools' && kind === 'xhr-capture') toolsNavigateTo({ page: 'xhr-capture' });
     else if (tab === 'tools' && kind === 'xhr-detail') toolsNavigateTo({ page: 'xhr-detail', captureId: arg });
+    else if (tab === 'tools' && kind === 'incompat') toolsNavigateTo({ page: 'incompat' });
+    else if (tab === 'tools' && kind === 'incompat-detail') toolsNavigateTo({ page: 'incompat-detail', captureId: arg });
     else console.warn(`[preview] push step "${step}" does not apply to tab "${tab}"`);
   }
 }
@@ -115,6 +118,8 @@ async function main(): Promise<void> {
 
   if (params.get('empty') !== '1') seedDatabase();
   if (params.get('capture') === '1') seedCaptures();
+  const incompat = params.get('incompat');
+  if (incompat) seedIncompat(incompat);
 
   const host = document.createElement('div');
   host.id = 'x-downloader-root';

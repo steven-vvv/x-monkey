@@ -1,11 +1,11 @@
 <script setup lang="ts">
-// One captured XHR request in the tools list. `selecting` shows a leading checkbox; emits select on click / Enter / Space.
+// One captured XHR request in the tools list. `tag`: optional warn chip after the operation name. `selecting` shows a leading checkbox; emits select on click / Enter / Space.
 import { computed } from 'vue';
 import type { CapturedXhr } from '../../lib/xhr-capture-service';
 import { durationMs, formatClock, formatPagePath, formatSize, statusTone } from '../tools-format';
 import XmCheck from './XmCheck.vue';
 
-const props = defineProps<{ capture: CapturedXhr; selecting?: boolean; selected?: boolean }>();
+const props = defineProps<{ capture: CapturedXhr; selecting?: boolean; selected?: boolean; tag?: string }>();
 const emit = defineEmits<{ (e: 'select'): void }>();
 
 const time = computed(() => formatClock(props.capture.timestamp));
@@ -36,6 +36,7 @@ function onKey(event: KeyboardEvent): void {
       <div class="xm-req__head">
         <span class="xm-code" :class="`xm-code--${statusTone(capture.status)}`">{{ capture.status }}</span>
         <span class="xm-req__op" :title="capture.operationName">{{ capture.operationName }}</span>
+        <span v-if="tag" class="xm-chip xm-chip--warn" data-role="reason">{{ tag }}</span>
         <span class="xm-req__time">{{ time }}</span>
       </div>
       <div class="xm-req__meta" :title="capture.pageUrl">

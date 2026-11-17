@@ -5,6 +5,8 @@ import type { Scenario } from '../scenarios';
 const panel = { ui: 'next', tab: 'tools', w: '360', h: '440' } as const;
 const list = { ...panel, capture: '1', push: 'xhr-capture' } as const;
 const detail = (id: string) => ({ ...panel, capture: '1', push: `xhr-capture,xhr-detail:${id}` });
+const incompat = { ...panel, push: 'incompat' } as const;
+const incompatDetail = (id: string) => ({ ...panel, push: `incompat,incompat-detail:${id}` });
 const C = FIXTURE_IDS.captures;
 const req = (n: number) => `.xm-body > .xm-req:nth-child(${n})`;
 const fold = (title: string) => `[data-fold="${title}"] .xm-fold__head`;
@@ -80,4 +82,20 @@ export const nextToolsScenarios: Scenario[] = [
   },
   { name: 'next-tools-detail-narrow', query: { ...detail(C.ok), bg: 'dark', w: '280', h: '440' } },
   { name: 'next-tools-detail-missing', query: { ...panel, push: 'xhr-capture,xhr-detail:nope', bg: 'light', h: '300' } },
+
+  // 不兼容请求: tools root with the new entry (on / off with records), list (on, off, dropped notice, empty), detail.
+  { name: 'next-tools-root-incompat-on', query: { ...panel, incompat: 'on', bg: 'dark', h: '300' } },
+  { name: 'next-tools-root-incompat-off', query: { ...panel, incompat: 'off', bg: 'light', h: '300' } },
+  { name: 'next-tools-incompat-list', query: { ...incompat, incompat: 'on', bg: 'dark' } },
+  { name: 'next-tools-incompat-list-dropped-light', query: { ...incompat, incompat: 'dropped', bg: 'light' } },
+  { name: 'next-tools-incompat-list-off-empty', query: { ...panel, push: 'incompat', bg: 'light', h: '300' } },
+  { name: 'next-tools-incompat-list-on-empty', query: { ...incompat, incompat: 'empty-on', bg: 'dark', h: '300' } },
+  {
+    name: 'next-tools-incompat-list-switched-on',
+    query: { ...panel, push: 'incompat', bg: 'light', h: '300' },
+    steps: [{ click: '[data-role="incompat-switch"]' }],
+  },
+  { name: 'next-tools-incompat-list-narrow', query: { ...incompat, incompat: 'dropped', bg: 'dark', w: '280', h: '380' } },
+  { name: 'next-tools-incompat-detail', query: { ...incompatDetail('incompat-1'), incompat: 'on', bg: 'light', h: '560' } },
+  { name: 'next-tools-incompat-detail-error-dark', query: { ...incompatDetail('incompat-4'), incompat: 'off', bg: 'dark', h: '480' } },
 ];

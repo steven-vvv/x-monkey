@@ -8,6 +8,7 @@
  */
 import type { Entity, Id, Media, Post, RichText, User } from '../src/archive/model';
 import type { CapturedXhr } from '../src/lib/xhr-capture-service';
+import type { IncompatRecord } from '../src/lib/incompat-diagnosis';
 
 // ---------------------------------------------------------------- helpers
 
@@ -653,6 +654,38 @@ export function fixtureCaptures(): CapturedXhr[] {
       responseSize: new TextEncoder().encode(responseBody).length,
     };
   });
+}
+
+/** Auto-captured incompatible requests: one of each reason, newest last. Ids are `incompat-N`. */
+export function fixtureIncompat(): IncompatRecord[] {
+  const base = fixtureCaptures();
+  const make = (index: number, n: number, responseBody: string, diagnosis: IncompatRecord['diagnosis']): IncompatRecord => ({
+    capture: { ...base[index], id: `incompat-${n}`, responseBody, responseSize: new TextEncoder().encode(responseBody).length },
+    diagnosis,
+  });
+  const homePath = 'data.home.home_timeline_urt.instructions';
+  return [
+    make(0, 1, JSON.stringify({ data: { home: { home_timeline_urt: { instructions: [{ type: 'TimelineAddEntries', entries: [] }] } } } }, null, 1), {
+      reason: 'parse-warnings', operationKind: 'timeline', instructionPath: homePath, graphqlErrorCount: 0,
+      messages: [
+        `${homePath}[0].entries[3]: tweet without rest_id / legacy`,
+        `${homePath}[0].entries[7]: invalid card (unknown binding_values key "choice1_label")`,
+        `${homePath}[0].entries[9]: dropped invalid media record: expected string, received undefined at "id"`,
+      ],
+    }),
+    make(4, 2, JSON.stringify({ errors: [{ code: 366, message: 'Tweet is unavailable' }], data: {} }, null, 1), {
+      reason: 'no-instructions', operationKind: 'tweet-detail', instructionPath: null, graphqlErrorCount: 1,
+      messages: ['tweet detail: no instructions found at known paths'],
+    }),
+    make(1, 3, '<!DOCTYPE html><html><body>Service temporarily unavailable</body></html>', {
+      reason: 'invalid-json', operationKind: 'user', instructionPath: null, graphqlErrorCount: 0,
+      messages: ['Unexpected token \'<\', "<!DOCTYPE "... is not valid JSON'],
+    }),
+    make(2, 4, longJson(), {
+      reason: 'handler-error', operationKind: 'timeline', instructionPath: null, graphqlErrorCount: 0,
+      messages: ["Cannot read properties of undefined (reading 'legacy')"],
+    }),
+  ];
 }
 
 export const fixtureUrls = {

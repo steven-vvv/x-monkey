@@ -5,8 +5,9 @@ import { runDbBatch, upsertMedia, upsertPost, upsertUser } from '../src/lib/db-s
 import { getFeatureTimelineNamespace } from '../src/lib/feature-timeline';
 import { buildTimelineRecordKey, getTimelinePagesByAlias, getTimelinePostIdsByAlias, ingestTimeline } from '../src/lib/timeline-store';
 import { captures, isCapturing } from '../src/lib/xhr-capture-service';
+import { incompatCaptures, incompatDroppedCount, setIncompatCapture } from '../src/lib/incompat-capture-service';
 import {
-  FIXTURE_CLOCK, FIXTURE_IDS, fixtureCaptures, fixtureHomePages, fixtureMedia, fixturePosts, fixtureTimelines, fixtureUsers, makeFeedPost,
+  FIXTURE_CLOCK, FIXTURE_IDS, fixtureCaptures, fixtureIncompat, fixtureHomePages, fixtureMedia, fixturePosts, fixtureTimelines, fixtureUsers, makeFeedPost,
   type HomePageFixture,
 } from './fixtures';
 
@@ -120,4 +121,11 @@ export function seedDatabase(): void {
 export function seedCaptures(): void {
   captures.value = fixtureCaptures();
   isCapturing.value = true;
+}
+
+/** `mode`: `on` / `off` = switch state with the fixture records, `dropped` = on, plus a "dropped older records" count, `empty-on` = on, nothing kept. */
+export function seedIncompat(mode: string): void {
+  if (mode !== 'empty-on') incompatCaptures.value = fixtureIncompat();
+  if (mode === 'dropped') incompatDroppedCount.value = 37;
+  setIncompatCapture(mode !== 'off');
 }

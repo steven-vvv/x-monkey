@@ -5,6 +5,8 @@ import { getDbUser, runDbBatch, upsertMedia, upsertPost, upsertUser } from './db
 import type { ParsedResponse } from './types';
 import { buildTimelineRecordKey, ingestTimeline } from './timeline-store';
 import { noteArchiveCapture } from './auto-archive';
+import type { CapturedXhr } from './captured-xhr';
+import { diagnoseResponse, type IncompatDiagnosis, type IncompatRecord } from './incompat-diagnosis';
 
 // --- Simple notification listeners (for badge count etc.) ---
 type CaptureListener = () => void;
@@ -21,27 +23,7 @@ function notifyListeners() {
 }
 
 // --- XHR capture broadcast (fan-out to multiple subscribers) ---
-export interface CapturedXhr {
-  id: string;
-  /** Time the response finished loading. */
-  timestamp: number;
-  /** Time `send()` was called. */
-  startedAt: number;
-  /** Page URL at the time `send()` was called. */
-  pageUrl: string;
-  method: string;
-  url: string;
-  graphqlId: string;
-  operationName: string;
-  /** Headers in `setRequestHeader()` call order, including sensitive values. */
-  requestHeaders: Array<[string, string]>;
-  requestBody: string | null;
-  status: number;
-  statusText: string;
-  responseHeaders: string;
-  responseBody: string;
-  responseSize: number;
-}
+export type { CapturedXhr };
 
 type XhrCaptureListener = (data: CapturedXhr) => void;
 const xhrCaptureListeners: Set<XhrCaptureListener> = new Set();
@@ -53,6 +35,15 @@ export function onXhrCapture(fn: XhrCaptureListener): () => void {
 
 function broadcastXhrCapture(data: CapturedXhr) {
   xhrCaptureListeners.forEach((fn) => fn(data));
+}
+
+// --- Incompatible responses: supported operations the parser could not (fully) handle ---
+type IncompatListener = (record: IncompatRecord) => void;
+const incompatListeners: Set<IncompatListener> = new Set();
+
+export function onIncompatibleResponse(fn: IncompatListener): () => void {
+  incompatListeners.add(fn);
+  return () => incompatListeners.delete(fn);
 }
 
 // --- URL patterns ---
@@ -193,29 +184,37 @@ function ingestUserResponse(request: GraphqlRequestContext, parsed: ParsedRespon
   notifyListeners();
 }
 
-function handleGraphqlResponse(request: GraphqlRequestContext, responseBody: string, timestamp: number): void {
+/** Parses and ingests a response of a supported operation; returns why the parser could not fully handle it, if so. */
+function handleGraphqlResponse(request: GraphqlRequestContext, responseBody: string, timestamp: number): IncompatDiagnosis | null {
   const endpoint = getSupportedEndpoint(request.operationName);
-  if (!endpoint) return;
+  if (!endpoint) return null;
 
   let json: unknown;
   try {
     json = JSON.parse(responseBody);
   } catch (error) {
     GM_log(`[XHR Interceptor] Failed to parse ${request.operationName} response JSON`, error);
-    return;
+    return diagnoseResponse(endpoint.kind, { stage: 'json', error });
   }
 
   try {
     const observedAt = new Date(timestamp).toISOString();
+    let parsed: ParsedResponse;
     if (endpoint.kind === 'tweet-detail') {
-      ingestTweetDetailResponse(request, parseTweetDetailResponse(json, observedAt));
+      parsed = parseTweetDetailResponse(json, observedAt);
+      ingestTweetDetailResponse(request, parsed);
     } else if (endpoint.kind === 'user') {
-      ingestUserResponse(request, parseUserResponse(json, observedAt));
+      parsed = parseUserResponse(json, observedAt);
+      ingestUserResponse(request, parsed);
     } else {
-      ingestTimelineResponse(endpoint, request, parseTimelineResponse(json, observedAt), timestamp);
+      const timeline = parseTimelineResponse(json, observedAt);
+      parsed = timeline;
+      ingestTimelineResponse(endpoint, request, timeline, timestamp);
     }
+    return diagnoseResponse(endpoint.kind, { stage: 'parsed', json, meta: parsed.meta });
   } catch (error) {
     GM_log(`[XHR Interceptor] Failed to handle ${request.operationName} response`, error);
+    return diagnoseResponse(endpoint.kind, { stage: 'handler', json, error });
   }
 }
 
@@ -256,8 +255,7 @@ export function installXhrInterceptor(): void {
     const responseBody = this.responseText;
     const responseHeaders = this.getAllResponseHeaders();
 
-    // Broadcast to all XHR capture listeners
-    broadcastXhrCapture({
+    const capture: CapturedXhr = {
       id: String(++captureIdCounter),
       timestamp,
       startedAt: tracked.startedAt,
@@ -273,10 +271,12 @@ export function installXhrInterceptor(): void {
       responseHeaders,
       responseBody,
       responseSize: responseBody.length,
-    });
+    };
+    broadcastXhrCapture(capture);
 
     if (this.status === 200) {
-      handleGraphqlResponse(request, responseBody, timestamp);
+      const diagnosis = handleGraphqlResponse(request, responseBody, timestamp);
+      if (diagnosis) incompatListeners.forEach((fn) => fn({ capture, diagnosis }));
     }
   }
 

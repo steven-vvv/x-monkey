@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// "工具": XHR request capture (record, list, select / export, detail), driven by the tools route stack (store.ts).
+// "工具": XHR request capture (record, list, select / export, detail) and the auto-captured incompatible requests, driven by the tools route stack (store.ts).
 // Same data logic as the classic ToolsTab; the folds, copy buttons and toolbar layout are new.
 import { computed, ref, watch } from 'vue';
 import { toolsNavigateTo, toolsNavigateToIndex, toolsRoute, toolsStackView, type ToolsRoute } from '../../lib/store';
@@ -8,11 +8,17 @@ import {
   selectedCaptureIds, setCaptureSelectionMode, toggleCapture, toggleCaptureSelection, type CapturedXhr,
 } from '../../lib/xhr-capture-service';
 import {
-  buildXhrCaptureExport, getCaptureRequestHeaders, getXhrCaptureExportFilename, readCaptureQueryParam,
-} from '../../lib/xhr-capture-export';
-import { GM_download } from '$';
+  incompatCaptures, incompatDroppedCount, isIncompatCaptureOn, clearIncompatCaptures, getIncompatCaptureById,
+  setIncompatCapture, type IncompatRecord,
+} from '../../lib/incompat-capture-service';
 import {
-  TOOLS_COPY, durationMs, foldHint, formatClock, formatSize, itemCountLabel, requestCountLabel, statusTone,
+  buildIncompatCaptureExport, buildXhrCaptureExport, getCaptureRequestHeaders, getIncompatExportFilename,
+  getXhrCaptureExportFilename, readCaptureQueryParam,
+} from '../../lib/xhr-capture-export';
+import { downloadJson } from '../tools-download';
+import {
+  INCOMPAT_COPY, INCOMPAT_REASON_LABEL, TOOLS_COPY, droppedLabel, durationMs, foldHint, formatClock, formatSize, incompatCountLabel,
+  itemCountLabel, requestCountLabel, statusTone,
 } from '../tools-format';
 import XmBanner from '../components/XmBanner.vue';
 import XmEmpty from '../components/XmEmpty.vue';
@@ -20,6 +26,7 @@ import XmFold from '../components/XmFold.vue';
 import XmIcon from '../components/XmIcon.vue';
 import XmNavBar, { type XmCrumb } from '../components/XmNavBar.vue';
 import XmReqRow from '../components/XmReqRow.vue';
+import XmSwitch from '../components/XmSwitch.vue';
 
 const route = toolsRoute;
 
@@ -59,29 +66,39 @@ function toggleSelectAll(): void {
 function downloadCaptures(items: CapturedXhr[]): void {
   if (items.length === 0) return;
   downloadError.value = null;
-  const blob = new Blob([buildXhrCaptureExport(items)], { type: 'application/json' });
-  const blobUrl = URL.createObjectURL(blob);
-  const release = () => URL.revokeObjectURL(blobUrl);
-  GM_download({
-    url: blobUrl,
-    name: getXhrCaptureExportFilename(items),
-    onload: release,
-    onerror: (event) => {
-      release();
-      downloadError.value = `${event.error}${event.details ? `（${event.details}）` : ''}`;
-    },
-    ontimeout: () => {
-      release();
-      downloadError.value = '浏览器没有在限定时间内响应。';
-    },
-  });
+  downloadJson(buildXhrCaptureExport(items), getXhrCaptureExportFilename(items), (message) => { downloadError.value = message; });
+}
+
+function downloadIncompat(records: IncompatRecord[]): void {
+  if (records.length === 0) return;
+  downloadError.value = null;
+  downloadJson(buildIncompatCaptureExport(records), getIncompatExportFilename(records.length), (message) => { downloadError.value = message; });
+}
+
+// ---- incompatible requests ----
+
+const incompatList = computed(() => incompatCaptures.value.slice().reverse());
+const incompatTotal = computed(() => incompatCaptures.value.length);
+
+function openIncompat(): void {
+  toolsNavigateTo({ page: 'incompat' });
+}
+
+function onClearIncompat(): void {
+  clearIncompatCaptures();
+  downloadError.value = null;
 }
 
 // ---- detail ----
 
-const detail = computed<CapturedXhr | undefined>(() => (
-  route.value.page === 'xhr-detail' ? getCaptureById(route.value.captureId) : undefined
+const incompatDetail = computed<IncompatRecord | undefined>(() => (
+  route.value.page === 'incompat-detail' ? getIncompatCaptureById(route.value.captureId) : undefined
 ));
+const isDetailPage = computed(() => route.value.page === 'xhr-detail' || route.value.page === 'incompat-detail');
+const detail = computed<CapturedXhr | undefined>(() => {
+  if (route.value.page === 'xhr-detail') return getCaptureById(route.value.captureId);
+  return incompatDetail.value?.capture;
+});
 
 interface Section {
   title: string;
@@ -106,9 +123,18 @@ const sections = computed<Section[]>(() => {
   const fieldToggles = queryParam(cap, 'fieldToggles');
   const requestHeaders = Object.entries(getCaptureRequestHeaders(cap)).map(([name, value]) => `${name}: ${value}`);
   const responseHeaders = cap.responseHeaders.trim();
-  const list: Section[] = [
+  const list: Section[] = [];
+  const diagnosis = incompatDetail.value?.diagnosis;
+  if (diagnosis) {
+    const lines = [`原因：${INCOMPAT_REASON_LABEL[diagnosis.reason]}`, `操作类型：${diagnosis.operationKind}`];
+    lines.push(`解析路径：${diagnosis.instructionPath ?? '（未找到）'}`);
+    if (diagnosis.graphqlErrorCount > 0) lines.push(`GraphQL errors：${diagnosis.graphqlErrorCount} 条（见响应体）`);
+    if (diagnosis.messages.length) lines.push('', ...diagnosis.messages.map((message) => `- ${message}`));
+    list.push({ title: '诊断', text: lines.join('\n'), hint: INCOMPAT_REASON_LABEL[diagnosis.reason], open: true });
+  }
+  list.push(
     { title: '请求 URL', text: cap.url, hint: formatSize(cap.url.length), open: !variables },
-  ];
+  );
   if (variables) list.push({ title: 'Variables', text: variables.text, hint: foldHint(variables.text, variables.parsed), open: true, json: true });
   if (features) list.push({ title: 'Features', text: features.text, hint: foldHint(features.text, features.parsed), json: true });
   if (fieldToggles) list.push({ title: 'Field Toggles', text: fieldToggles.text, hint: foldHint(fieldToggles.text, fieldToggles.parsed), json: true });
@@ -129,7 +155,9 @@ function routeLabel(value: ToolsRoute): string {
   switch (value.page) {
     case 'list': return '工具';
     case 'xhr-capture': return TOOLS_COPY.entryTitle;
-    case 'xhr-detail': return '详情';
+    case 'incompat': return INCOMPAT_COPY.entryTitle;
+    case 'xhr-detail':
+    case 'incompat-detail': return '详情';
     default: return '';
   }
 }
@@ -166,6 +194,28 @@ watch(() => route.value.page, () => { downloadError.value = null; });
         <div class="xm-entry__side">
           <template v-if="isCapturing"><span class="xm-rec-dot"></span><span class="xm-num">录制中 · {{ total }}</span></template>
           <template v-else><span class="xm-num">{{ requestCountLabel(total) }}</span><XmIcon name="chev-r" class="xm-ico--sm" /></template>
+        </div>
+      </div>
+      <div
+        class="xm-entry"
+        role="button"
+        tabindex="0"
+        data-role="open-incompat"
+        :aria-label="`${INCOMPAT_COPY.entryTitle}，${isIncompatCaptureOn ? '已开启' : '已关闭'}，${incompatCountLabel(incompatTotal)}`"
+        @click="openIncompat"
+        @keydown.enter.prevent="openIncompat"
+        @keydown.space.prevent="openIncompat"
+      >
+        <div class="xm-entry__icon"><XmIcon name="alert" /></div>
+        <div class="xm-entry__main">
+          <div class="xm-entry__title">{{ INCOMPAT_COPY.entryTitle }}</div>
+          <div class="xm-entry__desc">{{ INCOMPAT_COPY.entryDesc }}</div>
+        </div>
+        <div class="xm-entry__side">
+          <template v-if="isIncompatCaptureOn"><span class="xm-rec-dot"></span><span class="xm-num">已开启 · {{ incompatTotal }}</span></template>
+          <template v-else>
+            <span class="xm-num">{{ incompatTotal > 0 ? incompatCountLabel(incompatTotal) : '已关闭' }}</span><XmIcon name="chev-r" class="xm-ico--sm" />
+          </template>
         </div>
       </div>
     </div>
@@ -232,8 +282,64 @@ watch(() => route.value.page, () => { downloadError.value = null; });
         </div>
       </template>
 
-      <!-- Request detail -->
-      <template v-else-if="route.page === 'xhr-detail'">
+      <!-- Incompatible requests list -->
+      <template v-else-if="route.page === 'incompat'">
+        <div class="xm-toolbar">
+          <span class="xm-toolbar__switch">
+            <XmSwitch :model-value="isIncompatCaptureOn" :label="INCOMPAT_COPY.switchLabel" data-role="incompat-switch" @update:model-value="setIncompatCapture" />
+            <span @click="setIncompatCapture(!isIncompatCaptureOn)">{{ INCOMPAT_COPY.switchLabel }}</span>
+          </span>
+          <button type="button" class="xm-btn xm-btn--ghost" data-role="clear" :disabled="incompatTotal === 0" @click="onClearIncompat">
+            <XmIcon name="trash" class="xm-ico--sm" />清空
+          </button>
+          <span class="xm-toolbar__spacer"></span>
+          <span class="xm-toolbar__meta" data-role="count"><span v-if="isIncompatCaptureOn" class="xm-rec-dot"></span> {{ incompatCountLabel(incompatTotal) }}</span>
+        </div>
+
+        <div class="xm-body">
+          <XmBanner
+            v-if="incompatDroppedCount > 0"
+            tone="warn"
+            :title="droppedLabel(incompatDroppedCount)"
+            text="记录数或内存占用超出上限，请及时下载。"
+            :dismissible="false"
+            data-role="dropped"
+          />
+          <XmEmpty
+            v-if="incompatList.length === 0"
+            icon="alert"
+            :title="isIncompatCaptureOn ? INCOMPAT_COPY.emptyOn : INCOMPAT_COPY.emptyOff"
+          />
+          <XmReqRow
+            v-for="item in incompatList"
+            :key="item.capture.id"
+            :capture="item.capture"
+            :tag="INCOMPAT_REASON_LABEL[item.diagnosis.reason]"
+            @select="toolsNavigateTo({ page: 'incompat-detail', captureId: item.capture.id })"
+          />
+        </div>
+
+        <XmBanner
+          v-if="downloadError"
+          class="xm-banner--dock"
+          tone="danger"
+          title="下载失败"
+          :text="downloadError"
+          @close="downloadError = null"
+        />
+        <div class="xm-footer" data-role="list-footer">
+          <div class="xm-footer__meta"><span class="xm-ellip">{{ INCOMPAT_COPY.memoryNote }}</span></div>
+          <button
+            type="button" class="xm-btn xm-btn--primary" data-role="download" :disabled="incompatTotal === 0"
+            @click="downloadIncompat(incompatCaptures)"
+          >
+            <XmIcon name="download" class="xm-ico--sm" />下载全部 {{ incompatTotal }} 项
+          </button>
+        </div>
+      </template>
+
+      <!-- Request detail (manual capture or incompatible request) -->
+      <template v-else-if="isDetailPage">
         <div class="xm-body">
           <XmEmpty v-if="!detail" icon="activity" :title="TOOLS_COPY.notFound" />
           <template v-else>
@@ -273,7 +379,7 @@ watch(() => route.value.page, () => { downloadError.value = null; });
         />
         <div v-if="detail" class="xm-footer" data-role="detail-footer">
           <div class="xm-footer__meta"><span class="xm-ellip">导出包含页面 URL、请求与响应</span></div>
-          <button type="button" class="xm-btn xm-btn--primary" data-role="download" @click="downloadCaptures([detail])">
+          <button type="button" class="xm-btn xm-btn--primary" data-role="download" @click="incompatDetail ? downloadIncompat([incompatDetail]) : downloadCaptures([detail])">
             <XmIcon name="download" class="xm-ico--sm" />下载 JSON
           </button>
         </div>
