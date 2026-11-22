@@ -17,6 +17,8 @@ import { getTimelineNamespace } from './endpoint-support';
 import { createLease, createOutbox, packRecords, type OutboxRecord } from './outbox';
 import { gmOutboxKv } from './outbox-gm';
 import {
+  MAX_REQUEST_BYTES,
+  MAX_REQUEST_RECORDS,
   RemoteDbHttpError,
   RemoteDbTimeoutError,
   buildArchiveBatch,
@@ -69,14 +71,8 @@ export interface AutoArchiveState {
 }
 
 const MAX_POSTS_PER_BATCH = 100;
-/**
- * Per request: at most this many records (posts + users + media) and bytes. The server stores them one transaction
- * at a time (about 10 ms each), so 400 records stay far below the 55 s client timeout, the server's 60 s write
- * timeout and Cloudflare's ~100 s. A timeout halves the limit; successes grow it back.
- */
-const MAX_REQUEST_RECORDS = 400;
+/** Per request limits live in remote-db/limits.ts (shared with the manual submit). A timeout halves the record limit; successes grow it back. */
 const MIN_REQUEST_RECORDS = 25;
-const MAX_REQUEST_BYTES = 2 * 1024 * 1024;
 const STANDBY_RETRY_MS = 10_000;
 const ORPHAN_SCAN_MS = 60_000;
 const MAX_FAILURES = 50;
@@ -394,13 +390,19 @@ function noteSuccess(): void {
   requestRecordLimit = Math.min(MAX_REQUEST_RECORDS, Math.ceil(requestRecordLimit * 1.25));
 }
 
+/** `Retry-After` of the last failed request (503 server_busy), consumed by the next backoff. */
+let serverRetryAfterMs: number | undefined;
+
 function startBackoff(): void {
   if (!started || !config.autoArchive) return;
-  state.retryAt = Date.now() + backoffMs;
+  // Honour the server's `Retry-After` when it asks for more than our own schedule (never beyond 5 minutes).
+  const delayMs = serverRetryAfterMs === undefined ? backoffMs : Math.min(5 * 60_000, Math.max(backoffMs, serverRetryAfterMs));
+  serverRetryAfterMs = undefined;
+  state.retryAt = Date.now() + delayMs;
   retryTimer = window.setTimeout(() => {
     state.retryAt = null;
     flush();
-  }, backoffMs);
+  }, delayMs);
   backoffMs = Math.min(BACKOFF_MAX_MS, backoffMs * 2);
 }
 
@@ -425,6 +427,7 @@ function failSingle(key: string, reason: string): 'ok' {
 /** Records the error and decides how the loop goes on. Returns the HTTP status (0 without a response). */
 function noteTransportError(error: unknown, sentRecords: number): number {
   const status = error instanceof RemoteDbHttpError ? error.status : 0;
+  serverRetryAfterMs = error instanceof RemoteDbHttpError ? error.retryAfterMs : undefined;
   state.lastError = { message: error instanceof Error ? error.message : String(error), status, at: Date.now() };
   // A timeout usually means the batch was too big for the server's pace: ask for smaller ones.
   if (error instanceof RemoteDbTimeoutError) {

@@ -1,5 +1,5 @@
 /** Chinese messages for remote-database submit results and errors; shared by the timeline footer and the detail page's archive card. */
-import { RemoteDbHttpError, type RemoteDbSubmitResponse } from '../lib/remote-db';
+import { RemoteDbChunkedSubmitError, RemoteDbHttpError, type RemoteDbSubmitResponse } from '../lib/remote-db';
 
 export interface RemoteMessage {
   tone: 'ok' | 'warn' | 'danger';
@@ -30,6 +30,12 @@ export function submitSuccessMessage(result: RemoteDbSubmitResponse): RemoteMess
 
 /** Maps a submit / sync failure to a banner message (401 and 403 get dedicated copy). */
 export function toRemoteErrorMessage(error: unknown): RemoteMessage {
+  if (error instanceof RemoteDbChunkedSubmitError) {
+    // Keep the dedicated copy for the inner cause, and say how far the submit got.
+    const inner = toRemoteErrorMessage(error.cause);
+    const progress = `已成功提交 ${error.submittedPostIds.length}/${error.totalPosts} 条后中断，可重试（已提交的重复发送无妨）。`;
+    return { ...inner, text: [inner.text, progress].filter(Boolean).join('\n') };
+  }
   if (error instanceof RemoteDbHttpError) {
     if (error.status === 401) return { tone: 'danger', title: '远端会话已过期', text: '请在设置中重新登录后再提交。', openSettings: true };
     if (error.status === 403) return { tone: 'danger', title: '需要贡献者或管理员账户才能提交' };

@@ -8,12 +8,13 @@ import type { Post } from '../../archive/model';
 import { archiveRecords, enqueueRemoteSyncStatusRefresh } from '../../lib/db-service';
 import {
   buildArchiveBatch,
+  RemoteDbChunkedSubmitError,
   compareArchiveBatch,
   getRemoteDbClientState,
   isRemoteDbReady,
   queryRemoteDbArchive,
   RemoteDbHttpError,
-  submitRemoteDbArchive,
+  submitRemoteDbPosts,
   toArchiveQuery,
   type RemoteBatchComparison,
   type RemoteRecordComparison,
@@ -34,6 +35,8 @@ export function useArchiveStatus(post: Ref<Post>, batchPosts: Ref<Post[] | undef
   const state = reactive({
     queryState: 'idle' as QueryState,
     syncState: 'idle' as SyncState,
+    /** Posts stored so far / to send during a batch sync. */
+    syncProgress: null as { done: number; total: number } | null,
     queryError: null as string | null,
     comparison: null as RemoteBatchComparison | null,
     message: null as RemoteMessage | null,
@@ -41,7 +44,6 @@ export function useArchiveStatus(post: Ref<Post>, batchPosts: Ref<Post[] | undef
 
   const singleBatch = computed(() => buildArchiveBatch([post.value.id], archiveRecords).batch);
   const batchPostIds = computed(() => [...new Set([post.value.id, ...(batchPosts.value ?? []).map((item) => item.id)])]);
-  const fullBatch = computed(() => buildArchiveBatch(batchPostIds.value, archiveRecords).batch);
   const batchCount = computed(() => batchPostIds.value.length);
 
   let queryToken = 0;
@@ -128,16 +130,21 @@ export function useArchiveStatus(post: Ref<Post>, batchPosts: Ref<Post[] | undef
     const ids = mode === 'single' ? [post.value.id] : batchPostIds.value;
     const forPost = post.value.id;
     try {
-      const result = await submitRemoteDbArchive(mode === 'single' ? singleBatch.value : fullBatch.value);
+      const result = await submitRemoteDbPosts(ids, archiveRecords, {
+        onProgress: (done, total) => { if (forPost === post.value.id) state.syncProgress = { done, total }; },
+      });
       if (forPost !== post.value.id) return;
       state.message = submitResultMessage(result, '同步');
       state.syncState = 'idle';
       await load();
       enqueueRemoteSyncStatusRefresh(ids);
     } catch (error) {
+      if (error instanceof RemoteDbChunkedSubmitError) enqueueRemoteSyncStatusRefresh(error.submittedPostIds);
       if (forPost !== post.value.id) return;
       state.syncState = 'idle';
       state.message = toRemoteErrorMessage(error);
+    } finally {
+      state.syncProgress = null;
     }
   }
 

@@ -580,7 +580,7 @@ function selectItem(item: TimelineItem): void {
             <div class="xm-footer__meta"><span>已选 <strong class="xm-num">{{ selection.selectedCount.value }}</strong> / {{ paged ? '本页 ' : '' }}{{ visibleItems.length }}</span></div>
             <button type="button" class="xm-btn xm-btn--ghost" :disabled="visibleItems.length === 0" @click="selection.toggleAll()">{{ selection.allSelected.value ? '取消全选' : '全选' }}</button>
             <button type="button" class="xm-btn xm-btn--primary" :disabled="selection.submitDisabled.value" data-role="submit" @click="selection.submit()">
-              <XmIcon name="upload" class="xm-ico--sm" />{{ selection.submitting.value ? '提交中…' : `提交 ${selection.selectedCount.value} 条` }}
+              <XmIcon name="upload" class="xm-ico--sm" />{{ selection.submitting.value ? (selection.progress.value ? `提交中 ${selection.progress.value.done}/${selection.progress.value.total}` : '提交中…') : `提交 ${selection.selectedCount.value} 条` }}
             </button>
           </div>
           <div v-else class="xm-footer" data-role="sync-footer">

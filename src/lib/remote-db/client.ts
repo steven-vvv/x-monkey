@@ -1,6 +1,7 @@
 import { reactive } from 'vue';
 import { GM_log, GM_xmlhttpRequest } from '$';
 import { REMOTE_DB_BUILD, normalizeRemoteDbBaseUrl } from './build';
+import { RemoteDbHttpError, RemoteDbNetworkError, RemoteDbTimeoutError, parseRetryAfterMs } from './errors';
 import { buildSubmitBody } from './submit-body';
 import type {
   RemoteDbClientConfig,
@@ -48,25 +49,7 @@ const remoteDbState = reactive<RemoteDbClientState>({
 
 let sessionRequestToken = 0;
 
-/** The request did not finish in time; the server may still have processed it. */
-export class RemoteDbTimeoutError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'RemoteDbTimeoutError';
-  }
-}
-
-export class RemoteDbHttpError extends Error {
-  status: number;
-  body: unknown;
-
-  constructor(status: number, message: string, body?: unknown) {
-    super(message);
-    this.name = 'RemoteDbHttpError';
-    this.status = status;
-    this.body = body;
-  }
-}
+export { RemoteDbHttpError, RemoteDbNetworkError, RemoteDbTimeoutError };
 
 function applyClientState(partial: Partial<RemoteDbClientState>): void {
   remoteDbState.enabled = REMOTE_DB_BUILD.enabled;
@@ -210,13 +193,14 @@ function gmRequest(url: string, options: JsonRequestOptions): Promise<string> {
       data: options.body === undefined ? undefined : JSON.stringify(options.body),
       responseType: 'text',
       onload: (response) => {
+        const retryAfterMs = parseRetryAfterMs(response.responseHeaders);
         if (!response.responseText.trim()) {
           if (response.status >= 200 && response.status < 300) {
             resolve('');
             return;
           }
 
-          reject(new RemoteDbHttpError(response.status, `Remote database request failed (${response.status})`));
+          reject(new RemoteDbHttpError(response.status, `Remote database request failed (${response.status})`, undefined, retryAfterMs));
           return;
         }
 
@@ -226,7 +210,7 @@ function gmRequest(url: string, options: JsonRequestOptions): Promise<string> {
         } catch {
           // A proxy error page (Cloudflare 524, 502...) keeps its status so callers can tell it from a bad payload.
           reject(response.status < 200 || response.status >= 300
-            ? new RemoteDbHttpError(response.status, `Remote database request failed (${response.status})`)
+            ? new RemoteDbHttpError(response.status, `Remote database request failed (${response.status})`, undefined, retryAfterMs)
             : new Error(`Remote database returned invalid JSON for ${options.path}`));
           return;
         }
@@ -236,6 +220,7 @@ function gmRequest(url: string, options: JsonRequestOptions): Promise<string> {
             response.status,
             extractApiErrorMessage(payload, `Remote database request failed (${response.status})`),
             payload,
+            retryAfterMs,
           ));
           return;
         }
@@ -243,13 +228,13 @@ function gmRequest(url: string, options: JsonRequestOptions): Promise<string> {
         resolve(JSON.stringify(payload));
       },
       onerror: () => {
-        reject(new Error(`Remote database request failed for ${options.path}`));
+        reject(new RemoteDbNetworkError(`Remote database request failed for ${options.path}`));
       },
       ontimeout: () => {
         reject(new RemoteDbTimeoutError(`Remote database request timed out for ${options.path}`));
       },
       onabort: () => {
-        reject(new Error(`Remote database request aborted for ${options.path}`));
+        reject(new RemoteDbNetworkError(`Remote database request aborted for ${options.path}`));
       },
     });
   });

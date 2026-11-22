@@ -90,7 +90,7 @@ const pillText = (status: RemoteRecordStatus): string => ARCHIVE_STATUS_PILLS[st
         v-if="archive.batchCount.value > 1"
         type="button" class="xm-btn" data-role="sync-all" title="包含上文与已捕获的回复"
         :disabled="archive.busy.value" @click="archive.submit('batch')"
-      >{{ state.syncState === 'submitting_batch' ? '同步中…' : `同步全部 · ${archive.batchCount.value}` }}</button>
+      >{{ state.syncState === 'submitting_batch' ? (state.syncProgress ? `同步中 ${state.syncProgress.done}/${state.syncProgress.total}` : '同步中…') : `同步全部 · ${archive.batchCount.value}` }}</button>
     </div>
   </section>
 </template>

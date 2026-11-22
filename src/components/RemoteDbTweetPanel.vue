@@ -4,12 +4,13 @@ import type { Post } from '../archive/model';
 import { archiveRecords, enqueueRemoteSyncStatusRefresh } from '../lib/db-service';
 import {
   buildArchiveBatch,
+  RemoteDbChunkedSubmitError,
   compareArchiveBatch,
   getRemoteDbClientState,
   isRemoteDbReady,
   queryRemoteDbArchive,
   RemoteDbHttpError,
-  submitRemoteDbArchive,
+  submitRemoteDbPosts,
   toArchiveQuery,
   type RemoteBatchComparison,
   type RemoteRecordComparison,
@@ -32,6 +33,7 @@ const remoteDbState = getRemoteDbClientState();
 const state = reactive({
   queryState: 'idle' as QueryState,
   syncState: 'idle' as SyncState,
+  syncProgress: null as { done: number; total: number } | null,
   queryError: null as string | null,
   syncMessage: null as string | null,
   comparison: null as RemoteBatchComparison | null,
@@ -39,7 +41,6 @@ const state = reactive({
 
 const singleBatch = computed(() => buildArchiveBatch([props.post.id], archiveRecords).batch);
 const batchPostIds = computed(() => [...new Set([props.post.id, ...props.batchSyncPosts.map((post) => post.id)])]);
-const fullBatch = computed(() => buildArchiveBatch(batchPostIds.value, archiveRecords).batch);
 const hasBatchSync = computed(() => batchPostIds.value.length > 1);
 
 let queryToken = 0;
@@ -142,22 +143,31 @@ const refreshButtonText = computed(() => {
   return state.comparison ? 'Refreshing...' : 'Loading...';
 });
 const syncButtonText = computed(() => state.syncState === 'submitting_single' ? 'Syncing...' : 'Sync');
-const syncAllButtonText = computed(() => state.syncState === 'submitting_batch' ? 'Syncing...' : 'Sync All');
+const syncAllButtonText = computed(() => state.syncState !== 'submitting_batch'
+  ? 'Sync All'
+  : state.syncProgress ? `Syncing ${state.syncProgress.done}/${state.syncProgress.total}...` : 'Syncing...');
 
 async function submit(mode: 'single' | 'batch'): Promise<void> {
   state.syncState = mode === 'single' ? 'submitting_single' : 'submitting_batch';
   state.syncMessage = null;
   try {
-    const result = await submitRemoteDbArchive(mode === 'single' ? singleBatch.value : fullBatch.value);
+    const result = await submitRemoteDbPosts(mode === 'single' ? [props.post.id] : batchPostIds.value, archiveRecords, {
+      onProgress: (done, total) => { state.syncProgress = { done, total }; },
+    });
     state.syncState = 'success';
     state.syncMessage = formatSubmitMessage(mode === 'single' ? 'Sync' : 'Sync All', result);
     await loadRemoteStatus();
     enqueueRemoteSyncStatusRefresh(mode === 'single' ? [props.post.id] : batchPostIds.value);
   } catch (error) {
+    if (error instanceof RemoteDbChunkedSubmitError) enqueueRemoteSyncStatusRefresh(error.submittedPostIds);
     state.syncState = 'error';
-    state.syncMessage = toErrorMessage(error, mode === 'single'
+    state.syncMessage = error instanceof RemoteDbChunkedSubmitError
+      ? `${toErrorMessage(error.cause, 'Failed to sync the current posts to remote database')} Synced ${error.submittedPostIds.length} of ${error.totalPosts} posts before the failure; retry to send the rest.`
+      : toErrorMessage(error, mode === 'single'
       ? 'Failed to sync the current post to remote database'
       : 'Failed to sync the current posts to remote database');
+  } finally {
+    state.syncProgress = null;
   }
 }
 </script>

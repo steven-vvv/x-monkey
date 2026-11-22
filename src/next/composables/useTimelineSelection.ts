@@ -5,7 +5,7 @@
  */
 import { computed, onBeforeUnmount, reactive, ref, watch, type Ref } from 'vue';
 import { archiveRecords, enqueueRemoteSyncStatusRefresh } from '../../lib/db-service';
-import { buildArchiveBatch, submitRemoteDbArchive } from '../../lib/remote-db';
+import { RemoteDbChunkedSubmitError, submitRemoteDbPosts } from '../../lib/remote-db';
 import { submitSuccessMessage, toRemoteErrorMessage, type RemoteMessage } from '../remote-messages';
 
 const SUCCESS_DISMISS_MS = 6000;
@@ -14,6 +14,8 @@ export function useTimelineSelection(entryIds: Ref<string[]>, resetKey: Ref<stri
   const active = ref(false);
   const selected = reactive(new Set<string>());
   const submitting = ref(false);
+  /** Posts stored so far / to send, while `submitting`. */
+  const progress = ref<{ done: number; total: number } | null>(null);
   const banner = ref<RemoteMessage | null>(null);
   let dismissTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -62,11 +64,12 @@ export function useTimelineSelection(entryIds: Ref<string[]>, resetKey: Ref<stri
 
   async function submit(): Promise<void> {
     const ids = selectedIds.value;
-    const { batch } = buildArchiveBatch(ids, archiveRecords);
     submitting.value = true;
     clearBanner();
     try {
-      const result = await submitRemoteDbArchive(batch);
+      const result = await submitRemoteDbPosts(ids, archiveRecords, {
+        onProgress: (done, total) => { progress.value = { done, total }; },
+      });
       enqueueRemoteSyncStatusRefresh(ids);
       selected.clear();
       active.value = false;
@@ -74,9 +77,11 @@ export function useTimelineSelection(entryIds: Ref<string[]>, resetKey: Ref<stri
       // A clean result fades out; one with failed records stays until dismissed.
       if (banner.value.tone === 'ok') dismissTimer = setTimeout(clearBanner, SUCCESS_DISMISS_MS);
     } catch (error) {
+      if (error instanceof RemoteDbChunkedSubmitError) enqueueRemoteSyncStatusRefresh(error.submittedPostIds);
       banner.value = toRemoteErrorMessage(error);
     } finally {
       submitting.value = false;
+      progress.value = null;
     }
   }
 
@@ -100,7 +105,7 @@ export function useTimelineSelection(entryIds: Ref<string[]>, resetKey: Ref<stri
   onBeforeUnmount(() => clearTimeout(dismissTimer));
 
   return {
-    active, selected, submitting, banner,
+    active, selected, submitting, progress, banner,
     selectedCount, allSelected, submitDisabled,
     toggleMode, toggle, toggleAll, submit, reset, dismissBanner: clearBanner,
   };

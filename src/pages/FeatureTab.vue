@@ -25,10 +25,10 @@ import { featureNavigateTo, featureRoute, type FeatureRoute } from '../lib/store
 import { GM_openInTab } from '$';
 import { getPostOpenUrl, getUserOpenUrl } from '../lib/post-view';
 import {
-  buildArchiveBatch,
   isRemoteDbReady,
+  RemoteDbChunkedSubmitError,
   RemoteDbHttpError,
-  submitRemoteDbArchive,
+  submitRemoteDbPosts,
   type RemoteDbSubmitResponse,
 } from '../lib/remote-db';
 import TweetDetailView from '../components/TweetDetailView.vue';
@@ -57,6 +57,7 @@ const route = featureRoute;
 const timelineMultiSelectActive = ref(false);
 const selectedTimelinePostIds = reactive(new Set<string>());
 const timelineBatchSubmitState = ref<TimelineBatchSubmitState>('idle');
+const timelineSubmitProgress = ref<{ done: number; total: number } | null>(null);
 const timelineBatchSubmitMessage = ref<string | null>(null);
 
 function getRouteTimelineContext(value: FeatureRoute): FeatureTimelineContext | null {
@@ -206,7 +207,9 @@ const allTimelinePostsSelected = computed(() => {
 
 const timelineSubmitDisabled = computed(() => timelineBatchSubmitState.value === 'submitting' || selectedTimelineCount.value === 0);
 
-const timelineSubmitButtonText = computed(() => timelineBatchSubmitState.value === 'submitting' ? 'Submitting...' : 'Submit');
+const timelineSubmitButtonText = computed(() => timelineBatchSubmitState.value !== 'submitting'
+  ? 'Submit'
+  : timelineSubmitProgress.value ? `Submitting ${timelineSubmitProgress.value.done}/${timelineSubmitProgress.value.total}...` : 'Submitting...');
 
 const selectAllButtonText = computed(() => allTimelinePostsSelected.value ? 'Clear All' : 'Select All');
 
@@ -220,6 +223,10 @@ function formatSubmitMessage(result: RemoteDbSubmitResponse): string {
 }
 
 function toRemoteSubmitErrorMessage(error: unknown): string {
+  if (error instanceof RemoteDbChunkedSubmitError) {
+    const reason = toRemoteSubmitErrorMessage(error.cause);
+    return `${reason} Submitted ${error.submittedPostIds.length} of ${error.totalPosts} posts before the failure; retry to send the rest.`;
+  }
   if (error instanceof RemoteDbHttpError) {
     if (error.status === 401) return 'Remote database session expired. Open Settings and sign in again.';
     if (error.status === 403) return 'Remote database sync requires a contributor or administrator account.';
@@ -278,20 +285,24 @@ function selectTimelineItem(item: TimelineCardItem): void {
 
 async function submitSelectedTimelinePosts(): Promise<void> {
   const selectedIds = selectedTimelineIds.value;
-  const { batch } = buildArchiveBatch(selectedIds, archiveRecords);
   timelineBatchSubmitState.value = 'submitting';
   timelineBatchSubmitMessage.value = null;
 
   try {
-    const result = await submitRemoteDbArchive(batch);
+    const result = await submitRemoteDbPosts(selectedIds, archiveRecords, {
+      onProgress: (done, total) => { timelineSubmitProgress.value = { done, total }; },
+    });
     enqueueRemoteSyncStatusRefresh(selectedIds);
     clearTimelineSelection();
     timelineMultiSelectActive.value = false;
     timelineBatchSubmitState.value = 'success';
     timelineBatchSubmitMessage.value = formatSubmitMessage(result);
   } catch (error) {
+    if (error instanceof RemoteDbChunkedSubmitError) enqueueRemoteSyncStatusRefresh(error.submittedPostIds);
     timelineBatchSubmitState.value = 'error';
     timelineBatchSubmitMessage.value = toRemoteSubmitErrorMessage(error);
+  } finally {
+    timelineSubmitProgress.value = null;
   }
 }
 
